@@ -1,0 +1,13 @@
+# Normalize line endings for cross-platform consistency
+* text=auto eol=lf
+
+# Binaries — never touch
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.pdf  binary
+*.stl  binary
+*.vtp  binary
+*.vtk  binary
+*.dcm  binary
+*.db   binary

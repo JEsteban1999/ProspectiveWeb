@@ -1,0 +1,73 @@
+# ── Python ───────────────────────────────────────────────────────────────── #
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+
+# ── Virtual environments ──────────────────────────────────────────────────── #
+.venv/
+venv/
+env/
+ENV/
+
+# ── Backend runtime data (never commit) ──────────────────────────────────── #
+backend/data/
+backend/static/sample-meshes/*.vtp
+backend/data/jwt_secret.txt
+backend/data/prospective.db
+
+# ── Internal dev artifacts ────────────────────────────────────────────────── #
+backend/openapi_check.json
+
+# ── Test artifacts ────────────────────────────────────────────────────────── #
+.pytest_cache/
+*.pytest_cache
+htmlcov/
+.coverage
+coverage.xml
+
+# ── IDE ───────────────────────────────────────────────────────────────────── #
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ── OS ────────────────────────────────────────────────────────────────────── #
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Frontend build artifacts ──────────────────────────────────────────────── #
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.env.production
+
+# ── Secrets / environment ─────────────────────────────────────────────────── #
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── DICOM / medical data (patient data must never be in git) ──────────────── #
+*.dcm
+*.DCM
+*.dicom
+
+# ── Large binary meshes (use Git LFS or external storage) ────────────────── #
+*.stl
+*.obj
+*.vtp
+*.vts
+*.vtk

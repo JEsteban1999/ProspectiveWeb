@@ -1,0 +1,217 @@
+"""Report generation and STL export router — Session E.
+
+POST /api/report      — generate PDF surgical plan (reportlab)
+POST /api/export/stl  — export merged VTP meshes as STL (VTK)
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from models import ReportRequest, ReportResult, ExportRequest
+from services.database import get_db
+from services.sessions import (
+    session_exists, session_subdir, read_state,
+)
+from services.report_generator import (
+    ReportGenerator, build_report_data_from_session,
+)
+from services.mesh_exporter import export_stl, merge_poly_datas, apply_scale
+from services.segmentation import read_vtp
+
+logger  = logging.getLogger(__name__)
+router  = APIRouter(prefix="/api", tags=["report"])
+
+# All CPU-bound reportlab / VTK work runs off the event loop
+_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="report-worker")
+
+
+# ── POST /report ───────────────────────────────────────────────────────────── #
+
+@router.post(
+    "/report",
+    response_model=ReportResult,
+    summary="Generate surgical PDF report",
+    description=(
+        "Assembles all session data (morphometry, treatment decision, patient info) "
+        "and generates a structured PDF using ReportLab.\n\n"
+        "**Prerequisite:** the session must have completed at least the morphometry step "
+        "(Step 3) for the report to contain clinical data.\n\n"
+        "An optional `screenshot_png_b64` field (base64-encoded PNG) can be sent "
+        "to embed the 3D viewer capture in the report.\n\n"
+        "Returns a `/data/…` download URL pointing to the generated PDF."
+    ),
+)
+async def generate_report(
+    req: ReportRequest,
+    db: Annotated[Session, Depends(get_db)],
+) -> ReportResult:
+    if not session_exists(req.session_id):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Session '{req.session_id}' not found",
+        )
+
+    loop = asyncio.get_event_loop()
+
+    def _generate_sync() -> Path:
+        data = build_report_data_from_session(
+            req.session_id,
+            patient_name      = req.patient_name,
+            patient_dob       = req.patient_dob,
+            patient_sex       = req.patient_sex,
+            hospital_id       = req.hospital_id,
+            surgeon_name      = req.surgeon_name,
+            institution       = req.institution,
+            clinical_notes    = req.clinical_notes,
+            screenshot_png_b64= req.screenshot_png_b64 if req.include_3d_screenshot else None,
+            db                = db,
+        )
+        out_dir = session_subdir(req.session_id, "reports")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"{req.session_id}_report.pdf"
+        gen = ReportGenerator(data)
+        return gen.generate(out_path)
+
+    try:
+        pdf_path: Path = await loop.run_in_executor(_executor, _generate_sync)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Report generation failed for session %s", req.session_id)
+        raise HTTPException(status_code=500, detail=f"Report generation error: {exc}") from exc
+
+    # Build the page count from the file (reportlab writes it as part of the PDF)
+    # We can get an approximate page count by reading the PDF trailer — simpler:
+    page_count = _pdf_page_count(pdf_path)
+
+    pdf_url = f"/data/sessions/{req.session_id}/reports/{req.session_id}_report.pdf"
+
+    logger.info(
+        "Report generated — session=%s  pages=%s  size=%.1f KB",
+        req.session_id, page_count, pdf_path.stat().st_size / 1024,
+    )
+
+    return ReportResult(
+        pdf_url      = pdf_url,
+        dicom_sr_url = None,    # DICOM SR not yet implemented in web backend
+        stl_url      = None,
+        generated_at = datetime.now(timezone.utc).isoformat(),
+        page_count   = page_count,
+    )
+
+
+def _pdf_page_count(path: Path) -> int | None:
+    """Best-effort page count from PDF trailer (/Count value)."""
+    try:
+        data = path.read_bytes()
+        # Find last occurrence of /Count integer in the PDF
+        import re
+        matches = re.findall(rb"/Count\s+(\d+)", data)
+        if matches:
+            return int(matches[-1])
+    except Exception:
+        pass
+    return None
+
+
+# ── POST /export/stl ───────────────────────────────────────────────────────── #
+
+@router.post(
+    "/export/stl",
+    response_model=ReportResult,
+    summary="Export mesh as STL for 3D printing",
+    description=(
+        "Merges the selected session meshes (vessel tree and/or aneurysm dome) "
+        "into a single STL file suitable for 3D printing.\n\n"
+        "**Prerequisite:** the session must have completed the segmentation step "
+        "(Step 2) so that `vessel_tree.vtp` exists.\n\n"
+        "Use `scale_factor` to adjust physical dimensions (1.0 = real size in mm).\n\n"
+        "Returns a `/data/…` download URL pointing to the generated `.stl` file."
+    ),
+)
+async def export_stl_endpoint(
+    req: ExportRequest,
+) -> ReportResult:
+    if not session_exists(req.session_id):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Session '{req.session_id}' not found",
+        )
+
+    meshes_dir = session_subdir(req.session_id, "meshes")
+    vessel_vtp  = meshes_dir / "vessel_tree.vtp"
+
+    # At least one mesh must be available
+    if not vessel_vtp.exists() and req.include_vessel_tree:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "vessel_tree.vtp not found in session. "
+                "Run the segmentation step (POST /api/segment) first."
+            ),
+        )
+
+    loop = asyncio.get_event_loop()
+
+    def _export_sync() -> Path:
+        parts = []
+
+        if req.include_vessel_tree and vessel_vtp.exists():
+            pd = read_vtp(vessel_vtp)
+            if pd is not None:
+                parts.append(pd)
+
+        if req.include_aneurysm_dome:
+            # Use the best candidate VTP stored in session state
+            best_name = read_state(req.session_id, "detect.best_vtp_name", "")
+            if best_name:
+                cand_vtp = meshes_dir / best_name
+                if cand_vtp.exists():
+                    pd = read_vtp(cand_vtp)
+                    if pd is not None:
+                        parts.append(pd)
+
+        if not parts:
+            raise ValueError(
+                "No mesh data available to export. "
+                "Complete segmentation (and optionally detection) first."
+            )
+
+        merged  = merge_poly_datas(parts)
+        scaled  = apply_scale(merged, req.scale_factor)
+
+        out_dir = session_subdir(req.session_id, "exports")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"{req.session_id}_export.stl"
+        return export_stl(scaled, out_path, binary=True)
+
+    try:
+        stl_path: Path = await loop.run_in_executor(_executor, _export_sync)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("STL export failed for session %s", req.session_id)
+        raise HTTPException(status_code=500, detail=f"STL export error: {exc}") from exc
+
+    stl_url = f"/data/sessions/{req.session_id}/exports/{req.session_id}_export.stl"
+
+    logger.info(
+        "STL exported — session=%s  size=%.1f KB  scale=%.2f",
+        req.session_id, stl_path.stat().st_size / 1024, req.scale_factor,
+    )
+
+    return ReportResult(
+        pdf_url      = None,
+        dicom_sr_url = None,
+        stl_url      = stl_url,
+        generated_at = datetime.now(timezone.utc).isoformat(),
+        page_count   = None,
+    )

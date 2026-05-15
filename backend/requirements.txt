@@ -1,0 +1,28 @@
+# PROSPECTIVE Web — backend dependencies
+# Install with: pip install -r requirements.txt
+
+# ── Core API framework ────────────────────────────────────────────────────── #
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9         # multipart DICOM file uploads
+
+# ── Medical image processing ──────────────────────────────────────────────── #
+numpy>=1.26
+SimpleITK>=2.3                  # DICOM loading, morphological operations
+vtk>=9.3                        # Marching Cubes, mesh smoothing, decimation
+pydicom>=2.4                    # DICOM tag extraction
+scipy>=1.12                     # connected-component filtering, gaussian smoothing
+
+# ── Auth & database (Session D) ───────────────────────────────────────────── #
+sqlalchemy>=2.0
+python-jose[cryptography]>=3.3  # JWT tokens
+passlib[bcrypt]>=1.7            # password hashing
+bcrypt>=4.0.0,<5.0.0            # passlib 1.7.x is incompatible with bcrypt 5.x
+
+# ── Report generation (Session E) ────────────────────────────────────────── #
+reportlab>=4.0                  # PDF report generation
+
+# ── Testing ───────────────────────────────────────────────────────────────── #
+pytest>=8.0
+httpx>=0.27                     # async HTTP client for FastAPI TestClient
+pytest-asyncio>=0.23
