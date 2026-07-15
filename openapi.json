@@ -1023,6 +1023,48 @@
                                                                  }
                                                }
                                   },
+                  "/api/report/dicom-sr":  {
+                                               "post":  {
+                                                            "tags":  [
+                                                                         "report"
+                                                                     ],
+                                                            "summary":  "Generate a DICOM Structured Report (SR)",
+                                                            "description":  "Builds a DICOM Comprehensive SR (TID 1500) from the session\u0027s morphometry and risk assessment — an interoperable, PACS-storable record of the measurements. **Prerequisite:** the morphometry step must be complete.\n\nReturns a `/data/…` download URL pointing to the generated `.dcm` file.",
+                                                            "operationId":  "generate_dicom_sr_api_report_dicom_sr_post",
+                                                            "requestBody":  {
+                                                                                "content":  {
+                                                                                                "application/json":  {
+                                                                                                                         "schema":  {
+                                                                                                                                        "$ref":  "#/components/schemas/ReportRequest"
+                                                                                                                                    }
+                                                                                                                     }
+                                                                                            },
+                                                                                "required":  true
+                                                                            },
+                                                            "responses":  {
+                                                                              "200":  {
+                                                                                          "description":  "Successful Response",
+                                                                                          "content":  {
+                                                                                                          "application/json":  {
+                                                                                                                                   "schema":  {
+                                                                                                                                                  "$ref":  "#/components/schemas/ReportResult"
+                                                                                                                                              }
+                                                                                                                               }
+                                                                                                      }
+                                                                                      },
+                                                                              "422":  {
+                                                                                          "description":  "Validation Error",
+                                                                                          "content":  {
+                                                                                                          "application/json":  {
+                                                                                                                                   "schema":  {
+                                                                                                                                                  "$ref":  "#/components/schemas/HTTPValidationError"
+                                                                                                                                              }
+                                                                                                                               }
+                                                                                                      }
+                                                                                      }
+                                                                          }
+                                                        }
+                                           },
                   "/api/export/stl":  {
                                           "post":  {
                                                        "tags":  [

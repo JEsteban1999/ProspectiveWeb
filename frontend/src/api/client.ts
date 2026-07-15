@@ -154,6 +154,7 @@ export const api = {
 
   /* report & export */
   report: (req: ReportRequest) => post<ReportResult>("/api/report", req),
+  dicomSr: (req: ReportRequest) => post<ReportResult>("/api/report/dicom-sr", req),
   exportStl: (req: ExportRequest) => post<ReportResult>("/api/export/stl", req),
 
   /* sessions */

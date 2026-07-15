@@ -23,6 +23,7 @@ from services.sessions import (
 from services.report_generator import (
     ReportGenerator, build_report_data_from_session,
 )
+from services.dicom_sr import DicomSRGenerator
 from services.mesh_exporter import export_stl, merge_poly_datas, apply_scale
 from services.segmentation import read_vtp
 
@@ -120,6 +121,78 @@ def _pdf_page_count(path: Path) -> int | None:
     except Exception:
         pass
     return None
+
+
+# ── POST /report/dicom-sr ────────────────────────────────────────────────────── #
+
+@router.post(
+    "/report/dicom-sr",
+    response_model=ReportResult,
+    summary="Generate a DICOM Structured Report (SR)",
+    description=(
+        "Builds a DICOM Comprehensive SR (TID 1500) from the session's morphometry "
+        "and risk assessment — an interoperable, PACS-storable record of the "
+        "measurements. **Prerequisite:** the morphometry step must be complete.\n\n"
+        "Returns a `/data/…` download URL pointing to the generated `.dcm` file."
+    ),
+)
+async def generate_dicom_sr(
+    req: ReportRequest,
+    db: Annotated[Session, Depends(get_db)],
+) -> ReportResult:
+    if not session_exists(req.session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{req.session_id}' not found")
+
+    loop = asyncio.get_event_loop()
+
+    def _generate_sync() -> Path:
+        data = build_report_data_from_session(
+            req.session_id,
+            patient_name = req.patient_name,
+            patient_dob  = req.patient_dob,
+            patient_sex  = req.patient_sex,
+            hospital_id  = req.hospital_id,
+            surgeon_name = req.surgeon_name,
+            institution  = req.institution,
+            db           = db,
+        )
+        if not any(float(v or 0) for v in data.morphometrics.values()):
+            raise ValueError(
+                "No hay datos de morfometría en la sesión. Ejecuta la morfometría primero."
+            )
+        series_meta = {
+            "patient_name":      data.patient.name,
+            "patient_id":        data.patient.id,
+            "study_date":        data.patient.study_date,
+            "study_description": "PROSPECTIVE Surgical Plan",
+        }
+        gen = DicomSRGenerator(
+            series_meta   = series_meta,
+            morphometrics = data.morphometrics,
+            risk_label    = data.risk_label,
+        )
+        out_dir = session_subdir(req.session_id, "reports")
+        return gen.generate(out_dir / f"{req.session_id}_sr.dcm")
+
+    try:
+        sr_path: Path = await loop.run_in_executor(_executor, _generate_sync)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("DICOM SR generation failed for session %s", req.session_id)
+        raise HTTPException(status_code=500, detail=f"DICOM SR error: {exc}") from exc
+
+    sr_url = f"/data/sessions/{req.session_id}/reports/{req.session_id}_sr.dcm"
+    logger.info("DICOM SR generated — session=%s  size=%.1f KB",
+                req.session_id, sr_path.stat().st_size / 1024)
+
+    return ReportResult(
+        pdf_url      = None,
+        dicom_sr_url = sr_url,
+        stl_url      = None,
+        generated_at = datetime.now(timezone.utc).isoformat(),
+        page_count   = None,
+    )
 
 
 # ── POST /export/stl ───────────────────────────────────────────────────────── #

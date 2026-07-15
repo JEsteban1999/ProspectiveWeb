@@ -20,7 +20,8 @@ export function ReportPanel({ onFinish }: { onFinish: () => void }) {
   const [notes, setNotes] = useState("");
   const [report, setReport] = useState<ReportResult | null>(null);
   const [stl, setStl] = useState<ReportResult | null>(null);
-  const [busy, setBusy] = useState<"pdf" | "stl" | "save" | null>(null);
+  const [sr, setSr] = useState<ReportResult | null>(null);
+  const [busy, setBusy] = useState<"pdf" | "stl" | "sr" | "save" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const genPdf = async () => {
@@ -56,6 +57,27 @@ export function ReportPanel({ onFinish }: { onFinish: () => void }) {
       setStl(await api.exportStl({ session_id: sessionId }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error exportando STL");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const genSr = async () => {
+    if (!sessionId) return;
+    setBusy("sr");
+    setError(null);
+    try {
+      setSr(await api.dicomSr({
+        session_id: sessionId,
+        patient_name: patient?.full_name ?? "",
+        patient_dob: patient?.dob ?? "",
+        patient_sex: patient?.sex ?? "",
+        hospital_id: patient?.hospital_id ?? "",
+        surgeon_name: surgeon,
+        institution: patient?.institution ?? user?.institution ?? "",
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error generando el DICOM SR");
     } finally {
       setBusy(null);
     }
@@ -126,6 +148,14 @@ export function ReportPanel({ onFinish }: { onFinish: () => void }) {
         {stl?.stl_url && (
           <a href={stl.stl_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, textAlign: "center" }}>
             Descargar STL →
+          </a>
+        )}
+        <Button variant="outline" leadingIcon={<Icon name="DATABASE" />} onClick={() => void genSr()} disabled={busy !== null}>
+          {busy === "sr" ? "Generando…" : "Generar DICOM SR"}
+        </Button>
+        {sr?.dicom_sr_url && (
+          <a href={sr.dicom_sr_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, textAlign: "center" }}>
+            Descargar informe estructurado DICOM (.dcm) →
           </a>
         )}
         <Separator style={{ margin: "6px 0" }} />
