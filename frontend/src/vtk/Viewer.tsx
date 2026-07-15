@@ -9,7 +9,7 @@ import { api } from "../api/client";
 import type { VolumeMeta } from "../api/types";
 import { Icon } from "../components/Icon";
 import { usePlanning } from "../store/planning";
-import type { MeshLayer, MeshMarker } from "./MeshView";
+import type { MeshLayer, MeshMarker, MeshLine } from "./MeshView";
 import { MprView } from "./MprView";
 import type { Vector3 } from "@kitware/vtk.js/types";
 
@@ -34,6 +34,8 @@ const DEVICE_COLOR: Vector3 = [0.92, 0.82, 0.45];     // warm gold — placed cl
 const CENTERLINE_COLOR: Vector3 = [0.36, 0.85, 0.86]; // cyan — vessel centreline tube
 const SOURCE_COLOR: Vector3 = [0.25, 0.73, 0.31];     // green — picked source endpoint
 const TARGET_COLOR: Vector3 = [0.97, 0.32, 0.29];     // red — picked target endpoint
+const MEASURE_COLOR: Vector3 = [0.98, 0.75, 0.18];    // amber — caliper rulers
+const PENDING_COLOR: Vector3 = [0.98, 0.55, 0.10];    // orange — first measurement point
 
 /* Load the volume meta once per session; shared by main view + MPR strip. */
 function useVolumeMeta(sessionId: string | null): VolumeMeta | null {
@@ -65,6 +67,7 @@ export function Viewer({ step }: { step: string }) {
   const {
     sessionId, segmentation, candidates, selectedCandidate, series, deviceMesh,
     centerlineMesh, pickMode, clSource, clTarget, setPickMode, setClSource, setClTarget,
+    measurements, measurePending, setMeasurements, setMeasurePending,
   } = usePlanning();
   // mesh_url carries a generation token (?v=…) from the backend, so it changes
   // on every re-segmentation and vtk.js refetches instead of serving the cache.
@@ -95,23 +98,39 @@ export function Viewer({ step }: { step: string }) {
     const out: MeshMarker[] = [];
     if (clSource) out.push({ pos: clSource, color: SOURCE_COLOR });
     if (clTarget) out.push({ pos: clTarget, color: TARGET_COLOR });
+    if (measurePending) out.push({ pos: measurePending, color: PENDING_COLOR });
     return out;
-  }, [clSource, clTarget]);
+  }, [clSource, clTarget, measurePending]);
+
+  const lines = useMemo<MeshLine[]>(
+    () => measurements.filter((m) => m.visible).map((m) => ({ a: m.a, b: m.b, color: MEASURE_COLOR })),
+    [measurements],
+  );
 
   const onPick = useCallback(
     (xyz: [number, number, number]) => {
-      if (pickMode === "cl_source") setClSource(xyz);
-      else if (pickMode === "cl_target") setClTarget(xyz);
-      setPickMode(null);
+      if (pickMode === "cl_source") { setClSource(xyz); setPickMode(null); }
+      else if (pickMode === "cl_target") { setClTarget(xyz); setPickMode(null); }
+      else if (pickMode === "measure") {
+        if (!measurePending) {
+          setMeasurePending(xyz);           // first click — wait for the second
+        } else {
+          const d = Math.hypot(xyz[0] - measurePending[0], xyz[1] - measurePending[1], xyz[2] - measurePending[2]);
+          const nextId = (measurements.reduce((mx, m) => Math.max(mx, m.id), 0)) + 1;
+          setMeasurements([...measurements, { id: nextId, a: measurePending, b: xyz, distance: d, label: `M${nextId}`, visible: true }]);
+          setMeasurePending(null);
+          setPickMode(null);
+        }
+      }
     },
-    [pickMode, setClSource, setClTarget, setPickMode],
+    [pickMode, measurePending, measurements, setClSource, setClTarget, setPickMode, setMeasurePending, setMeasurements],
   );
 
   return (
     <div style={{ flex: 1, position: "relative", background: "var(--viewer-bg)", overflow: "hidden", minHeight: 0 }}>
       {meshUrl ? (
         <Suspense fallback={<ViewerLoading label="Cargando visor 3D…" />}>
-          <MeshView layers={layers} markers={markers} pickMode={pickMode !== null} onPick={onPick} />
+          <MeshView layers={layers} markers={markers} lines={lines} pickMode={pickMode !== null} onPick={onPick} />
         </Suspense>
       ) : sessionId && meta ? (
         <MprView sessionId={sessionId} meta={meta} plane="axial" showSlider />
@@ -146,8 +165,10 @@ export function Viewer({ step }: { step: string }) {
 
       {/* Pick-mode banner */}
       {pickMode && meshUrl && (
-        <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", background: pickMode === "cl_source" ? "rgba(63,186,80,0.92)" : "rgba(248,81,73,0.92)", color: "#fff", fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 999, pointerEvents: "none", boxShadow: "0 2px 8px rgba(0,0,0,0.35)" }}>
-          Clic sobre el vaso para marcar el {pickMode === "cl_source" ? "origen" : "destino"}
+        <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", background: pickMode === "cl_source" ? "rgba(63,186,80,0.92)" : pickMode === "cl_target" ? "rgba(248,81,73,0.92)" : "rgba(234,179,8,0.94)", color: pickMode === "measure" ? "#1a1a1a" : "#fff", fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 999, pointerEvents: "none", boxShadow: "0 2px 8px rgba(0,0,0,0.35)" }}>
+          {pickMode === "cl_source" && "Clic sobre el vaso para marcar el origen"}
+          {pickMode === "cl_target" && "Clic sobre el vaso para marcar el destino"}
+          {pickMode === "measure" && (measurePending ? "Clic en el segundo punto" : "Clic en el primer punto")}
         </div>
       )}
 

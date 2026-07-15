@@ -14,6 +14,7 @@ import { DetectPanel } from "../components/planning/DetectPanel";
 import { MorphometryPanel } from "../components/morphometry/MorphometryPanel";
 import { PerforatorsPanel } from "../components/perforators/PerforatorsPanel";
 import { CenterlinePanel } from "../components/vessels/CenterlinePanel";
+import { MeasurementPanel } from "../components/vessels/MeasurementPanel";
 import { TreatmentPanel } from "../components/planning/TreatmentPanel";
 import { DevicesPanel } from "../components/planning/DevicesPanel";
 import { ReportPanel } from "../components/planning/ReportPanel";
@@ -61,6 +62,8 @@ export function Workspace({
         <PerforatorsPanel />
         <div style={{ height: 14 }} />
         <CenterlinePanel />
+        <div style={{ height: 14 }} />
+        <MeasurementPanel />
       </div>
     ),
     treatment: <TreatmentPanel onNext={next} />,

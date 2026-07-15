@@ -13,6 +13,8 @@ import vtkMapper from "@kitware/vtk.js/Rendering/Core/Mapper";
 import vtkActor from "@kitware/vtk.js/Rendering/Core/Actor";
 import vtkCellPicker from "@kitware/vtk.js/Rendering/Core/CellPicker";
 import vtkSphereSource from "@kitware/vtk.js/Filters/Sources/SphereSource";
+import vtkLineSource from "@kitware/vtk.js/Filters/Sources/LineSource";
+import vtkTubeFilter from "@kitware/vtk.js/Filters/General/TubeFilter";
 import type { Vector3 } from "@kitware/vtk.js/types";
 
 export interface MeshLayer {
@@ -27,6 +29,12 @@ export interface MeshMarker {
   color: Vector3;
 }
 
+export interface MeshLine {
+  a: [number, number, number];
+  b: [number, number, number];
+  color: Vector3;
+}
+
 interface Handles {
   fsrw: vtkFullScreenRenderWindow;
   renderer: ReturnType<vtkFullScreenRenderWindow["getRenderer"]>;
@@ -37,11 +45,13 @@ interface Handles {
 export function MeshView({
   layers,
   markers = [],
+  lines = [],
   pickMode = false,
   onPick,
 }: {
   layers: MeshLayer[];
   markers?: MeshMarker[];
+  lines?: MeshLine[];
   /** When true, a left click on the mesh reports the world position via onPick. */
   pickMode?: boolean;
   onPick?: (xyz: [number, number, number]) => void;
@@ -57,9 +67,10 @@ export function MeshView({
   pickModeRef.current = pickMode;
   onPickRef.current = onPick;
 
-  // Serialise layers + markers so each effect only re-runs when it must.
+  // Serialise layers + overlays so each effect only re-runs when it must.
   const key = layers.map((l) => `${l.url}|${l.color.join(",")}|${l.opacity ?? 1}`).join(";");
   const markerKey = markers.map((m) => `${m.pos.join(",")}|${m.color.join(",")}`).join(";");
+  const lineKey = lines.map((l) => `${l.a.join(",")}-${l.b.join(",")}|${l.color.join(",")}`).join(";");
 
   // ── Scene: render window + mesh layers + surface picking ──────────────── #
   useEffect(() => {
@@ -145,12 +156,13 @@ export function MeshView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  // ── Markers: managed incrementally so a pick never rebuilds the scene ─── #
+  // ── Overlays (markers + ruler lines): incremental so a pick never rebuilds ─ #
   useEffect(() => {
     const h = handles.current;
     if (!h) return;
     markerActors.current.forEach((a) => h.renderer.removeActor(a));
     markerActors.current = [];
+
     for (const m of markers) {
       const sphere = vtkSphereSource.newInstance({ radius: 1.4, thetaResolution: 16, phiResolution: 16 });
       sphere.setCenter(m.pos[0], m.pos[1], m.pos[2]);
@@ -162,9 +174,34 @@ export function MeshView({
       h.renderer.addActor(actor);
       markerActors.current.push(actor);
     }
+
+    for (const l of lines) {
+      const lineSrc = vtkLineSource.newInstance({ point1: l.a, point2: l.b, resolution: 1 });
+      const tube = vtkTubeFilter.newInstance({ radius: 0.35, numberOfSides: 10, capping: true });
+      tube.setInputConnection(lineSrc.getOutputPort());
+      const mapper = vtkMapper.newInstance();
+      mapper.setInputConnection(tube.getOutputPort());
+      const actor = vtkActor.newInstance();
+      actor.setMapper(mapper);
+      actor.getProperty().setColor(...l.color);
+      h.renderer.addActor(actor);
+      markerActors.current.push(actor);
+      // Endpoint beads for the ruler.
+      for (const p of [l.a, l.b]) {
+        const bead = vtkSphereSource.newInstance({ radius: 0.7, thetaResolution: 12, phiResolution: 12 });
+        bead.setCenter(p[0], p[1], p[2]);
+        const bm = vtkMapper.newInstance();
+        bm.setInputConnection(bead.getOutputPort());
+        const ba = vtkActor.newInstance();
+        ba.setMapper(bm);
+        ba.getProperty().setColor(...l.color);
+        h.renderer.addActor(ba);
+        markerActors.current.push(ba);
+      }
+    }
     h.renderWindow.render();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, markerKey]);
+  }, [key, markerKey, lineKey]);
 
   return <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />;
 }
