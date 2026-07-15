@@ -6,6 +6,8 @@ import type {
   AutoThresholdResult,
   CenterlineRequest,
   CenterlineResult,
+  CrossSectionRequest,
+  CrossSectionResult,
   ClipLibraryItem,
   ClipPlanRequest,
   ClipPlanResult,
@@ -123,6 +125,8 @@ export const api = {
   phases: (req: PhasesRequest) => post<PhasesResult>("/api/phases", req),
   centerline: (sessionId: string, req: CenterlineRequest) =>
     post<CenterlineResult>(`/api/centerline/${sessionId}`, req),
+  crossSection: (sessionId: string, req: CrossSectionRequest) =>
+    post<CrossSectionResult>(`/api/cross-section/${sessionId}`, req),
 
   /* MPR / DICOM slice preview */
   volumeMeta: (sessionId: string) => get<VolumeMeta>(`/api/volume/${sessionId}/meta`),

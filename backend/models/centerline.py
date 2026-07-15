@@ -39,3 +39,29 @@ class CenterlineResult(BaseModel):
     warning: str | None = Field(
         None, description="Warning shown for high tortuosity or degenerate geometry"
     )
+
+
+class CrossSectionRequest(BaseModel):
+    """Request to analyse cross-sections along the previously-extracted centreline."""
+
+    session_id: str
+    n_samples: int = Field(
+        40, ge=10, le=100,
+        description="Number of cutting planes along the centreline (more = finer).",
+    )
+
+
+class CrossSectionResult(BaseModel):
+    """Cross-sectional diameter profile along the vessel + stenosis estimate."""
+
+    arc_positions_mm: list[float] = Field(..., description="Sample positions along the centreline")
+    diameters_mm: list[float] = Field(..., description="Equivalent-circle diameter at each position")
+    mean_diameter_mm: float
+    median_diameter_mm: float
+    min_diameter_mm: float
+    max_diameter_mm: float
+    mean_area_mm2: float
+    stenosis_ratio: float = Field(..., description="min_area / median_area (1.0 = uniform)")
+    stenosis_pct: float = Field(..., description="(1 − ratio) × 100 — narrowing at the tightest point")
+    stenosis_label: str = Field(..., description="'Sin estenosis' | 'Leve' | 'Significativa'")
+    warning: str | None = None

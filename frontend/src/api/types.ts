@@ -96,6 +96,25 @@ export interface CenterlineResult {
   warning: string | null;
 }
 
+export interface CrossSectionRequest {
+  session_id: string;
+  n_samples: number;
+}
+
+export interface CrossSectionResult {
+  arc_positions_mm: number[];
+  diameters_mm: number[];
+  mean_diameter_mm: number;
+  median_diameter_mm: number;
+  min_diameter_mm: number;
+  max_diameter_mm: number;
+  mean_area_mm2: number;
+  stenosis_ratio: number;
+  stenosis_pct: number;
+  stenosis_label: string;
+  warning: string | null;
+}
+
 /* ── patients ──────────────────────────────────────────────────────────── */
 export interface PatientCreate {
   surname: string;

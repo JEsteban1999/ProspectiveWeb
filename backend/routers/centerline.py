@@ -8,8 +8,11 @@ import time
 import numpy as np
 from fastapi import APIRouter, HTTPException
 
-from models.centerline import CenterlineRequest, CenterlineResult
+from models.centerline import (
+    CenterlineRequest, CenterlineResult, CrossSectionRequest, CrossSectionResult,
+)
 from services.centerline import extract_centerline
+from services.cross_section import compute_cross_sections
 from services.segmentation import read_vtp, write_vtp
 from services.sessions import mesh_url, session_exists, session_subdir
 
@@ -87,5 +90,70 @@ async def compute_centerline(session_id: str, req: CenterlineRequest) -> Centerl
         mean_diameter_mm=round(result.mean_radius_mm * 2.0, 2),
         min_diameter_mm=round(result.min_radius_mm * 2.0, 2),
         max_diameter_mm=round(result.max_radius_mm * 2.0, 2),
+        warning=warning,
+    )
+
+
+def _run_cross_section(vessel_path, points_path, n_samples):
+    vessel = read_vtp(vessel_path)
+    data = np.load(points_path)
+    return compute_cross_sections(data["points"], vessel, n_samples)
+
+
+@router.post(
+    "/cross-section/{session_id}",
+    response_model=CrossSectionResult,
+    summary="Analyse vessel cross-sections along the centreline",
+    description=(
+        "Cuts the vessel with planes perpendicular to the extracted centreline "
+        "and measures the cross-sectional area (shoelace) at each, yielding a "
+        "diameter profile and a stenosis estimate. Requires that the centreline "
+        "was extracted first (POST /api/centerline/{session_id})."
+    ),
+)
+async def compute_cross_section(session_id: str, req: CrossSectionRequest) -> CrossSectionResult:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    meshes_dir = session_subdir(session_id, "meshes")
+    vessel_path = meshes_dir / "vessel_tree.vtp"
+    points_path = meshes_dir / "centerline_points.npz"
+    if not vessel_path.exists():
+        raise HTTPException(status_code=409, detail="No hay malla vascular. Ejecuta la segmentación primero.")
+    if not points_path.exists():
+        raise HTTPException(status_code=409, detail="Extrae la línea central primero.")
+
+    try:
+        result = await asyncio.to_thread(
+            _run_cross_section, vessel_path, points_path, req.n_samples,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Cross-section analysis failed")
+        raise HTTPException(status_code=500, detail=f"Error en sección transversal: {exc}")
+
+    pct = (1.0 - result.stenosis_ratio) * 100.0
+    if pct < 20:
+        label = "Sin estenosis"
+    elif pct < 50:
+        label = "Leve"
+    else:
+        label = "Significativa"
+    warning = None
+    if pct >= 50:
+        warning = f"Estenosis significativa (~{pct:.0f}%) en el punto más estrecho."
+
+    return CrossSectionResult(
+        arc_positions_mm=[round(float(a), 2) for a in result.arc_positions_mm],
+        diameters_mm=[round(float(d), 3) for d in result.diameters_mm],
+        mean_diameter_mm=round(result.mean_diameter_mm, 2),
+        median_diameter_mm=round(result.median_diameter_mm, 2),
+        min_diameter_mm=round(result.min_diameter_mm, 2),
+        max_diameter_mm=round(result.max_diameter_mm, 2),
+        mean_area_mm2=round(result.mean_area_mm2, 2),
+        stenosis_ratio=round(result.stenosis_ratio, 3),
+        stenosis_pct=round(pct, 1),
+        stenosis_label=label,
         warning=warning,
     )

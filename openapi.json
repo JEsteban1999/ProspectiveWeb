@@ -1418,6 +1418,59 @@
                                                                                   }
                                                                 }
                                                    },
+                  "/api/cross-section/{session_id}":  {
+                                                          "post":  {
+                                                                       "tags":  [
+                                                                                    "centerline"
+                                                                                ],
+                                                                       "summary":  "Analyse vessel cross-sections along the centreline",
+                                                                       "description":  "Cuts the vessel with planes perpendicular to the extracted centreline and measures the cross-sectional area (shoelace) at each, yielding a diameter profile and a stenosis estimate. Requires that the centreline was extracted first (POST /api/centerline/{session_id}).",
+                                                                       "operationId":  "compute_cross_section_api_cross_section__session_id__post",
+                                                                       "parameters":  [
+                                                                                          {
+                                                                                              "name":  "session_id",
+                                                                                              "in":  "path",
+                                                                                              "required":  true,
+                                                                                              "schema":  {
+                                                                                                             "type":  "string",
+                                                                                                             "title":  "Session Id"
+                                                                                                         }
+                                                                                          }
+                                                                                      ],
+                                                                       "requestBody":  {
+                                                                                           "required":  true,
+                                                                                           "content":  {
+                                                                                                           "application/json":  {
+                                                                                                                                    "schema":  {
+                                                                                                                                                   "$ref":  "#/components/schemas/CrossSectionRequest"
+                                                                                                                                               }
+                                                                                                                                }
+                                                                                                       }
+                                                                                       },
+                                                                       "responses":  {
+                                                                                         "200":  {
+                                                                                                     "description":  "Successful Response",
+                                                                                                     "content":  {
+                                                                                                                     "application/json":  {
+                                                                                                                                              "schema":  {
+                                                                                                                                                             "$ref":  "#/components/schemas/CrossSectionResult"
+                                                                                                                                                         }
+                                                                                                                                          }
+                                                                                                                 }
+                                                                                                 },
+                                                                                         "422":  {
+                                                                                                     "description":  "Validation Error",
+                                                                                                     "content":  {
+                                                                                                                     "application/json":  {
+                                                                                                                                              "schema":  {
+                                                                                                                                                             "$ref":  "#/components/schemas/HTTPValidationError"
+                                                                                                                                                         }
+                                                                                                                                          }
+                                                                                                                 }
+                                                                                                 }
+                                                                                     }
+                                                                   }
+                                                      },
                   "/health":  {
                                   "get":  {
                                               "tags":  [
@@ -2072,6 +2125,109 @@
                                                               "title":  "CoilPlanResult",
                                                               "description":  "Result of a coil embolization plan."
                                                           },
+                                       "CrossSectionRequest":  {
+                                                                   "properties":  {
+                                                                                      "session_id":  {
+                                                                                                         "type":  "string",
+                                                                                                         "title":  "Session Id"
+                                                                                                     },
+                                                                                      "n_samples":  {
+                                                                                                        "type":  "integer",
+                                                                                                        "maximum":  100.0,
+                                                                                                        "minimum":  10.0,
+                                                                                                        "title":  "N Samples",
+                                                                                                        "description":  "Number of cutting planes along the centreline (more = finer).",
+                                                                                                        "default":  40
+                                                                                                    }
+                                                                                  },
+                                                                   "type":  "object",
+                                                                   "required":  [
+                                                                                    "session_id"
+                                                                                ],
+                                                                   "title":  "CrossSectionRequest",
+                                                                   "description":  "Request to analyse cross-sections along the previously-extracted centreline."
+                                                               },
+                                       "CrossSectionResult":  {
+                                                                  "properties":  {
+                                                                                     "arc_positions_mm":  {
+                                                                                                              "items":  {
+                                                                                                                            "type":  "number"
+                                                                                                                        },
+                                                                                                              "type":  "array",
+                                                                                                              "title":  "Arc Positions Mm",
+                                                                                                              "description":  "Sample positions along the centreline"
+                                                                                                          },
+                                                                                     "diameters_mm":  {
+                                                                                                          "items":  {
+                                                                                                                        "type":  "number"
+                                                                                                                    },
+                                                                                                          "type":  "array",
+                                                                                                          "title":  "Diameters Mm",
+                                                                                                          "description":  "Equivalent-circle diameter at each position"
+                                                                                                      },
+                                                                                     "mean_diameter_mm":  {
+                                                                                                              "type":  "number",
+                                                                                                              "title":  "Mean Diameter Mm"
+                                                                                                          },
+                                                                                     "median_diameter_mm":  {
+                                                                                                                "type":  "number",
+                                                                                                                "title":  "Median Diameter Mm"
+                                                                                                            },
+                                                                                     "min_diameter_mm":  {
+                                                                                                             "type":  "number",
+                                                                                                             "title":  "Min Diameter Mm"
+                                                                                                         },
+                                                                                     "max_diameter_mm":  {
+                                                                                                             "type":  "number",
+                                                                                                             "title":  "Max Diameter Mm"
+                                                                                                         },
+                                                                                     "mean_area_mm2":  {
+                                                                                                           "type":  "number",
+                                                                                                           "title":  "Mean Area Mm2"
+                                                                                                       },
+                                                                                     "stenosis_ratio":  {
+                                                                                                            "type":  "number",
+                                                                                                            "title":  "Stenosis Ratio",
+                                                                                                            "description":  "min_area / median_area (1.0 = uniform)"
+                                                                                                        },
+                                                                                     "stenosis_pct":  {
+                                                                                                          "type":  "number",
+                                                                                                          "title":  "Stenosis Pct",
+                                                                                                          "description":  "(1 − ratio) × 100 — narrowing at the tightest point"
+                                                                                                      },
+                                                                                     "stenosis_label":  {
+                                                                                                            "type":  "string",
+                                                                                                            "title":  "Stenosis Label",
+                                                                                                            "description":  "\u0027Sin estenosis\u0027 | \u0027Leve\u0027 | \u0027Significativa\u0027"
+                                                                                                        },
+                                                                                     "warning":  {
+                                                                                                     "anyOf":  [
+                                                                                                                   {
+                                                                                                                       "type":  "string"
+                                                                                                                   },
+                                                                                                                   {
+                                                                                                                       "type":  "null"
+                                                                                                                   }
+                                                                                                               ],
+                                                                                                     "title":  "Warning"
+                                                                                                 }
+                                                                                 },
+                                                                  "type":  "object",
+                                                                  "required":  [
+                                                                                   "arc_positions_mm",
+                                                                                   "diameters_mm",
+                                                                                   "mean_diameter_mm",
+                                                                                   "median_diameter_mm",
+                                                                                   "min_diameter_mm",
+                                                                                   "max_diameter_mm",
+                                                                                   "mean_area_mm2",
+                                                                                   "stenosis_ratio",
+                                                                                   "stenosis_pct",
+                                                                                   "stenosis_label"
+                                                                               ],
+                                                                  "title":  "CrossSectionResult",
+                                                                  "description":  "Cross-sectional diameter profile along the vessel + stenosis estimate."
+                                                              },
                                        "DecisionFactor":  {
                                                               "properties":  {
                                                                                  "name":  {

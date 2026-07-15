@@ -4,12 +4,14 @@
 
 import { useState } from "react";
 import { api } from "../../api/client";
-import type { CenterlineResult } from "../../api/types";
+import type { CenterlineResult, CrossSectionResult } from "../../api/types";
+import { Badge } from "../Badge";
 import { Button } from "../Button";
 import { Icon } from "../Icon";
 import { Metric } from "../Metric";
 import { PanelHead, ErrorNote, SectionLabel } from "../PanelHead";
 import { ProgressBar } from "../ProgressBar";
+import { DiameterChart } from "./DiameterChart";
 import { usePlanning } from "../../store/planning";
 
 const RESOLUTIONS = [
@@ -39,6 +41,10 @@ export function CenterlinePanel() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CenterlineResult | null>(null);
 
+  const [samples, setSamples] = useState(40);
+  const [xsBusy, setXsBusy] = useState(false);
+  const [xs, setXs] = useState<CrossSectionResult | null>(null);
+
   const hasMesh = !!segmentation?.mesh_url;
   const ready = hasMesh && !!clSource && !!clTarget && !busy;
 
@@ -54,6 +60,7 @@ export function CenterlinePanel() {
         voxel_size_mm: Number(voxel),
       });
       setResult(res);
+      setXs(null);
       setCenterlineMesh(res.centerline_mesh_url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error extrayendo la línea central");
@@ -62,14 +69,32 @@ export function CenterlinePanel() {
     }
   };
 
+  const analyzeCrossSection = async () => {
+    if (!sessionId) return;
+    setXsBusy(true);
+    setError(null);
+    try {
+      const res = await api.crossSection(sessionId, { session_id: sessionId, n_samples: samples });
+      setXs(res);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error analizando secciones");
+    } finally {
+      setXsBusy(false);
+    }
+  };
+
   const clear = () => {
     setResult(null);
+    setXs(null);
     setError(null);
     setClSource(null);
     setClTarget(null);
     setPickMode(null);
     setCenterlineMesh(null);
   };
+
+  const stenosisVariant = (label: string): "success" | "warning" | "destructive" =>
+    label === "Significativa" ? "destructive" : label === "Leve" ? "warning" : "success";
 
   const pickBtn = (which: "cl_source" | "cl_target", label: string, done: boolean) => {
     const active = pickMode === which;
@@ -170,6 +195,43 @@ export function CenterlinePanel() {
               <span>{result.warning}</span>
             </div>
           )}
+
+          {/* ── Cross-section analysis (Feature 2) ────────────────────── */}
+          <div style={{ marginTop: 20 }}>
+            <SectionLabel>Sección transversal</SectionLabel>
+            <div style={{ fontSize: 12, color: "var(--muted-foreground)", margin: "6px 0 10px", lineHeight: 1.5 }}>
+              Corta el vaso con planos perpendiculares a la línea central y mide el
+              área en cada uno (Ø equivalente + estenosis).
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+              <span style={{ fontSize: 12, color: "var(--muted-foreground)" }}>Muestras</span>
+              <input
+                type="range" min={10} max={80} step={5} value={samples}
+                onChange={(e) => setSamples(Number(e.target.value))}
+                disabled={xsBusy} style={{ flex: 1, accentColor: "var(--brand-mist)" }}
+              />
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, width: 24, textAlign: "right" }}>{samples}</span>
+            </div>
+            <Button variant="outline" style={{ width: "100%" }} disabled={xsBusy} onClick={() => void analyzeCrossSection()} leadingIcon={<Icon name="RULER" />}>
+              {xsBusy ? "Analizando…" : "Analizar secciones"}
+            </Button>
+            {xsBusy && <div style={{ marginTop: 10 }}><ProgressBar /></div>}
+
+            {xs && (
+              <div style={{ marginTop: 12 }}>
+                <Metric label="Ø medio" value={xs.mean_diameter_mm.toFixed(2)} unit=" mm" />
+                <Metric label="Ø mediana" value={xs.median_diameter_mm.toFixed(2)} unit=" mm" />
+                <Metric label="Ø mínimo" value={xs.min_diameter_mm.toFixed(2)} unit=" mm" />
+                <Metric label="Ø máximo" value={xs.max_diameter_mm.toFixed(2)} unit=" mm" />
+                <div style={{ display: "flex", alignItems: "center", padding: "9px 0" }}>
+                  <span style={{ fontSize: 13, color: "var(--muted-foreground)", flex: 1 }}>Estenosis</span>
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 14, marginRight: 10 }}>{xs.stenosis_pct.toFixed(0)} %</span>
+                  <Badge variant={stenosisVariant(xs.stenosis_label)}>{xs.stenosis_label}</Badge>
+                </div>
+                <DiameterChart arc={xs.arc_positions_mm} diameters={xs.diameters_mm} meanDiameter={xs.mean_diameter_mm} />
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

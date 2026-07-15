@@ -97,3 +97,29 @@ class TestCenterline:
                   "tortuosity", "tortuosity_index_pct", "mean_diameter_mm",
                   "min_diameter_mm", "max_diameter_mm"):
             assert k in r.json(), f"missing {k}"
+
+
+class TestCrossSection:
+    def test_requires_centerline_first(self):
+        sid = _session_with_vessel()
+        r = client.post(f"/api/cross-section/{sid}", json={"session_id": "x", "n_samples": 30})
+        assert r.status_code == 409  # centerline not extracted yet
+
+    def test_straight_tube_profile(self):
+        sid = _session_with_vessel()
+        # Extract the centreline (writes centerline_points.npz) …
+        assert client.post(f"/api/centerline/{sid}", json=_body(0, 0, 3, 0, 0, 37)).status_code == 200
+        # … then analyse cross-sections along it.
+        r = client.post(f"/api/cross-section/{sid}", json={"session_id": "x", "n_samples": 30})
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert len(d["diameters_mm"]) == len(d["arc_positions_mm"])
+        assert len(d["diameters_mm"]) >= 4
+        # Uniform 2 mm radius tube → ~4 mm diameter, negligible stenosis.
+        assert 3.0 <= d["mean_diameter_mm"] <= 5.5
+        assert d["stenosis_pct"] < 25.0
+        assert d["stenosis_label"] == "Sin estenosis"
+
+    def test_missing_session(self):
+        r = client.post("/api/cross-section/nope", json={"session_id": "x", "n_samples": 30})
+        assert r.status_code == 404
