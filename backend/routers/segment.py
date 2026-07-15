@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
+import time
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from pathlib import Path
 
+import numpy as np
 from fastapi import APIRouter, HTTPException
 
 from models import AutoThresholdResult, SegmentRequest, SegmentResult
@@ -24,6 +27,32 @@ router = APIRouter(prefix="/api", tags=["segmentation"])
 
 # Thread-pool for CPU-bound DICOM + VTK work (keeps the event loop free)
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="seg-worker")
+
+# Cap the largest volume axis fed to Marching Cubes. Larger volumes are
+# integer-downsampled so segmentation stays responsive (a 384³ 3DRA drops from
+# ~5 min / 2.7M verts to ~30 s / 460k verts). The MPR viewer keeps the full-res
+# volume — only the mesh is coarsened, mirroring the desktop's preview downsample.
+_SEG_MAX_AXIS = 256
+
+
+def _maybe_downsample(
+    volume: np.ndarray,
+    spacing: tuple[float, float, float],
+) -> tuple[np.ndarray, tuple[float, float, float], int]:
+    """Integer-downsample the volume if its largest axis exceeds _SEG_MAX_AXIS.
+
+    Returns (volume, spacing, factor). factor == 1 means no change.
+    """
+    factor = max(1, math.ceil(max(volume.shape) / _SEG_MAX_AXIS))
+    if factor <= 1:
+        return volume, spacing, 1
+    ds = np.ascontiguousarray(volume[::factor, ::factor, ::factor])
+    sp = (spacing[0] * factor, spacing[1] * factor, spacing[2] * factor)
+    logger.info(
+        "Downsampling volume %s -> %s (factor %d) for segmentation",
+        volume.shape, ds.shape, factor,
+    )
+    return ds, sp, factor
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────── #
@@ -197,12 +226,15 @@ def _run_segmentation_sync(
         keep_top_n=          0,     # use min_component_verts, not top-N
     )
 
+    # ── Downsample very large volumes so segmentation stays responsive ────── #
+    seg_volume, seg_spacing, ds_factor = _maybe_downsample(dcm.volume, dcm.spacing)
+
     # ── Run marching cubes ────────────────────────────────────────────────── #
     logger.info(
-        "Running marching cubes: lower=%.0f upper=%.0f smooth=%d cleanup=%d shape=%s",
-        lower, upper, smooth_iters, cleanup_verts, dcm.volume.shape,
+        "Running marching cubes: lower=%.0f upper=%.0f smooth=%d cleanup=%d shape=%s (ds=%d)",
+        lower, upper, smooth_iters, cleanup_verts, seg_volume.shape, ds_factor,
     )
-    seg_result = pipeline.run(dcm.volume, dcm.spacing)
+    seg_result = pipeline.run(seg_volume, seg_spacing)
 
     # ── Write VTP mesh ────────────────────────────────────────────────────── #
     vtp_name = "vessel_tree.vtp"
@@ -210,6 +242,10 @@ def _run_segmentation_sync(
     write_vtp(seg_result.poly_data, vtp_path)
 
     url = mesh_url(session_id, vtp_name)
+    # The .vtp filename is reused on every re-segmentation, so append a
+    # generation token to the URL returned to the client — otherwise the
+    # browser/vtk.js serves the previous mesh from cache (304 Not Modified).
+    url_versioned = f"{url}?v={int(time.time() * 1000)}"
 
     # ── Persist metadata to session state ─────────────────────────────────── #
     write_state(session_id, "seg.mesh_url",       url)
@@ -233,7 +269,7 @@ def _run_segmentation_sync(
     )
 
     return SegmentResult(
-        mesh_url=       url,
+        mesh_url=       url_versioned,
         voxel_fraction= vf,
         strategy=       strategy,
         is_dsa=         is_dsa,

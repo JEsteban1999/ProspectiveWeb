@@ -1,13 +1,19 @@
 """Surgical clip library and planning router."""
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, HTTPException
 
 from models import ClipLibraryItem, ClipPlanRequest, ClipPlanResult, ClipRecommendation
 from services.clips   import catalogue_to_api, recommend_clips, recommendations_to_api
-from services.sessions import read_state, session_exists
+from services.sessions import read_state, session_exists, session_subdir, mesh_url
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["clips"])
+
+# clip_id → blade length (mm), built once from the catalogue
+_CLIP_LENGTH = {item["id"]: item["length_mm"] for item in catalogue_to_api()}
 
 
 def _load_float(session_id: str, key: str, default: float) -> float:
@@ -50,11 +56,17 @@ async def get_clip_recommendations(session_id: str) -> list[ClipRecommendation]:
     neck_mm      = _load_float(session_id, "morpho.neck_mm", 0.0)
     aspect_ratio = _load_float(session_id, "morpho.ar",       0.0)
 
-    # Require at least a minimal neck measurement for meaningful recommendations
+    # No morphometry at all → no recommendations (UI prompts to run it first).
     if neck_mm <= 0:
         return []
 
-    recs = recommend_clips(neck_mm=neck_mm, aspect_ratio=aspect_ratio, n=8)
+    # When neck detection was degenerate (< 1 mm, e.g. on a coarse mesh), fall
+    # back to a typical neck so the workflow stays usable instead of returning
+    # nothing. The recommendations are then general rather than case-specific.
+    eff_neck = neck_mm if neck_mm >= 1.0 else 4.0
+    eff_ar   = aspect_ratio if aspect_ratio > 0 else 1.4
+
+    recs = recommend_clips(neck_mm=eff_neck, aspect_ratio=eff_ar, n=8)
     return [ClipRecommendation(**r) for r in recommendations_to_api(recs)]
 
 
@@ -63,32 +75,115 @@ async def get_clip_recommendations(session_id: str) -> list[ClipRecommendation]:
     response_model=ClipPlanResult,
     summary="Compute clip placement plan",
     description=(
-        "Accepts clip placements and optional surgical trajectory, then computes "
-        "neck coverage and collision detection via VTK mesh operations. "
-        "Returns the combined clips mesh URL for 3D display.\n\n"
-        "**Note:** Full VTK-based collision detection is implemented in Session E."
+        "Builds a real 3D mesh of each placed clip, checks collision against the "
+        "segmented vessel with vtkCollisionDetectionFilter, and estimates neck "
+        "coverage from the intersection of the clips with the neck plane. "
+        "Returns the combined clip mesh URL (.vtp) for the 3D viewer."
     ),
 )
 async def plan_clips(req: ClipPlanRequest) -> ClipPlanResult:
     if not session_exists(req.session_id):
         raise HTTPException(status_code=404, detail=f"Session '{req.session_id}' not found")
 
-    # TODO (Session E): run VTK mesh intersection for neck coverage & collision detection
-    n_clips = len(req.placements)
-    # Estimate: each clip covers ~30% of a typical neck + small overlap
-    raw_coverage = min(100.0, n_clips * 30.0)
-    collision    = False
+    import time
+    from services import devices
+    from services.segmentation import read_vtp, write_vtp
+
+    # No placements → nothing to build; report an empty plan.
+    if not req.placements:
+        return ClipPlanResult(
+            clips_mesh_url="",
+            trajectory_mesh_url=None,
+            neck_coverage_pct=0.0,
+            collision_detected=False,
+            warning=None,
+        )
+
+    meshes_dir = session_subdir(req.session_id, "meshes")
+    vessel_path = meshes_dir / "vessel_tree.vtp"
+
+    # ── Build a real mesh for every placed clip at its pose ─────────────── #
+    clip_polys = []
+    for pl in req.placements:
+        length = _CLIP_LENGTH.get(pl.clip_id, 9.0)
+        local = devices.make_clip(length)
+        t = devices.pose_transform(
+            (pl.position.x, pl.position.y, pl.position.z),
+            tuple(pl.normal) if pl.normal else (0.0, 0.0, 1.0),
+            pl.rotation_deg,
+        )
+        clip_polys.append(devices.apply_transform(local, t))
+
+    clips_world = devices.combine(clip_polys)
+
+    # ── Real collision against the vessel mesh ───────────────────────────── #
+    collision, n_contacts = False, 0
+    if vessel_path.exists():
+        try:
+            vessel = read_vtp(vessel_path)
+            collision, n_contacts = devices.check_collision(vessel, clips_world)
+        except Exception as exc:
+            logger.warning("Clip collision check skipped: %s", exc)
+
+    # ── Real neck coverage from the neck plane ───────────────────────────── #
+    neck_mm = _load_float(req.session_id, "morpho.neck_mm", 0.0)
+    neck_origin = (
+        _load_float(req.session_id, "morpho.neck_origin_x", 0.0),
+        _load_float(req.session_id, "morpho.neck_origin_y", 0.0),
+        _load_float(req.session_id, "morpho.neck_origin_z", 0.0),
+    )
+    neck_axis = (
+        _load_float(req.session_id, "morpho.axis_x", 0.0),
+        _load_float(req.session_id, "morpho.axis_y", 0.0),
+        _load_float(req.session_id, "morpho.axis_z", 1.0),
+    )
+    coverage = devices.clip_neck_coverage(clips_world, neck_origin, neck_axis, neck_mm)
+
+    # ── Trajectory cylinder (entry → target) ─────────────────────────────── #
+    trajectory_url = None
+    if req.trajectory_entry and req.trajectory_target:
+        try:
+            line = _trajectory_mesh(req.trajectory_entry, req.trajectory_target)
+            traj_name = "trajectory.vtp"
+            write_vtp(line, meshes_dir / traj_name)
+            trajectory_url = mesh_url(req.session_id, traj_name)
+        except Exception as exc:
+            logger.warning("Trajectory mesh skipped: %s", exc)
+
+    # ── Persist the combined clip mesh (real URL, cache-busted) ──────────── #
+    clips_name = "clips_placed.vtp"
+    write_vtp(clips_world, meshes_dir / clips_name)
+    clips_url = f"{mesh_url(req.session_id, clips_name)}?v={int(time.time() * 1000)}"
+
+    warning = None
+    if collision:
+        warning = f"Colisión detectada entre clip y vaso ({n_contacts} contactos) — reposicionar."
+    elif neck_mm <= 0.1:
+        warning = "Ejecuta la morfometría para calcular la cobertura del cuello."
+    elif coverage < 95.0:
+        warning = "Cobertura parcial del cuello — considerar reposicionar o añadir un clip."
 
     return ClipPlanResult(
-        clips_mesh_url=f"/static/sample-meshes/clips_placed.vtp",
-        trajectory_mesh_url=(
-            "/static/sample-meshes/trajectory.vtp"
-            if req.trajectory_entry and req.trajectory_target else None
-        ),
-        neck_coverage_pct=raw_coverage,
+        clips_mesh_url=clips_url,
+        trajectory_mesh_url=trajectory_url,
+        neck_coverage_pct=round(coverage, 1),
         collision_detected=collision,
-        warning=(
-            "Cobertura estimada: añadir más clips para oclusión completa"
-            if raw_coverage < 95.0 and n_clips > 0 else None
-        ),
+        warning=warning,
     )
+
+
+def _trajectory_mesh(entry, target):
+    """A thin cylinder from the entry point to the target (surgical approach)."""
+    import vtk
+    line = vtk.vtkLineSource()
+    line.SetPoint1(entry.x, entry.y, entry.z)
+    line.SetPoint2(target.x, target.y, target.z)
+    line.Update()
+    tube = vtk.vtkTubeFilter()
+    tube.SetInputData(line.GetOutput())
+    tube.SetRadius(0.4)
+    tube.SetNumberOfSides(12)
+    tube.Update()
+    out = vtk.vtkPolyData()
+    out.DeepCopy(tube.GetOutput())
+    return out

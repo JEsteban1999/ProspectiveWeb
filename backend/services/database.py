@@ -70,4 +70,33 @@ def init_db() -> None:
     # Import models to register them with Base.metadata before create_all
     import services.db_models  # noqa: F401
     Base.metadata.create_all(bind=engine)
+    _migrate_user_columns()
     logger.info("Database initialised at %s", DATA_DIR / "prospective.db")
+
+
+def _migrate_user_columns() -> None:
+    """Add User columns introduced after the original schema (SQLite ADD COLUMN).
+
+    create_all() never ALTERs existing tables, so databases created before the
+    self-registration feature lack `status` and the professional-profile fields.
+    SQLite supports lightweight `ALTER TABLE ADD COLUMN`; we add any that are
+    missing so old prospective.db files keep working without a manual migration.
+    """
+    from sqlalchemy import text
+
+    new_cols = {
+        "status":          "VARCHAR(16) NOT NULL DEFAULT 'active'",
+        "national_id":     "VARCHAR(64) NOT NULL DEFAULT ''",
+        "professional_id": "VARCHAR(64) NOT NULL DEFAULT ''",
+        "specialty":       "VARCHAR(100) NOT NULL DEFAULT ''",
+        "university":      "VARCHAR(200) NOT NULL DEFAULT ''",
+        "hospital":        "VARCHAR(200) NOT NULL DEFAULT ''",
+        "position":        "VARCHAR(100) NOT NULL DEFAULT ''",
+        "orcid":           "VARCHAR(64) NOT NULL DEFAULT ''",
+    }
+    with engine.begin() as conn:
+        existing = {row[1] for row in conn.execute(text("PRAGMA table_info(users)"))}
+        for col, ddl in new_cols.items():
+            if col not in existing:
+                conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {ddl}"))
+                logger.info("Migrated users table: added column %s", col)

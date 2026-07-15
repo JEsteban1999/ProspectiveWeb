@@ -4,6 +4,9 @@ from .auth import (
     ChangePasswordRequest,
     LoginRequest,
     LoginResponse,
+    PendingUser,
+    SignupRequest,
+    SignupResponse,
     UserCreateRequest,
     UserInfo,
     UserRole,
@@ -54,6 +57,7 @@ __all__ = [
     # auth
     "ChangePasswordRequest", "LoginRequest", "LoginResponse",
     "UserCreateRequest", "UserInfo", "UserRole",
+    "SignupRequest", "SignupResponse", "PendingUser",
     # clips
     "ClipLibraryItem", "ClipPlacement", "ClipPlanRequest",
     "ClipPlanResult", "ClipRecommendation",

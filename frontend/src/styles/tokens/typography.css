@@ -1,0 +1,40 @@
+/* ============================================================================
+   PROSPECTIVE — Typography tokens
+   Family: Inter (bundled). Mono: JetBrains Mono for metrics/measurements.
+   Hierarchy is expressed with size + weight, never color. Titles use 800.
+   Source: resources/IDENTIDAD_VISUAL.md §3
+   ============================================================================ */
+
+:root {
+  /* ---- Families ---- */
+  --font-sans: "Inter", "Segoe UI Symbol", "Segoe UI", "Helvetica Neue",
+    "Arial Unicode MS", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* ---- Weights ---- */
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+  --weight-extra:    800;
+
+  /* ---- Type scale (px) — from the app's role scale ---- */
+  --text-hero:    22px;  /* login / hero title, weight 800 */
+  --text-page:    18px;  /* page title, weight 800 */
+  --text-section: 16px;  /* section title, weight 600 */
+  --text-body:    14px;  /* body / UI, weight 400 */
+  --text-desc:    13px;  /* description, muted */
+  --text-label:   11px;  /* small uppercase label, weight 600 */
+  --text-micro:    9px;  /* dock titles, badges, meta */
+
+  /* ---- Line heights ---- */
+  --leading-tight:  1.15;
+  --leading-normal: 1.45;
+  --leading-relaxed: 1.6;
+
+  /* ---- Letter spacing ---- */
+  --tracking-title:  -0.02em;  /* tight tracking on titles */
+  --tracking-normal:  0;
+  --tracking-label:   0.08em;  /* uppercase small labels */
+  --tracking-wide:    0.12em;  /* dock / nav caps */
+}

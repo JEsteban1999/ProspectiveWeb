@@ -1,0 +1,6 @@
+/* PROSPECTIVE Web — global stylesheet entry point (imports only) */
+@import "./tokens/fonts.css";
+@import "./tokens/colors.css";
+@import "./tokens/typography.css";
+@import "./tokens/spacing.css";
+@import "./base.css";

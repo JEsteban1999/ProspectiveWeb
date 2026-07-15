@@ -49,3 +49,43 @@ class UserCreateRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str = Field(..., min_length=8)
+
+
+# ── Self-registration + admin approval ─────────────────────────────────────── #
+
+class SignupRequest(BaseModel):
+    """Public self-registration — creates a pending account for admin review."""
+
+    username: str = Field(..., min_length=3, description="Desired username")
+    password: str = Field(..., min_length=8, description="Password (min 8 chars)")
+    full_name: str = Field(..., min_length=1, description="Full professional name")
+
+    # Optional professional profile (shown to the admin during review)
+    national_id: str = Field("", description="National ID / cédula")
+    professional_id: str = Field("", description="Professional licence ID")
+    specialty: str = Field("", description="Medical specialty")
+    university: str = Field("", description="Affiliated university")
+    hospital: str = Field("", description="Hospital / centre")
+    position: str = Field("", description="Role / position")
+    orcid: str = Field("", description="ORCID identifier")
+
+
+class SignupResponse(BaseModel):
+    status: str = Field(..., description="Always 'pending' on success")
+    message: str = Field(..., description="Human-readable confirmation for the UI")
+
+
+class PendingUser(BaseModel):
+    """One pending registration request, shown in the admin approval panel."""
+
+    id: int
+    username: str
+    full_name: str
+    national_id: str = ""
+    professional_id: str = ""
+    specialty: str = ""
+    university: str = ""
+    hospital: str = ""
+    position: str = ""
+    orcid: str = ""
+    created_at: str = Field(..., description="ISO-8601 timestamp of the request")

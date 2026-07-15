@@ -10,6 +10,7 @@ Interactive API docs:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -21,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from routers import (
     upload, segment, detect, perforators, plan, progress,
     auth, patients, treatment, clips, coils, longitudinal,
-    report, session_state,
+    report, session_state, mpr, phases,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,20 +30,45 @@ logger = logging.getLogger(__name__)
 
 # ── Lifespan ──────────────────────────────────────────────────────────────── #
 
+async def _purge_loop(interval_sec: int = 3600) -> None:
+    """Background task: purge expired session directories every `interval_sec`."""
+    from services.sessions import purge_expired_sessions
+    while True:
+        try:
+            await asyncio.sleep(interval_sec)
+            await asyncio.to_thread(purge_expired_sessions)
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:  # never let the loop die on a transient error
+            logger.warning("Session purge loop error: %s", exc)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):  # noqa: ARG001
-    """Initialise SQLite DB tables and seed the default admin account on startup."""
+    """Initialise DB, seed admin, purge stale sessions, start the purge loop."""
     from services.database import init_db, SessionLocal
     from services.auth_service import seed_default_user
+    from services.sessions import purge_expired_sessions
     init_db()
     db = SessionLocal()
     try:
         seed_default_user(db)
     finally:
         db.close()
-    logger.info("Startup complete — database ready")
-    yield
-    # Teardown (nothing required for SQLite)
+
+    # Reclaim disk from sessions left over past their TTL, then keep purging.
+    freed = await asyncio.to_thread(purge_expired_sessions)
+    logger.info("Startup complete — database ready (purged %d stale session(s))", freed)
+
+    purge_task = asyncio.create_task(_purge_loop())
+    try:
+        yield
+    finally:
+        purge_task.cancel()
+        try:
+            await purge_task
+        except asyncio.CancelledError:
+            pass
 
 
 # ── App ───────────────────────────────────────────────────────────────────── #
@@ -58,7 +84,7 @@ app = FastAPI(
     ),
     version="0.1.0",
     contact={
-        "name": "Universidad de Navarra — Laboratorio de Imagen Médica",
+        "name": "UniNavarra — Laboratorio de Imagen Médica",
         "email": "juesnaca99@gmail.com",
     },
     license_info={"name": "Proprietary"},
@@ -113,6 +139,8 @@ app.include_router(plan.router)
 app.include_router(report.router)
 app.include_router(session_state.router)
 app.include_router(progress.router)
+app.include_router(mpr.router)
+app.include_router(phases.router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────── #

@@ -28,6 +28,39 @@ router = APIRouter(prefix="/api", tags=["detection"])
 
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="det-worker")
 
+# Modalities that produce noisy 3DRA meshes needing the XA preset
+_XA_MODALITIES = {"XA", "RF", "DX", "CR", "DR"}
+
+
+def _detector_for_modality(modality: str) -> AneurysmDetector:
+    """Build the detector with the desktop app's modality preset.
+
+    Mirrors aneurysm_panel._apply_preset_xa / _apply_preset_cta: XA/3DRA meshes
+    are much noisier than CTA, so they need heavier Laplacian pre-smoothing and
+    lower curvature percentiles or the hard gates reject every real dome.
+    """
+    if modality.upper() in _XA_MODALITIES:
+        return AneurysmDetector(
+            gauss_percentile          = 60.0,
+            mean_curv_gate_percentile = 40.0,
+            min_radius_mm             = 1.5,
+            max_radius_mm             = 20.0,
+            min_points                = 4,
+            min_positive_gauss_frac   = 0.55,
+            min_sphericity            = 0.25,
+            pre_smooth_iterations     = 25,
+        )
+    return AneurysmDetector(
+        gauss_percentile          = 85.0,
+        mean_curv_gate_percentile = 75.0,
+        min_radius_mm             = 1.0,
+        max_radius_mm             = 20.0,
+        min_points                = 8,
+        min_positive_gauss_frac   = 0.60,
+        min_sphericity            = 0.35,
+        pre_smooth_iterations     = 10,
+    )
+
 
 # ── POST /detect/{session_id} ──────────────────────────────────────────────── #
 
@@ -89,7 +122,9 @@ def _run_detection_sync(
     if poly.GetNumberOfPoints() == 0:
         raise ValueError("Segmented mesh has no geometry. Re-run segmentation.")
 
-    detector   = AneurysmDetector()
+    modality   = read_state(session_id, "dicom.modality") or "CT"
+    detector   = _detector_for_modality(modality)
+    logger.info("Detection preset for modality %s", modality)
     det_result = detector.detect(poly)
 
     pyd_candidates: list[PydAneurysmCandidate] = []
@@ -215,11 +250,37 @@ def _run_morphometry_sync(
     analyzer = MorphometricAnalyzer()
     mr       = analyzer.analyze(poly)
 
+    # ── Size Ratio: estimate the parent-artery diameter from the full vessel ─ #
+    # SR = max_aneurysm_diameter / parent_artery_diameter (Dhar 2008). Requires
+    # the whole vascular tree (the candidate mesh alone is not enough).
+    vessel_path = vtp_path.parent / "vessel_tree.vtp"
+    if vessel_path.exists():
+        try:
+            from services.parent_artery import estimate_parent_artery_diameter
+            vessel = read_vtp(vessel_path)
+            parent_dia = estimate_parent_artery_diameter(
+                vessel, mr.centroid, mr.principal_axis,
+                mr.neck_diameter_mm, mr.neck_plane_pos,
+            )
+            if parent_dia > 0.1:
+                mr.size_ratio = mr.max_diameter_mm / parent_dia
+                write_state(session_id, "morpho.parent_artery_mm", str(round(parent_dia, 3)))
+                logger.info("SR = %.2f (parent Ø %.2f mm)", mr.size_ratio, parent_dia)
+        except Exception as exc:
+            logger.warning("Parent-artery / SR estimation skipped: %s", exc)
+
     # ── Neck origin (for perforator router) ───────────────────────────── #
     neck_origin = neck_origin_from_morpho(mr, poly)
     write_state(session_id, "morpho.neck_origin_x",  str(neck_origin[0]))
     write_state(session_id, "morpho.neck_origin_y",  str(neck_origin[1]))
     write_state(session_id, "morpho.neck_origin_z",  str(neck_origin[2]))
+
+    # Principal (neck→dome) axis — used as the neck-plane normal by the device
+    # planning endpoints (clip coverage, stent orientation).
+    axis = mr.principal_axis or (0.0, 0.0, 1.0)
+    write_state(session_id, "morpho.axis_x", str(axis[0]))
+    write_state(session_id, "morpho.axis_y", str(axis[1]))
+    write_state(session_id, "morpho.axis_z", str(axis[2]))
 
     # ── Persist key morphometry for longitudinal comparison ───────────── #
     write_state(session_id, "morpho.max_diameter_mm", str(mr.max_diameter_mm))
@@ -241,6 +302,26 @@ def _run_morphometry_sync(
             "DNR, AR y BF son poco fiables. Ajuste manualmente si es posible."
         )
 
+    # ── Clamp shape indices to physical range ─────────────────────────── #
+    # Candidate domes are open surface patches, not closed volumes;
+    # vtkMassProperties on an open mesh can yield sphericity > 1 or EI < 0.
+    # The desktop dataclass shows these raw values; our API contract enforces
+    # [0, 1], so clamp and flag the mesh as unreliable instead of erroring.
+    def _clamp01(v: float) -> float:
+        return min(1.0, max(0.0, v))
+
+    indices_out_of_range = (
+        not (0.0 <= mr.compactness <= 1.0)
+        or not (0.0 <= mr.ellipticity_index <= 1.0)
+        or not (0.0 <= mr.undulation_index <= 1.0)
+    )
+    if indices_out_of_range:
+        note = (
+            "Índices de forma fuera de rango físico (malla de domo abierta) — "
+            "compacidad/EI/UI acotados a [0, 1]; interpretar con cautela."
+        )
+        warning = f"{warning} {note}" if warning else note
+
     # ── Map desktop dataclass → Pydantic model ────────────────────────── #
     return MorphometryResult(
         volume_mm3        = round(mr.volume_mm3,        2),
@@ -254,11 +335,11 @@ def _run_morphometry_sync(
         dnr               = round(mr.dome_to_neck_ratio, 3),
         ar                = round(mr.aspect_ratio,       3),
         bf                = round(mr.bottleneck_factor,  3),
-        compactness       = round(mr.compactness,        4),
-        ui                = round(mr.undulation_index,   4),
-        ei                = round(mr.ellipticity_index,  4),
-        nsi               = round(mr.non_sphericity_idx, 4),
-        sr                = round(mr.size_ratio,         3),
+        compactness       = round(_clamp01(mr.compactness),        4),
+        ui                = round(_clamp01(mr.undulation_index),   4),
+        ei                = round(_clamp01(mr.ellipticity_index),  4),
+        nsi               = round(_clamp01(mr.non_sphericity_idx), 4),
+        sr                = round(max(0.0, mr.size_ratio),         3),
         rupture_risk_label= mr.rupture_risk_label,
         neck_valid        = neck_valid,
         warning           = warning,

@@ -83,6 +83,8 @@ def scan_series(dicom_dir: Path) -> list[dict]:
             except Exception as exc:
                 logger.warning("Fallback metadata read failed: %s", exc)
 
+    # Sort: real 3D volumes first (more slices = more useful for planning)
+    results.sort(key=lambda r: int(r.get("n_slices", 0)), reverse=True)
     return results
 
 
@@ -126,6 +128,15 @@ def load_series(series_uid: str, dicom_dir: Path) -> DicomLoadResult:
         raise FileNotFoundError(
             f"No DICOM files found for series '{series_uid}' in {dicom_dir}"
         )
+
+    # Single file → read directly with sitk.ReadImage so multi-frame files
+    # (Enhanced XA / Enhanced CT-MR) load every frame as a 3-D volume.
+    # ImageSeriesReader treats one file as one slice and would drop the frames.
+    # Mirrors DICOMLoader._read_single_file in the desktop app.
+    if len(file_names) == 1:
+        logger.info("Single-file load (multi-frame aware): %s", file_names[0])
+        image = sitk.ReadImage(file_names[0])
+        return _image_to_result(image, Path(file_names[0]), series_uid)
 
     reader.SetFileNames(file_names)
     reader.MetaDataDictionaryArrayUpdateOn()
@@ -296,6 +307,17 @@ def _extract_metadata(dcm_path: Path, n_slices: int) -> dict:
                     sz = float(st2)
         except Exception:
             pass
+
+    # Multi-frame files (Enhanced XA/CT/MR): one .dcm holds the whole volume.
+    # The real slice count is NumberOfFrames, not the file count — the desktop
+    # app gets this for free by loading pixels (volume.shape[0]); here we only
+    # read headers, so honour the tag explicitly.
+    try:
+        n_frames = int(getattr(ds, "NumberOfFrames", 1) or 1)
+    except Exception:
+        n_frames = 1
+    if n_frames > 1:
+        n_slices = max(n_slices, n_frames) if n_slices > 1 else n_frames
 
     return dict(
         patient_name=       _str("PatientName"),

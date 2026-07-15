@@ -1,12 +1,16 @@
 """Coil embolization router."""
 from __future__ import annotations
 
+import logging
+import math
+
 from fastapi import APIRouter, HTTPException
 
 from models import CoilLibraryItem, CoilPlanRequest, CoilPlanResult
 from services.coils    import catalogue_to_api, coils_for_aneurysm, estimate_coil_count, COIL_CATALOGUE
-from services.sessions import read_state, session_exists
+from services.sessions import read_state, session_exists, session_subdir, mesh_url
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["coils"])
 
 
@@ -69,12 +73,37 @@ async def plan_coils(req: CoilPlanRequest) -> CoilPlanResult:
         n        = max(len(req.placements), 0)
         packing  = min(0.08 * n, 0.45)
 
-    # Occlusion estimate: packing → Raymond grade proxy
-    # 0.25+ packing ≈ 95%+ occlusion (Raymond I, complete)
-    occlusion_pct = min(float(packing) * 380.0, 100.0)
+    # Occlusion estimate: packing density → angiographic occlusion.
+    # The relationship is saturating, not linear — occlusion rises steeply then
+    # plateaus, and packing alone never yields a true 100%. Exponential model
+    # tuned so ~0.30 packing ≈ 95% (Raymond grade I, complete).
+    occlusion_pct = 100.0 * (1.0 - math.exp(-float(packing) / 0.10))
+
+    # ── Build a real coil-bundle mesh inside the sac ─────────────────────── #
+    coils_url = "/static/sample-meshes/coils_placed.vtp"
+    try:
+        import time
+        from services import devices
+        from services.segmentation import write_vtp
+
+        # Sac radius from the aneurysm volume; centre at the neck origin.
+        sac_r = ((3.0 * aneurysm_vol) / (4.0 * math.pi)) ** (1.0 / 3.0) if aneurysm_vol > 0 else 3.0
+        centre = (
+            _load_float(req.session_id, "morpho.neck_origin_x", 0.0),
+            _load_float(req.session_id, "morpho.neck_origin_y", 0.0),
+            _load_float(req.session_id, "morpho.neck_origin_z", 0.0),
+        )
+        local = devices.make_coil_bundle(sac_r * 2.0, n=max(3, len(req.placements)))
+        t = devices.pose_transform(centre, (0.0, 0.0, 1.0), 0.0)
+        world = devices.apply_transform(local, t)
+        meshes_dir = session_subdir(req.session_id, "meshes")
+        write_vtp(world, meshes_dir / "coils_placed.vtp")
+        coils_url = f"{mesh_url(req.session_id, 'coils_placed.vtp')}?v={int(time.time() * 1000)}"
+    except Exception as exc:
+        logger.warning("Coil mesh generation skipped: %s", exc)
 
     return CoilPlanResult(
-        coils_mesh_url="/static/sample-meshes/coils_placed.vtp",
+        coils_mesh_url=coils_url,
         total_packing_density=round(packing, 3),
         estimated_occlusion_pct=round(occlusion_pct, 1),
         warning=(

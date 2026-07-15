@@ -70,14 +70,101 @@ def get_user_by_username(db: Session, username: str) -> User | None:
     return db.query(User).filter(User.username == username, User.is_active == True).first()
 
 
+class AuthError(Exception):
+    """Raised on login when the account exists but cannot sign in (pending/rejected)."""
+
+
 def authenticate_user(db: Session, username: str, password: str) -> User | None:
-    """Return User on success, None on bad credentials."""
-    user = get_user_by_username(db, username)
+    """Return User on success, None on bad credentials.
+
+    Raises AuthError with a user-facing message when the account exists but its
+    status blocks login (pending approval / rejected).
+    """
+    # Look up regardless of is_active so we can explain *why* login is blocked.
+    user = db.query(User).filter(User.username == username.strip()).first()
     if user is None:
         return None
     if not verify_password(password, user.hashed_password):
         return None
+
+    status_val = getattr(user, "status", User.STATUS_ACTIVE)
+    if status_val == User.STATUS_PENDING:
+        raise AuthError(
+            "Tu cuenta está pendiente de aprobación. Un administrador debe "
+            "activarla antes de que puedas iniciar sesión."
+        )
+    if status_val == User.STATUS_REJECTED:
+        raise AuthError("Tu solicitud de registro fue rechazada. Contacta al administrador.")
+    if not user.is_active:
+        raise AuthError("Cuenta desactivada. Contacta al administrador.")
     return user
+
+
+# ── Self-registration + admin approval ─────────────────────────────────────── #
+
+def create_pending_user(db: Session, **fields) -> tuple[User | None, str]:
+    """Create a pending (inactive) account from a self-registration request."""
+    username = str(fields.get("username", "")).strip()
+    password = str(fields.get("password", ""))
+    if len(username) < 3:
+        return None, "El nombre de usuario debe tener al menos 3 caracteres."
+    if len(password) < 8:
+        return None, "La contraseña debe tener al menos 8 caracteres."
+    if db.query(User).filter(User.username == username).first() is not None:
+        return None, f"El usuario '{username}' ya existe."
+
+    user = User(
+        username        = username,
+        hashed_password = get_password_hash(password),
+        full_name       = str(fields.get("full_name", "")).strip(),
+        role            = "medico",
+        institution     = str(fields.get("hospital", "")).strip(),
+        is_active       = False,
+        status          = User.STATUS_PENDING,
+        national_id     = str(fields.get("national_id", "")).strip(),
+        professional_id = str(fields.get("professional_id", "")).strip(),
+        specialty       = str(fields.get("specialty", "")).strip(),
+        university       = str(fields.get("university", "")).strip(),
+        hospital        = str(fields.get("hospital", "")).strip(),
+        position        = str(fields.get("position", "")).strip(),
+        orcid           = str(fields.get("orcid", "")).strip(),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    logger.info("Signup request created: %s (%s)", username, user.specialty)
+    return user, ""
+
+
+def get_pending_users(db: Session) -> list[User]:
+    return (
+        db.query(User)
+        .filter(User.status == User.STATUS_PENDING)
+        .order_by(User.created_at)
+        .all()
+    )
+
+
+def approve_user(db: Session, user_id: int) -> tuple[bool, str]:
+    user = db.get(User, user_id)
+    if user is None:
+        return False, "Usuario no encontrado."
+    user.is_active = True
+    user.status = User.STATUS_ACTIVE
+    db.commit()
+    logger.info("User approved: %s", user.username)
+    return True, ""
+
+
+def reject_user(db: Session, user_id: int) -> tuple[bool, str]:
+    user = db.get(User, user_id)
+    if user is None:
+        return False, "Usuario no encontrado."
+    user.status = User.STATUS_REJECTED
+    user.is_active = False
+    db.commit()
+    logger.info("User rejected: %s", user.username)
+    return True, ""
 
 
 # ── JWT creation / parsing ─────────────────────────────────────────────────── #
@@ -146,6 +233,18 @@ def require_user(
     return user
 
 
+def require_admin(
+    user: Annotated[User, Depends(require_user)],
+) -> User:
+    """Dependency that enforces the admin role.  Raises HTTP 403 otherwise."""
+    if user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Se requieren permisos de administrador.",
+        )
+    return user
+
+
 # ── DB seeding ─────────────────────────────────────────────────────────────── #
 
 def seed_default_user(db: Session) -> None:
@@ -161,7 +260,7 @@ def seed_default_user(db: Session) -> None:
         hashed_password = get_password_hash("admin123"),
         full_name       = "Administrador",
         role            = "admin",
-        institution     = "Clinica Universidad de Navarra",
+        institution     = "Clinica UniNavarra",
     )
     db.add(admin)
     db.commit()

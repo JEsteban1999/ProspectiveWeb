@@ -48,7 +48,7 @@ class PatientInfo:
     dob: str = ""
     study_date: str = ""
     study_id: str = ""
-    institution: str = "Clínica Universidad de Navarra"
+    institution: str = "Clínica UniNavarra"
     surgeon: str = ""
     notes: str = ""
 
@@ -179,7 +179,7 @@ def build_report_data_from_session(
         id          = hospital_id   or db_hospital_id   or "",
         dob         = patient_dob   or db_dob           or "",
         study_date  = datetime.now().strftime("%Y-%m-%d"),
-        institution = institution   or db_institution   or "Clínica Universidad de Navarra",
+        institution = institution   or db_institution   or "Clínica UniNavarra",
         surgeon     = surgeon_name,
         notes       = clinical_notes,
     )

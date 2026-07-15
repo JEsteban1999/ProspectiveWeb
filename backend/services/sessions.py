@@ -6,15 +6,26 @@ Sessions are cleaned up automatically after SESSION_TTL_HOURS hours.
 """
 from __future__ import annotations
 
+import logging
+import os
 import shutil
 import time
 import uuid
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 # ── Configuration ─────────────────────────────────────────────────────────── #
 
-SESSIONS_ROOT   = Path(__file__).resolve().parents[1] / "data" / "sessions"
-SESSION_TTL_SEC = 4 * 3600   # 4 hours — sessions older than this are purged
+SESSIONS_ROOT = Path(__file__).resolve().parents[1] / "data" / "sessions"
+
+# Sessions older than this are purged. Configurable via SESSION_TTL_HOURS
+# (defaults to 24 h, matching the documented env var in the README).
+try:
+    _TTL_HOURS = float(os.environ.get("SESSION_TTL_HOURS", "24"))
+except ValueError:
+    _TTL_HOURS = 24.0
+SESSION_TTL_SEC = int(_TTL_HOURS * 3600)
 
 # Sub-directories created inside each session folder
 _SUBDIRS = ["dicom", "meshes", "reports", "exports", "screenshots"]
@@ -102,7 +113,11 @@ def export_url(session_id: str, filename: str) -> str:
 # ── Cleanup ────────────────────────────────────────────────────────────────── #
 
 def purge_expired_sessions() -> int:
-    """Delete all sessions older than SESSION_TTL_SEC. Returns count deleted."""
+    """Delete all sessions older than SESSION_TTL_SEC. Returns count deleted.
+
+    A session with no readable `.created_at` timestamp is treated as expired so
+    stray/partial directories do not accumulate.
+    """
     if not SESSIONS_ROOT.exists():
         return 0
     deleted = 0
@@ -113,9 +128,11 @@ def purge_expired_sessions() -> int:
         ts_file = d / ".created_at"
         try:
             created = float(ts_file.read_text()) if ts_file.exists() else 0.0
-        except ValueError:
+        except (ValueError, OSError):
             created = 0.0
         if now - created > SESSION_TTL_SEC:
             shutil.rmtree(d, ignore_errors=True)
             deleted += 1
+    if deleted:
+        logger.info("Purged %d expired session(s) (TTL %.0f h)", deleted, SESSION_TTL_SEC / 3600)
     return deleted

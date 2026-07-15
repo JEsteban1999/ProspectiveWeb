@@ -1,0 +1,120 @@
+/* ============================================================================
+   PROSPECTIVE — Color tokens
+   Brand: smoke gray / cloud (#8B9BAA, hue 210). Clinical, sober, neutral.
+   Light is the default; dark applies under [data-theme="dark"].
+   Source of truth: resources/IDENTIDAD_VISUAL.md §2 + prospective/ui/themes.py
+   ============================================================================ */
+
+:root {
+  /* ---- Brand scale (theme-independent reference) ---- */
+  --brand-smoke:        #8B9BAA;   /* primary / ring — smoke gray */
+  --brand-mist:         #A8B8C6;   /* lighter — dark-theme primary */
+  --brand-slate:        #6A8399;   /* primary hover (light) */
+  --brand-steel:        #4E6678;   /* pressed / hover (dark) */
+  --brand-deep:         #2E4A5F;   /* accent foreground */
+  --brand-ink:          #1C303F;   /* deep panel bg (dark) */
+
+  /* ---- Surfaces ---- */
+  --background:         #FFFFFF;   /* elevated window / heroic surfaces */
+  --canvas:             #F4F7FA;   /* app canvas behind cards */
+  --foreground:         #0D0D0D;
+  --card:               #F7F7F7;
+  --card-foreground:    #0D0D0D;
+  --popover:            #FFFFFF;
+  --popover-foreground: #0D0D0D;
+
+  /* ---- Brand / interaction ---- */
+  --primary:            #8B9BAA;
+  --primary-foreground: #1C1C1C;
+  --primary-hover:      #6A8399;
+  --secondary:          #F2F2F2;
+  --secondary-foreground: #1C1C1C;
+  --muted:              #F2F2F2;
+  --muted-foreground:   #6B6B6B;
+  --accent:             #DDE5EC;
+  --accent-foreground:  #2E4A5F;
+
+  /* Brand-subtle: filled primary panels / toggled state */
+  --brand-subtle:       #DDE5EC;
+  --brand-subtle-foreground: #2E4A5F;
+
+  /* ---- Status ---- */
+  --destructive:        #D7263D;
+  --destructive-foreground: #FFFFFF;
+  --success:            #15803D;
+  --success-bg:         #DCFCE7;
+  --warning:            #92400E;
+  --warning-bg:         #FEF3C7;
+  --info:               #4E6678;
+
+  /* ---- Structure ---- */
+  --border:             #E5E5E5;
+  --input:              #E5E5E5;
+  --ring:               #8B9BAA;
+
+  /* ---- Charts / data viz ---- */
+  --chart-1:            #2A4C66;
+  --chart-2:            #3E6480;
+  --chart-3:            #8B9BAA;
+  --chart-4:            #A8B8C6;
+  --chart-5:            #305070;
+
+  /* ---- Clinical viewer (always-dark medical imaging surface) ---- */
+  --viewer-bg:          #000000;
+  --viewer-foreground:  #EBEBEB;
+
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --brand-smoke:        #8B9BAA;
+  --brand-mist:         #A8B8C6;
+  --brand-slate:        #A8B8C6;
+  --brand-steel:        #4E6678;
+  --brand-deep:         #A8B8C6;
+  --brand-ink:          #1C303F;
+
+  --background:         #1F1F1F;
+  --canvas:             #1F1F1F;
+  --foreground:         #EBEBEB;
+  --card:               #2A2A2A;
+  --card-foreground:    #EBEBEB;
+  --popover:            #2A2A2A;
+  --popover-foreground: #EBEBEB;
+
+  --primary:            #A8B8C6;
+  --primary-foreground: #1C1C1C;
+  --primary-hover:      #4E6678;
+  --secondary:          #363636;
+  --secondary-foreground: #EBEBEB;
+  --muted:              #363636;
+  --muted-foreground:   #9B9B9B;
+  --accent:             #363636;
+  --accent-foreground:  #EBEBEB;
+
+  --brand-subtle:       #1C303F;
+  --brand-subtle-foreground: #A8B8C6;
+
+  --destructive:        #E85A6A;
+  --destructive-foreground: #1F1F1F;
+  --success:            #3FB950;
+  --success-bg:         #14351C;
+  --warning:            #E3B341;
+  --warning-bg:         #33280C;
+  --info:               #A8B8C6;
+
+  --border:             #363636;
+  --input:              #363636;
+  --ring:               #8B9BAA;
+
+  --chart-1:            #C0D2E0;
+  --chart-2:            #A4BCD0;
+  --chart-3:            #8B9BAA;
+  --chart-4:            #4E6A84;
+  --chart-5:            #305070;
+
+  --viewer-bg:          #000000;
+  --viewer-foreground:  #EBEBEB;
+
+  color-scheme: dark;
+}

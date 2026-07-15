@@ -1,0 +1,81 @@
+/* ============================================================================
+   PROSPECTIVE — Base layer
+   Body defaults, link + selection colors, focus ring. Uses tokens/*.css.
+   ============================================================================ */
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+a {
+  color: var(--brand-deep);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--primary-hover);
+  text-decoration: underline;
+}
+
+[data-theme="dark"] a {
+  color: var(--brand-mist);
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 50%, transparent);
+  border-radius: var(--radius-md);
+}
+
+code, kbd, samp, .mono {
+  font-family: var(--font-mono);
+}
+
+/* Logo mark (black on transparent) is tinted per theme */
+[data-theme="dark"] .logo-mark {
+  filter: invert(1) brightness(1.7);
+}
+
+/* Form error shake — ±8px, from IDENTIDAD_VISUAL motion spec */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-8px); }
+  80% { transform: translateX(8px); }
+}
+.shake { animation: shake var(--dur-slow) var(--ease-out); }
+
+/* Panel fade-in + 4px rise */
+@keyframes fade-rise {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-rise { animation: fade-rise var(--dur-base) var(--ease-out); }
+
+/* Indeterminate progress sweep */
+@keyframes progress-sweep {
+  0%   { left: -35%; }
+  100% { left: 100%; }
+}

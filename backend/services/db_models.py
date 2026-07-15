@@ -25,6 +25,11 @@ from services.database import Base
 class User(Base):
     __tablename__ = "users"
 
+    # Account status (mirrors desktop User.STATUS_*)
+    STATUS_PENDING  = "pending"
+    STATUS_ACTIVE   = "active"
+    STATUS_REJECTED = "rejected"
+
     id              = Column(Integer, primary_key=True, index=True)
     username        = Column(String(64), unique=True, nullable=False, index=True)
     hashed_password = Column(String(256), nullable=False)
@@ -33,12 +38,22 @@ class User(Base):
     # Allowed: admin | medico | residente | viewer
     institution     = Column(String(128), nullable=False, default="")
     is_active       = Column(Boolean, nullable=False, default=True)
+    status          = Column(String(16), nullable=False, default=STATUS_ACTIVE)
     created_at      = Column(DateTime, nullable=False, default=func.now())
+
+    # Professional profile (filled during self-registration, reviewed by admin)
+    national_id     = Column(String(64),  nullable=False, default="")
+    professional_id = Column(String(64),  nullable=False, default="")
+    specialty       = Column(String(100), nullable=False, default="")
+    university      = Column(String(200), nullable=False, default="")
+    hospital        = Column(String(200), nullable=False, default="")
+    position        = Column(String(100), nullable=False, default="")
+    orcid           = Column(String(64),  nullable=False, default="")
 
     patients = relationship("Patient", back_populates="creator", foreign_keys="Patient.created_by")
 
     def __repr__(self) -> str:
-        return f"<User id={self.id} username={self.username!r} role={self.role!r}>"
+        return f"<User id={self.id} username={self.username!r} role={self.role!r} status={self.status!r}>"
 
 
 # ── Patient ────────────────────────────────────────────────────────────────── #

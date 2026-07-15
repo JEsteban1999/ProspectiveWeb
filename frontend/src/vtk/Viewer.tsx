@@ -1,0 +1,147 @@
+/* Visor clínico — superficie de imagenología siempre negra.
+   - Con malla segmentada: render 3D real (.vtp) con vtk.js.
+   - Sin malla pero con volumen cargado: vista previa DICOM (MPR axial navegable).
+   - Sin nada: placeholder honesto.
+   La franja inferior muestra los tres planos MPR reales del volumen. */
+
+import { useEffect, useMemo, useState } from "react";
+import { api } from "../api/client";
+import type { VolumeMeta } from "../api/types";
+import { Icon } from "../components/Icon";
+import { usePlanning } from "../store/planning";
+import { MeshView } from "./MeshView";
+import type { MeshLayer } from "./MeshView";
+import { MprView } from "./MprView";
+import type { Vector3 } from "@kitware/vtk.js/types";
+
+const STEP_SCENE: Record<string, string> = {
+  upload: "Vista previa DICOM",
+  segment: "Segmentación vascular",
+  detect: "Candidatos aneurismáticos",
+  morpho: "Análisis morfométrico",
+  treatment: "Cuello y domo",
+  devices: "Dispositivo + trayectoria",
+  report: "Escena final",
+};
+
+const VESSEL_COLOR: Vector3 = [0.65, 0.7, 0.76];
+const DOME_COLOR: Vector3 = [0.32, 0.55, 0.75];
+const DEVICE_COLOR: Vector3 = [0.92, 0.82, 0.45]; // warm gold — placed clip/coil/stent
+
+/* Load the volume meta once per session; shared by main view + MPR strip. */
+function useVolumeMeta(sessionId: string | null): VolumeMeta | null {
+  const [meta, setMeta] = useState<VolumeMeta | null>(null);
+  useEffect(() => {
+    setMeta(null);
+    if (!sessionId) return;
+    let cancelled = false;
+    api
+      .volumeMeta(sessionId)
+      .then((m) => { if (!cancelled) setMeta(m); })
+      .catch(() => { if (!cancelled) setMeta(null); });
+    return () => { cancelled = true; };
+  }, [sessionId]);
+  return meta;
+}
+
+export function Viewer({ step }: { step: string }) {
+  const { sessionId, segmentation, candidates, selectedCandidate, series, deviceMesh } = usePlanning();
+  // mesh_url carries a generation token (?v=…) from the backend, so it changes
+  // on every re-segmentation and vtk.js refetches instead of serving the cache.
+  const meshUrl = segmentation?.mesh_url ?? null;
+  const candidate = candidates[selectedCandidate];
+  const meta = useVolumeMeta(sessionId);
+  // Only show a placed device mesh once its URL points at a real session file.
+  const showDevice = step === "devices" && !!deviceMesh && deviceMesh.startsWith("/data/");
+
+  const layers = useMemo<MeshLayer[]>(() => {
+    if (!meshUrl) return [];
+    const vesselDim = step === "detect" || step === "morpho" || showDevice;
+    const out: MeshLayer[] = [{ url: meshUrl, color: VESSEL_COLOR, opacity: vesselDim ? 0.45 : 1 }];
+    if (candidate?.dome_mesh_url && step !== "segment" && step !== "upload") {
+      out.push({ url: candidate.dome_mesh_url, color: DOME_COLOR, opacity: showDevice ? 0.5 : 1 });
+    }
+    if (showDevice && deviceMesh) {
+      out.push({ url: deviceMesh, color: DEVICE_COLOR, opacity: 1 });
+    }
+    return out;
+  }, [meshUrl, candidate?.dome_mesh_url, step, showDevice, deviceMesh]);
+
+  return (
+    <div style={{ flex: 1, position: "relative", background: "var(--viewer-bg)", overflow: "hidden", minHeight: 0 }}>
+      {meshUrl ? (
+        <MeshView layers={layers} />
+      ) : sessionId && meta ? (
+        <MprView sessionId={sessionId} meta={meta} plane="axial" showSlider />
+      ) : (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            backgroundImage:
+              "radial-gradient(60% 60% at 52% 46%, rgba(78,102,120,0.30), transparent 70%), linear-gradient(rgba(139,155,170,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(139,155,170,0.05) 1px, transparent 1px)",
+            backgroundSize: "100% 100%, 34px 34px, 34px 34px",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 12,
+            color: "rgba(168,184,198,0.5)",
+          }}
+        >
+          <Icon name="BRAIN" size={54} color="rgba(139,155,170,0.5)" />
+          <div style={{ fontSize: 13 }}>
+            {series ? "Cargando vista previa del volumen…" : "Carga una serie DICOM para comenzar"}
+          </div>
+        </div>
+      )}
+
+      {/* Scene label */}
+      <div style={{ position: "absolute", top: 14, left: 16, fontSize: 11, fontFamily: "var(--font-mono)", color: "rgba(168,184,198,0.75)", pointerEvents: "none" }}>
+        {STEP_SCENE[step]} · {meshUrl ? "vtk.js" : "MPR"}
+        {step === "detect" && candidate && <span style={{ marginLeft: 10, color: "#A8B8C6" }}>· {candidate.id}</span>}
+      </div>
+
+      {(step === "morpho" || step === "treatment" || step === "devices") && (
+        <div style={{ position: "absolute", bottom: 14, right: 16, display: "flex", gap: 12, fontSize: 10, color: "rgba(235,235,235,0.7)", pointerEvents: "none" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: "#ef4444" }} />perforante &lt;3mm</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: "#eab308" }} />3–6mm</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: "#22c55e" }} />&gt;6mm</span>
+        </div>
+      )}
+
+      {meshUrl && (
+        <div style={{ position: "absolute", bottom: 14, left: 16, fontSize: 10, fontFamily: "var(--font-mono)", color: "rgba(168,184,198,0.55)", pointerEvents: "none" }}>
+          arrastra para rotar · rueda para zoom
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* MprStrip — franja inferior con los tres planos reales del volumen DICOM. */
+export function MprStrip() {
+  const { sessionId, series } = usePlanning();
+  const meta = useVolumeMeta(sessionId);
+
+  return (
+    <div style={{ height: 132, flexShrink: 0, display: "flex", gap: 1, background: "var(--border)", borderTop: "1px solid var(--border)" }}>
+      {(["axial", "coronal", "sagital"] as const).map((plane) => (
+        <div key={plane} style={{ flex: 1, position: "relative", minWidth: 0 }}>
+          {sessionId && meta ? (
+            <MprView sessionId={sessionId} meta={meta} plane={plane} compact />
+          ) : (
+            <div style={{ width: "100%", height: "100%", background: "var(--viewer-bg)", position: "relative" }}>
+              <span style={{ position: "absolute", top: 8, left: 10, fontSize: 10, fontFamily: "var(--font-mono)", color: "rgba(168,184,198,0.7)" }}>
+                {plane === "axial" ? "Axial" : plane === "coronal" ? "Coronal" : "Sagital"}
+              </span>
+              <span style={{ position: "absolute", bottom: 8, right: 10, fontSize: 9, fontFamily: "var(--font-mono)", color: "rgba(168,184,198,0.4)" }}>
+                {series ? "cargando…" : "sin volumen"}
+              </span>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}

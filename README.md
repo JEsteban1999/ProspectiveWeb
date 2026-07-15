@@ -8,18 +8,28 @@
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Tech Stack](#tech-stack)
-- [Project Structure](#project-structure)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Running the Server](#running-the-server)
-- [Environment Variables](#environment-variables)
-- [API Reference](#api-reference)
-- [Session Lifecycle](#session-lifecycle)
-- [Running Tests](#running-tests)
-- [Development Scripts](#development-scripts)
-- [Relationship to the Desktop App](#relationship-to-the-desktop-app)
+- [PROSPECTIVE Web](#prospective-web)
+  - [Table of Contents](#table-of-contents)
+  - [Overview](#overview)
+  - [Tech Stack](#tech-stack)
+  - [Project Structure](#project-structure)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+  - [Running the Server](#running-the-server)
+  - [Environment Variables](#environment-variables)
+  - [API Reference](#api-reference)
+    - [Authentication](#authentication)
+    - [Patients \& Studies](#patients--studies)
+    - [DICOM \& Session](#dicom--session)
+    - [Image Processing Pipeline](#image-processing-pipeline)
+    - [Treatment Planning](#treatment-planning)
+    - [Report \& Export](#report--export)
+    - [Longitudinal Follow-up](#longitudinal-follow-up)
+  - [Session Lifecycle](#session-lifecycle)
+  - [Running Tests](#running-tests)
+  - [Development Scripts](#development-scripts)
+  - [Relationship to the Desktop App](#relationship-to-the-desktop-app)
+  - [License](#license)
 
 ---
 
@@ -366,4 +376,4 @@ to scaffold the React frontend.
 
 ## License
 
-Proprietary — Universidad de Navarra, Laboratorio de Imagen Médica.
+Proprietary — UniNavarra, Laboratorio de Imagen Médica.
