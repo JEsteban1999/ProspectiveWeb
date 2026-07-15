@@ -25,6 +25,12 @@ interface PlanningState {
   treatment: TreatmentDecisionResult | null;
   /** URL of the last placed device mesh (clip/coil/stent), shown in the viewer. */
   deviceMesh: string | null;
+  /** URL of the extracted vessel centreline tube mesh, shown in the viewer. */
+  centerlineMesh: string | null;
+  /** Active endpoint-pick mode for centreline extraction (click on the 3D mesh). */
+  pickMode: "cl_source" | "cl_target" | null;
+  clSource: Vec3 | null;
+  clTarget: Vec3 | null;
 
   setPatient: (p: PatientSummary | null) => void;
   setSession: (id: string | null) => void;
@@ -36,9 +42,15 @@ interface PlanningState {
   setMorphometry: (m: MorphometryResult | null) => void;
   setTreatment: (t: TreatmentDecisionResult | null) => void;
   setDeviceMesh: (url: string | null) => void;
+  setCenterlineMesh: (url: string | null) => void;
+  setPickMode: (m: "cl_source" | "cl_target" | null) => void;
+  setClSource: (p: Vec3 | null) => void;
+  setClTarget: (p: Vec3 | null) => void;
   reset: () => void;
   resetDownstream: () => void;
 }
+
+export type Vec3 = [number, number, number];
 
 const PlanningContext = createContext<PlanningState | null>(null);
 
@@ -53,6 +65,10 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   const [morphometry, setMorphometry] = useState<MorphometryResult | null>(null);
   const [treatment, setTreatment] = useState<TreatmentDecisionResult | null>(null);
   const [deviceMesh, setDeviceMesh] = useState<string | null>(null);
+  const [centerlineMesh, setCenterlineMesh] = useState<string | null>(null);
+  const [pickMode, setPickMode] = useState<"cl_source" | "cl_target" | null>(null);
+  const [clSource, setClSource] = useState<Vec3 | null>(null);
+  const [clTarget, setClTarget] = useState<Vec3 | null>(null);
 
   // Clear everything downstream of the DICOM upload — used when a new series is
   // uploaded in the same workspace so stale meshes/metrics don't linger.
@@ -64,6 +80,10 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
     setMorphometry(null);
     setTreatment(null);
     setDeviceMesh(null);
+    setCenterlineMesh(null);
+    setPickMode(null);
+    setClSource(null);
+    setClTarget(null);
   };
 
   const reset = () => {
@@ -77,9 +97,11 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
       value={{
         patient, sessionId, series, thresholds, segmentation, candidates,
         selectedCandidate, morphometry, treatment, deviceMesh,
+        centerlineMesh, pickMode, clSource, clTarget,
         setPatient, setSession, setSeries, setThresholds, setSegmentation,
         setCandidates, setSelectedCandidate, setMorphometry, setTreatment,
-        setDeviceMesh, reset, resetDownstream,
+        setDeviceMesh, setCenterlineMesh, setPickMode, setClSource, setClTarget,
+        reset, resetDownstream,
       }}
     >
       {children}

@@ -4,6 +4,8 @@
 import type {
   AneurysmDetectionResult,
   AutoThresholdResult,
+  CenterlineRequest,
+  CenterlineResult,
   ClipLibraryItem,
   ClipPlanRequest,
   ClipPlanResult,
@@ -119,6 +121,8 @@ export const api = {
   longitudinal: (sessionId: string) =>
     get<LongitudinalResult>(`/api/longitudinal/${sessionId}`),
   phases: (req: PhasesRequest) => post<PhasesResult>("/api/phases", req),
+  centerline: (sessionId: string, req: CenterlineRequest) =>
+    post<CenterlineResult>(`/api/centerline/${sessionId}`, req),
 
   /* MPR / DICOM slice preview */
   volumeMeta: (sessionId: string) => get<VolumeMeta>(`/api/volume/${sessionId}/meta`),

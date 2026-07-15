@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from routers import (
     upload, segment, detect, perforators, plan, progress,
     auth, patients, treatment, clips, coils, longitudinal,
-    report, session_state, mpr, phases,
+    report, session_state, mpr, phases, centerline,
 )
 
 logger = logging.getLogger(__name__)
@@ -141,6 +141,7 @@ app.include_router(session_state.router)
 app.include_router(progress.router)
 app.include_router(mpr.router)
 app.include_router(phases.router)
+app.include_router(centerline.router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────── #

@@ -75,6 +75,27 @@ export interface PhasesResult {
   risk_band: "low" | "moderate" | "high";
 }
 
+/* ── centerline ────────────────────────────────────────────────────────── */
+export interface CenterlineRequest {
+  session_id: string;
+  source: { x: number; y: number; z: number };
+  target: { x: number; y: number; z: number };
+  voxel_size_mm: number;
+}
+
+export interface CenterlineResult {
+  centerline_mesh_url: string;
+  n_points: number;
+  arc_length_mm: number;
+  chord_length_mm: number;
+  tortuosity: number;
+  tortuosity_index_pct: number;
+  mean_diameter_mm: number;
+  min_diameter_mm: number;
+  max_diameter_mm: number;
+  warning: string | null;
+}
+
 /* ── patients ──────────────────────────────────────────────────────────── */
 export interface PatientCreate {
   surname: string;

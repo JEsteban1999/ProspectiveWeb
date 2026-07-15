@@ -4,12 +4,12 @@
    - Sin nada: placeholder honesto.
    La franja inferior muestra los tres planos MPR reales del volumen. */
 
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { VolumeMeta } from "../api/types";
 import { Icon } from "../components/Icon";
 import { usePlanning } from "../store/planning";
-import type { MeshLayer } from "./MeshView";
+import type { MeshLayer, MeshMarker } from "./MeshView";
 import { MprView } from "./MprView";
 import type { Vector3 } from "@kitware/vtk.js/types";
 
@@ -30,7 +30,10 @@ const STEP_SCENE: Record<string, string> = {
 
 const VESSEL_COLOR: Vector3 = [0.65, 0.7, 0.76];
 const DOME_COLOR: Vector3 = [0.32, 0.55, 0.75];
-const DEVICE_COLOR: Vector3 = [0.92, 0.82, 0.45]; // warm gold — placed clip/coil/stent
+const DEVICE_COLOR: Vector3 = [0.92, 0.82, 0.45];     // warm gold — placed clip/coil/stent
+const CENTERLINE_COLOR: Vector3 = [0.36, 0.85, 0.86]; // cyan — vessel centreline tube
+const SOURCE_COLOR: Vector3 = [0.25, 0.73, 0.31];     // green — picked source endpoint
+const TARGET_COLOR: Vector3 = [0.97, 0.32, 0.29];     // red — picked target endpoint
 
 /* Load the volume meta once per session; shared by main view + MPR strip. */
 function useVolumeMeta(sessionId: string | null): VolumeMeta | null {
@@ -59,7 +62,10 @@ function ViewerLoading({ label }: { label: string }) {
 }
 
 export function Viewer({ step }: { step: string }) {
-  const { sessionId, segmentation, candidates, selectedCandidate, series, deviceMesh } = usePlanning();
+  const {
+    sessionId, segmentation, candidates, selectedCandidate, series, deviceMesh,
+    centerlineMesh, pickMode, clSource, clTarget, setPickMode, setClSource, setClTarget,
+  } = usePlanning();
   // mesh_url carries a generation token (?v=…) from the backend, so it changes
   // on every re-segmentation and vtk.js refetches instead of serving the cache.
   const meshUrl = segmentation?.mesh_url ?? null;
@@ -67,10 +73,11 @@ export function Viewer({ step }: { step: string }) {
   const meta = useVolumeMeta(sessionId);
   // Only show a placed device mesh once its URL points at a real session file.
   const showDevice = step === "devices" && !!deviceMesh && deviceMesh.startsWith("/data/");
+  const showCenterline = !!centerlineMesh && centerlineMesh.startsWith("/data/");
 
   const layers = useMemo<MeshLayer[]>(() => {
     if (!meshUrl) return [];
-    const vesselDim = step === "detect" || step === "morpho" || showDevice;
+    const vesselDim = step === "detect" || step === "morpho" || showDevice || pickMode !== null || showCenterline;
     const out: MeshLayer[] = [{ url: meshUrl, color: VESSEL_COLOR, opacity: vesselDim ? 0.45 : 1 }];
     if (candidate?.dome_mesh_url && step !== "segment" && step !== "upload") {
       out.push({ url: candidate.dome_mesh_url, color: DOME_COLOR, opacity: showDevice ? 0.5 : 1 });
@@ -78,14 +85,33 @@ export function Viewer({ step }: { step: string }) {
     if (showDevice && deviceMesh) {
       out.push({ url: deviceMesh, color: DEVICE_COLOR, opacity: 1 });
     }
+    if (showCenterline && centerlineMesh) {
+      out.push({ url: centerlineMesh, color: CENTERLINE_COLOR, opacity: 1 });
+    }
     return out;
-  }, [meshUrl, candidate?.dome_mesh_url, step, showDevice, deviceMesh]);
+  }, [meshUrl, candidate?.dome_mesh_url, step, showDevice, deviceMesh, showCenterline, centerlineMesh, pickMode]);
+
+  const markers = useMemo<MeshMarker[]>(() => {
+    const out: MeshMarker[] = [];
+    if (clSource) out.push({ pos: clSource, color: SOURCE_COLOR });
+    if (clTarget) out.push({ pos: clTarget, color: TARGET_COLOR });
+    return out;
+  }, [clSource, clTarget]);
+
+  const onPick = useCallback(
+    (xyz: [number, number, number]) => {
+      if (pickMode === "cl_source") setClSource(xyz);
+      else if (pickMode === "cl_target") setClTarget(xyz);
+      setPickMode(null);
+    },
+    [pickMode, setClSource, setClTarget, setPickMode],
+  );
 
   return (
     <div style={{ flex: 1, position: "relative", background: "var(--viewer-bg)", overflow: "hidden", minHeight: 0 }}>
       {meshUrl ? (
         <Suspense fallback={<ViewerLoading label="Cargando visor 3D…" />}>
-          <MeshView layers={layers} />
+          <MeshView layers={layers} markers={markers} pickMode={pickMode !== null} onPick={onPick} />
         </Suspense>
       ) : sessionId && meta ? (
         <MprView sessionId={sessionId} meta={meta} plane="axial" showSlider />
@@ -117,6 +143,13 @@ export function Viewer({ step }: { step: string }) {
         {STEP_SCENE[step]} · {meshUrl ? "vtk.js" : "MPR"}
         {step === "detect" && candidate && <span style={{ marginLeft: 10, color: "#A8B8C6" }}>· {candidate.id}</span>}
       </div>
+
+      {/* Pick-mode banner */}
+      {pickMode && meshUrl && (
+        <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", background: pickMode === "cl_source" ? "rgba(63,186,80,0.92)" : "rgba(248,81,73,0.92)", color: "#fff", fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 999, pointerEvents: "none", boxShadow: "0 2px 8px rgba(0,0,0,0.35)" }}>
+          Clic sobre el vaso para marcar el {pickMode === "cl_source" ? "origen" : "destino"}
+        </div>
+      )}
 
       {(step === "morpho" || step === "treatment" || step === "devices") && (
         <div style={{ position: "absolute", bottom: 14, right: 16, display: "flex", gap: 12, fontSize: 10, color: "rgba(235,235,235,0.7)", pointerEvents: "none" }}>

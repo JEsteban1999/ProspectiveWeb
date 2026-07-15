@@ -1365,6 +1365,59 @@
                                                                  }
                                                }
                                   },
+                  "/api/centerline/{session_id}":  {
+                                                       "post":  {
+                                                                    "tags":  [
+                                                                                 "centerline"
+                                                                             ],
+                                                                    "summary":  "Extract the vessel centreline between two points",
+                                                                    "description":  "Computes the medial-axis centreline of the segmented vessel between a source and a target point (voxelisation + EDT + Dijkstra on the distance-weighted grid). Returns a tube mesh of varying radius plus clinical metrics: arc length, tortuosity and vessel diameter statistics.",
+                                                                    "operationId":  "compute_centerline_api_centerline__session_id__post",
+                                                                    "parameters":  [
+                                                                                       {
+                                                                                           "name":  "session_id",
+                                                                                           "in":  "path",
+                                                                                           "required":  true,
+                                                                                           "schema":  {
+                                                                                                          "type":  "string",
+                                                                                                          "title":  "Session Id"
+                                                                                                      }
+                                                                                       }
+                                                                                   ],
+                                                                    "requestBody":  {
+                                                                                        "required":  true,
+                                                                                        "content":  {
+                                                                                                        "application/json":  {
+                                                                                                                                 "schema":  {
+                                                                                                                                                "$ref":  "#/components/schemas/CenterlineRequest"
+                                                                                                                                            }
+                                                                                                                             }
+                                                                                                    }
+                                                                                    },
+                                                                    "responses":  {
+                                                                                      "200":  {
+                                                                                                  "description":  "Successful Response",
+                                                                                                  "content":  {
+                                                                                                                  "application/json":  {
+                                                                                                                                           "schema":  {
+                                                                                                                                                          "$ref":  "#/components/schemas/CenterlineResult"
+                                                                                                                                                      }
+                                                                                                                                       }
+                                                                                                              }
+                                                                                              },
+                                                                                      "422":  {
+                                                                                                  "description":  "Validation Error",
+                                                                                                  "content":  {
+                                                                                                                  "application/json":  {
+                                                                                                                                           "schema":  {
+                                                                                                                                                          "$ref":  "#/components/schemas/HTTPValidationError"
+                                                                                                                                                      }
+                                                                                                                                       }
+                                                                                                              }
+                                                                                              }
+                                                                                  }
+                                                                }
+                                                   },
                   "/health":  {
                                   "get":  {
                                               "tags":  [
@@ -1537,6 +1590,113 @@
                                                                                               ],
                                                                                  "title":  "Body_upload_dicom_api_upload_post"
                                                                              },
+                                       "CenterlineRequest":  {
+                                                                 "properties":  {
+                                                                                    "session_id":  {
+                                                                                                       "type":  "string",
+                                                                                                       "title":  "Session Id"
+                                                                                                   },
+                                                                                    "source":  {
+                                                                                                   "$ref":  "#/components/schemas/Position3D",
+                                                                                                   "description":  "Start point on/inside the vessel (mm)"
+                                                                                               },
+                                                                                    "target":  {
+                                                                                                   "$ref":  "#/components/schemas/Position3D",
+                                                                                                   "description":  "End point on/inside the vessel (mm)"
+                                                                                               },
+                                                                                    "voxel_size_mm":  {
+                                                                                                          "type":  "number",
+                                                                                                          "maximum":  2.0,
+                                                                                                          "minimum":  0.3,
+                                                                                                          "title":  "Voxel Size Mm",
+                                                                                                          "description":  "Voxelisation resolution (mm). Lower = more accurate but slower.",
+                                                                                                          "default":  0.8
+                                                                                                      }
+                                                                                },
+                                                                 "type":  "object",
+                                                                 "required":  [
+                                                                                  "session_id",
+                                                                                  "source",
+                                                                                  "target"
+                                                                              ],
+                                                                 "title":  "CenterlineRequest",
+                                                                 "description":  "Request to extract the medial-axis centreline between two vessel points."
+                                                             },
+                                       "CenterlineResult":  {
+                                                                "properties":  {
+                                                                                   "centerline_mesh_url":  {
+                                                                                                               "type":  "string",
+                                                                                                               "title":  "Centerline Mesh Url",
+                                                                                                               "description":  "URL of the centreline tube mesh (.vtp), radius ≈ vessel caliber"
+                                                                                                           },
+                                                                                   "n_points":  {
+                                                                                                    "type":  "integer",
+                                                                                                    "title":  "N Points",
+                                                                                                    "description":  "Number of resampled centreline points"
+                                                                                                },
+                                                                                   "arc_length_mm":  {
+                                                                                                         "type":  "number",
+                                                                                                         "title":  "Arc Length Mm",
+                                                                                                         "description":  "Total path length along the centreline"
+                                                                                                     },
+                                                                                   "chord_length_mm":  {
+                                                                                                           "type":  "number",
+                                                                                                           "title":  "Chord Length Mm",
+                                                                                                           "description":  "Straight-line source → target distance"
+                                                                                                       },
+                                                                                   "tortuosity":  {
+                                                                                                      "type":  "number",
+                                                                                                      "title":  "Tortuosity",
+                                                                                                      "description":  "arc / chord (1.0 = perfectly straight; ≥1.25 = high)"
+                                                                                                  },
+                                                                                   "tortuosity_index_pct":  {
+                                                                                                                "type":  "number",
+                                                                                                                "title":  "Tortuosity Index Pct",
+                                                                                                                "description":  "(arc − chord) / chord as a percentage"
+                                                                                                            },
+                                                                                   "mean_diameter_mm":  {
+                                                                                                            "type":  "number",
+                                                                                                            "title":  "Mean Diameter Mm",
+                                                                                                            "description":  "Mean vessel diameter along the path"
+                                                                                                        },
+                                                                                   "min_diameter_mm":  {
+                                                                                                           "type":  "number",
+                                                                                                           "title":  "Min Diameter Mm",
+                                                                                                           "description":  "Minimum vessel diameter (narrowest point)"
+                                                                                                       },
+                                                                                   "max_diameter_mm":  {
+                                                                                                           "type":  "number",
+                                                                                                           "title":  "Max Diameter Mm",
+                                                                                                           "description":  "Maximum vessel diameter (widest point)"
+                                                                                                       },
+                                                                                   "warning":  {
+                                                                                                   "anyOf":  [
+                                                                                                                 {
+                                                                                                                     "type":  "string"
+                                                                                                                 },
+                                                                                                                 {
+                                                                                                                     "type":  "null"
+                                                                                                                 }
+                                                                                                             ],
+                                                                                                   "title":  "Warning",
+                                                                                                   "description":  "Warning shown for high tortuosity or degenerate geometry"
+                                                                                               }
+                                                                               },
+                                                                "type":  "object",
+                                                                "required":  [
+                                                                                 "centerline_mesh_url",
+                                                                                 "n_points",
+                                                                                 "arc_length_mm",
+                                                                                 "chord_length_mm",
+                                                                                 "tortuosity",
+                                                                                 "tortuosity_index_pct",
+                                                                                 "mean_diameter_mm",
+                                                                                 "min_diameter_mm",
+                                                                                 "max_diameter_mm"
+                                                                             ],
+                                                                "title":  "CenterlineResult",
+                                                                "description":  "Centreline geometry metrics + tube mesh URL for the 3D viewer."
+                                                            },
                                        "ClipLibraryItem":  {
                                                                "properties":  {
                                                                                   "id":  {
