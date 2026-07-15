@@ -7,6 +7,7 @@ import { Signup } from "./pages/Signup";
 import { Patients } from "./pages/Patients";
 import { Workspace } from "./pages/Workspace";
 import { PendingRequests } from "./pages/PendingRequests";
+import { AuditTrail } from "./pages/AuditTrail";
 import { VideoSplash } from "./components/VideoSplash";
 import { LoadingScreen } from "./components/LoadingScreen";
 import { AuthProvider, useAuth } from "./store/auth";
@@ -63,6 +64,7 @@ function Router() {
   else if (effective === "patients")
     view = <Patients onOpenPatient={openPatient} onOpenPending={() => setScreen("pending")} />;
   else if (effective === "pending") view = <PendingRequests onBack={() => setScreen("patients")} />;
+  else if (effective === "audit") view = <AuditTrail onBack={() => setScreen("patients")} />;
   else view = <Workspace patient={patient} onBack={() => setScreen("patients")} onFinish={finish} />;
 
   return (

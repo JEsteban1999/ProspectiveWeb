@@ -95,6 +95,10 @@ async def generate_report(
 
     pdf_url = f"/data/sessions/{req.session_id}/reports/{req.session_id}_report.pdf"
 
+    from services.audit import audit_append, ACT_REPORT_GENERATED
+    audit_append(ACT_REPORT_GENERATED, {"session_id": req.session_id, "pages": page_count},
+                 username=req.surgeon_name or "", patient_id=req.hospital_id or "")
+
     logger.info(
         "Report generated — session=%s  pages=%s  size=%.1f KB",
         req.session_id, page_count, pdf_path.stat().st_size / 1024,
@@ -183,6 +187,11 @@ async def generate_dicom_sr(
         raise HTTPException(status_code=500, detail=f"DICOM SR error: {exc}") from exc
 
     sr_url = f"/data/sessions/{req.session_id}/reports/{req.session_id}_sr.dcm"
+
+    from services.audit import audit_append, ACT_SR_GENERATED
+    audit_append(ACT_SR_GENERATED, {"session_id": req.session_id},
+                 username=req.surgeon_name or "", patient_id=req.hospital_id or "")
+
     logger.info("DICOM SR generated — session=%s  size=%.1f KB",
                 req.session_id, sr_path.stat().st_size / 1024)
 

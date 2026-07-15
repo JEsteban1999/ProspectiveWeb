@@ -1513,6 +1513,118 @@
                                                                                      }
                                                                    }
                                                       },
+                  "/api/audit":  {
+                                     "post":  {
+                                                  "tags":  [
+                                                               "audit"
+                                                           ],
+                                                  "summary":  "Append an event to the audit chain",
+                                                  "operationId":  "append_event_api_audit_post",
+                                                  "requestBody":  {
+                                                                      "content":  {
+                                                                                      "application/json":  {
+                                                                                                               "schema":  {
+                                                                                                                              "$ref":  "#/components/schemas/AuditAppendRequest"
+                                                                                                                          }
+                                                                                                           }
+                                                                                  },
+                                                                      "required":  true
+                                                                  },
+                                                  "responses":  {
+                                                                    "200":  {
+                                                                                "description":  "Successful Response",
+                                                                                "content":  {
+                                                                                                "application/json":  {
+                                                                                                                         "schema":  {
+                                                                                                                                        "additionalProperties":  true,
+                                                                                                                                        "type":  "object",
+                                                                                                                                        "title":  "Response Append Event Api Audit Post"
+                                                                                                                                    }
+                                                                                                                     }
+                                                                                            }
+                                                                            },
+                                                                    "422":  {
+                                                                                "description":  "Validation Error",
+                                                                                "content":  {
+                                                                                                "application/json":  {
+                                                                                                                         "schema":  {
+                                                                                                                                        "$ref":  "#/components/schemas/HTTPValidationError"
+                                                                                                                                    }
+                                                                                                                     }
+                                                                                            }
+                                                                            }
+                                                                }
+                                              }
+                                 },
+                  "/api/audit/blocks":  {
+                                            "get":  {
+                                                        "tags":  [
+                                                                     "audit"
+                                                                 ],
+                                                        "summary":  "List all audit-trail blocks",
+                                                        "description":  "Returns every block of the tamper-evident SkullChain audit trail, oldest first.",
+                                                        "operationId":  "list_blocks_api_audit_blocks_get",
+                                                        "responses":  {
+                                                                          "200":  {
+                                                                                      "description":  "Successful Response",
+                                                                                      "content":  {
+                                                                                                      "application/json":  {
+                                                                                                                               "schema":  {
+                                                                                                                                              "items":  {
+                                                                                                                                                            "$ref":  "#/components/schemas/AuditBlock"
+                                                                                                                                                        },
+                                                                                                                                              "type":  "array",
+                                                                                                                                              "title":  "Response List Blocks Api Audit Blocks Get"
+                                                                                                                                          }
+                                                                                                                           }
+                                                                                                  }
+                                                                                  }
+                                                                      }
+                                                    }
+                                        },
+                  "/api/audit/verify":  {
+                                            "get":  {
+                                                        "tags":  [
+                                                                     "audit"
+                                                                 ],
+                                                        "summary":  "Verify the integrity of the audit chain",
+                                                        "description":  "Recomputes every block hash and checks the prev-hash linkage. Any tampering with a block invalidates it and all following blocks.",
+                                                        "operationId":  "verify_chain_api_audit_verify_get",
+                                                        "responses":  {
+                                                                          "200":  {
+                                                                                      "description":  "Successful Response",
+                                                                                      "content":  {
+                                                                                                      "application/json":  {
+                                                                                                                               "schema":  {
+                                                                                                                                              "$ref":  "#/components/schemas/AuditVerifyResult"
+                                                                                                                                          }
+                                                                                                                           }
+                                                                                                  }
+                                                                                  }
+                                                                      }
+                                                    }
+                                        },
+                  "/api/audit/export":  {
+                                            "get":  {
+                                                        "tags":  [
+                                                                     "audit"
+                                                                 ],
+                                                        "summary":  "Export the audit trail as text",
+                                                        "operationId":  "export_txt_api_audit_export_get",
+                                                        "responses":  {
+                                                                          "200":  {
+                                                                                      "description":  "Successful Response",
+                                                                                      "content":  {
+                                                                                                      "text/plain":  {
+                                                                                                                         "schema":  {
+                                                                                                                                        "type":  "string"
+                                                                                                                                    }
+                                                                                                                     }
+                                                                                                  }
+                                                                                  }
+                                                                      }
+                                                    }
+                                        },
                   "/health":  {
                                   "get":  {
                                               "tags":  [
@@ -1608,6 +1720,115 @@
                                                                        "title":  "AneurysmDetectionResult",
                                                                        "description":  "Result of the aneurysm detection step."
                                                                    },
+                                       "AuditAppendRequest":  {
+                                                                  "properties":  {
+                                                                                     "action":  {
+                                                                                                    "type":  "string",
+                                                                                                    "title":  "Action",
+                                                                                                    "description":  "Action name, e.g. DEVICE_PLACED"
+                                                                                                },
+                                                                                     "payload":  {
+                                                                                                     "additionalProperties":  true,
+                                                                                                     "type":  "object",
+                                                                                                     "title":  "Payload",
+                                                                                                     "description":  "Arbitrary JSON payload for the event"
+                                                                                                 },
+                                                                                     "username":  {
+                                                                                                      "type":  "string",
+                                                                                                      "title":  "Username",
+                                                                                                      "default":  ""
+                                                                                                  },
+                                                                                     "patient_id":  {
+                                                                                                        "type":  "string",
+                                                                                                        "title":  "Patient Id",
+                                                                                                        "default":  ""
+                                                                                                    },
+                                                                                     "patient_dob":  {
+                                                                                                         "type":  "string",
+                                                                                                         "title":  "Patient Dob",
+                                                                                                         "default":  ""
+                                                                                                     }
+                                                                                 },
+                                                                  "type":  "object",
+                                                                  "required":  [
+                                                                                   "action"
+                                                                               ],
+                                                                  "title":  "AuditAppendRequest"
+                                                              },
+                                       "AuditBlock":  {
+                                                          "properties":  {
+                                                                             "id":  {
+                                                                                        "type":  "integer",
+                                                                                        "title":  "Id"
+                                                                                    },
+                                                                             "iso_ts":  {
+                                                                                            "type":  "string",
+                                                                                            "title":  "Iso Ts"
+                                                                                        },
+                                                                             "username":  {
+                                                                                              "type":  "string",
+                                                                                              "title":  "Username"
+                                                                                          },
+                                                                             "action":  {
+                                                                                            "type":  "string",
+                                                                                            "title":  "Action"
+                                                                                        },
+                                                                             "patient_hash":  {
+                                                                                                  "type":  "string",
+                                                                                                  "title":  "Patient Hash"
+                                                                                              },
+                                                                             "payload_json":  {
+                                                                                                  "type":  "string",
+                                                                                                  "title":  "Payload Json"
+                                                                                              },
+                                                                             "block_hash":  {
+                                                                                                "type":  "string",
+                                                                                                "title":  "Block Hash"
+                                                                                            },
+                                                                             "prev_hash":  {
+                                                                                               "type":  "string",
+                                                                                               "title":  "Prev Hash"
+                                                                                           }
+                                                                         },
+                                                          "type":  "object",
+                                                          "required":  [
+                                                                           "id",
+                                                                           "iso_ts",
+                                                                           "username",
+                                                                           "action",
+                                                                           "patient_hash",
+                                                                           "payload_json",
+                                                                           "block_hash",
+                                                                           "prev_hash"
+                                                                       ],
+                                                          "title":  "AuditBlock"
+                                                      },
+                                       "AuditVerifyResult":  {
+                                                                 "properties":  {
+                                                                                    "ok":  {
+                                                                                               "type":  "boolean",
+                                                                                               "title":  "Ok",
+                                                                                               "description":  "True if the whole chain verifies"
+                                                                                           },
+                                                                                    "total_blocks":  {
+                                                                                                         "type":  "integer",
+                                                                                                         "title":  "Total Blocks"
+                                                                                                     },
+                                                                                    "broken":  {
+                                                                                                   "items":  {
+                                                                                                                 "$ref":  "#/components/schemas/BrokenBlock"
+                                                                                                             },
+                                                                                                   "type":  "array",
+                                                                                                   "title":  "Broken"
+                                                                                               }
+                                                                                },
+                                                                 "type":  "object",
+                                                                 "required":  [
+                                                                                  "ok",
+                                                                                  "total_blocks"
+                                                                              ],
+                                                                 "title":  "AuditVerifyResult"
+                                                             },
                                        "AutoThresholdResult":  {
                                                                    "properties":  {
                                                                                       "lower":  {
@@ -1685,6 +1906,34 @@
                                                                                               ],
                                                                                  "title":  "Body_upload_dicom_api_upload_post"
                                                                              },
+                                       "BrokenBlock":  {
+                                                           "properties":  {
+                                                                              "id":  {
+                                                                                         "type":  "integer",
+                                                                                         "title":  "Id"
+                                                                                     },
+                                                                              "iso_ts":  {
+                                                                                             "type":  "string",
+                                                                                             "title":  "Iso Ts"
+                                                                                         },
+                                                                              "action":  {
+                                                                                             "type":  "string",
+                                                                                             "title":  "Action"
+                                                                                         },
+                                                                              "reason":  {
+                                                                                             "type":  "string",
+                                                                                             "title":  "Reason"
+                                                                                         }
+                                                                          },
+                                                           "type":  "object",
+                                                           "required":  [
+                                                                            "id",
+                                                                            "iso_ts",
+                                                                            "action",
+                                                                            "reason"
+                                                                        ],
+                                                           "title":  "BrokenBlock"
+                                                       },
                                        "CenterlineRequest":  {
                                                                  "properties":  {
                                                                                     "session_id":  {

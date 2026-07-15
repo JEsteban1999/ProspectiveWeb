@@ -3,7 +3,7 @@
 
 import { createContext, useContext } from "react";
 
-export type Screen = "login" | "signup" | "patients" | "workspace" | "pending";
+export type Screen = "login" | "signup" | "patients" | "workspace" | "pending" | "audit";
 
 interface Nav {
   screen: Screen;

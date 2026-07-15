@@ -115,6 +115,24 @@ export interface CrossSectionResult {
   warning: string | null;
 }
 
+/* ── audit (SkullChain) ─────────────────────────────────────────────────── */
+export interface AuditBlock {
+  id: number;
+  iso_ts: string;
+  username: string;
+  action: string;
+  patient_hash: string;
+  payload_json: string;
+  block_hash: string;
+  prev_hash: string;
+}
+
+export interface AuditVerifyResult {
+  ok: boolean;
+  total_blocks: number;
+  broken: { id: number; iso_ts: string; action: string; reason: string }[];
+}
+
 /* ── patients ──────────────────────────────────────────────────────────── */
 export interface PatientCreate {
   surname: string;

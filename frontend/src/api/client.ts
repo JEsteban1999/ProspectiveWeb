@@ -3,6 +3,8 @@
 
 import type {
   AneurysmDetectionResult,
+  AuditBlock,
+  AuditVerifyResult,
   AutoThresholdResult,
   CenterlineRequest,
   CenterlineResult,
@@ -160,4 +162,8 @@ export const api = {
   /* sessions */
   saveSession: (req: SessionSaveRequest) =>
     post<SessionSaveResult>("/api/sessions/save", req),
+
+  /* audit (SkullChain) */
+  auditBlocks: () => get<AuditBlock[]>("/api/audit/blocks"),
+  auditVerify: () => get<AuditVerifyResult>("/api/audit/verify"),
 };

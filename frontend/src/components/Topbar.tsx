@@ -132,6 +132,13 @@ function UserMenu() {
               onClick={() => { setOpen(false); nav.go("pending"); }}
             />
           )}
+          {isAdmin && (
+            <MenuItem
+              icon="SHIELD"
+              label="Auditoría (SkullChain)"
+              onClick={() => { setOpen(false); nav.go("audit"); }}
+            />
+          )}
 
           <div style={{ height: 1, background: "var(--border)", margin: "2px 0" }} />
 

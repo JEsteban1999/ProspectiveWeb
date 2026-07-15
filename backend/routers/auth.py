@@ -79,6 +79,9 @@ async def login(
 
     logger.info("Login OK — user=%s role=%s", user.username, user.role)
 
+    from services.audit import audit_append, ACT_LOGIN
+    audit_append(ACT_LOGIN, {"role": user.role}, username=user.username)
+
     return LoginResponse(
         access_token=token,
         token_type="bearer",
