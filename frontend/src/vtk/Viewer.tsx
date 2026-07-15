@@ -4,15 +4,19 @@
    - Sin nada: placeholder honesto.
    La franja inferior muestra los tres planos MPR reales del volumen. */
 
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { VolumeMeta } from "../api/types";
 import { Icon } from "../components/Icon";
 import { usePlanning } from "../store/planning";
-import { MeshView } from "./MeshView";
 import type { MeshLayer } from "./MeshView";
 import { MprView } from "./MprView";
 import type { Vector3 } from "@kitware/vtk.js/types";
+
+// vtk.js (~1 MB) is only needed once a 3D mesh is shown, so load MeshView — and
+// with it the whole vtk.js runtime — lazily. The landing/login/MPR-only views
+// never pull it into their bundle.
+const MeshView = lazy(() => import("./MeshView").then((m) => ({ default: m.MeshView })));
 
 const STEP_SCENE: Record<string, string> = {
   upload: "Vista previa DICOM",
@@ -44,6 +48,16 @@ function useVolumeMeta(sessionId: string | null): VolumeMeta | null {
   return meta;
 }
 
+/* Placeholder shown while the lazy vtk.js chunk is being fetched. */
+function ViewerLoading({ label }: { label: string }) {
+  return (
+    <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, background: "var(--viewer-bg)", color: "rgba(168,184,198,0.5)" }}>
+      <Icon name="BRAIN" size={54} color="rgba(139,155,170,0.5)" />
+      <div style={{ fontSize: 13 }}>{label}</div>
+    </div>
+  );
+}
+
 export function Viewer({ step }: { step: string }) {
   const { sessionId, segmentation, candidates, selectedCandidate, series, deviceMesh } = usePlanning();
   // mesh_url carries a generation token (?v=…) from the backend, so it changes
@@ -70,7 +84,9 @@ export function Viewer({ step }: { step: string }) {
   return (
     <div style={{ flex: 1, position: "relative", background: "var(--viewer-bg)", overflow: "hidden", minHeight: 0 }}>
       {meshUrl ? (
-        <MeshView layers={layers} />
+        <Suspense fallback={<ViewerLoading label="Cargando visor 3D…" />}>
+          <MeshView layers={layers} />
+        </Suspense>
       ) : sessionId && meta ? (
         <MprView sessionId={sessionId} meta={meta} plane="axial" showSlider />
       ) : (

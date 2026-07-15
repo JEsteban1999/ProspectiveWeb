@@ -4,7 +4,7 @@
                  "title":  "PROSPECTIVE Web API",
                  "description":  "REST + WebSocket API for cerebral aneurysm segmentation, detection, morphometry, perforator risk assessment and stent planning.\n\nAll linear dimensions are in **millimetres (mm)**. All HU values follow the standard Hounsfield scale.",
                  "contact":  {
-                                 "name":  "UniNavarra â Laboratorio de Imagen MÃ©dica",
+                                 "name":  "UniNavarra — Laboratorio de Imagen Médica",
                                  "email":  "juesnaca99@gmail.com"
                              },
                  "license":  {
@@ -19,6 +19,7 @@
                                                                     "auth"
                                                                 ],
                                                        "summary":  "Login and obtain JWT token",
+                                                       "description":  "Authenticates with username + password and returns a signed JWT.\n\nInclude the token in subsequent requests as:\n`Authorization: Bearer \u003ctoken\u003e`\n\nDefault credentials on first run: **admin / admin123**.",
                                                        "operationId":  "login_api_auth_login_post",
                                                        "requestBody":  {
                                                                            "content":  {
@@ -60,6 +61,7 @@
                                                                 "auth"
                                                             ],
                                                    "summary":  "Get current authenticated user",
+                                                   "description":  "Returns the profile of the user identified by the Bearer token.",
                                                    "operationId":  "me_api_auth_me_get",
                                                    "responses":  {
                                                                      "200":  {
@@ -72,15 +74,202 @@
                                                                                                                       }
                                                                                              }
                                                                              }
-                                                                 }
+                                                                 },
+                                                   "security":  [
+                                                                    {
+                                                                        "HTTPBearer":  [
+
+                                                                                       ]
+                                                                    }
+                                                                ]
                                                }
                                    },
+                  "/api/auth/signup":  {
+                                           "post":  {
+                                                        "tags":  [
+                                                                     "auth"
+                                                                 ],
+                                                        "summary":  "Request a new account",
+                                                        "description":  "Public self-registration. Creates a **pending** account that an administrator must approve before the user can log in.",
+                                                        "operationId":  "signup_api_auth_signup_post",
+                                                        "requestBody":  {
+                                                                            "content":  {
+                                                                                            "application/json":  {
+                                                                                                                     "schema":  {
+                                                                                                                                    "$ref":  "#/components/schemas/SignupRequest"
+                                                                                                                                }
+                                                                                                                 }
+                                                                                        },
+                                                                            "required":  true
+                                                                        },
+                                                        "responses":  {
+                                                                          "201":  {
+                                                                                      "description":  "Successful Response",
+                                                                                      "content":  {
+                                                                                                      "application/json":  {
+                                                                                                                               "schema":  {
+                                                                                                                                              "$ref":  "#/components/schemas/SignupResponse"
+                                                                                                                                          }
+                                                                                                                           }
+                                                                                                  }
+                                                                                  },
+                                                                          "422":  {
+                                                                                      "description":  "Validation Error",
+                                                                                      "content":  {
+                                                                                                      "application/json":  {
+                                                                                                                               "schema":  {
+                                                                                                                                              "$ref":  "#/components/schemas/HTTPValidationError"
+                                                                                                                                          }
+                                                                                                                           }
+                                                                                                  }
+                                                                                  }
+                                                                      }
+                                                    }
+                                       },
+                  "/api/auth/pending":  {
+                                            "get":  {
+                                                        "tags":  [
+                                                                     "auth"
+                                                                 ],
+                                                        "summary":  "List pending account requests (admin)",
+                                                        "description":  "Returns all self-registrations awaiting approval. Admin only.",
+                                                        "operationId":  "list_pending_api_auth_pending_get",
+                                                        "responses":  {
+                                                                          "200":  {
+                                                                                      "description":  "Successful Response",
+                                                                                      "content":  {
+                                                                                                      "application/json":  {
+                                                                                                                               "schema":  {
+                                                                                                                                              "items":  {
+                                                                                                                                                            "$ref":  "#/components/schemas/PendingUser"
+                                                                                                                                                        },
+                                                                                                                                              "type":  "array",
+                                                                                                                                              "title":  "Response List Pending Api Auth Pending Get"
+                                                                                                                                          }
+                                                                                                                           }
+                                                                                                  }
+                                                                                  }
+                                                                      },
+                                                        "security":  [
+                                                                         {
+                                                                             "HTTPBearer":  [
+
+                                                                                            ]
+                                                                         }
+                                                                     ]
+                                                    }
+                                        },
+                  "/api/auth/pending/{user_id}/approve":  {
+                                                              "post":  {
+                                                                           "tags":  [
+                                                                                        "auth"
+                                                                                    ],
+                                                                           "summary":  "Approve a pending account (admin)",
+                                                                           "description":  "Activates the account so the user can log in. Admin only.",
+                                                                           "operationId":  "approve_api_auth_pending__user_id__approve_post",
+                                                                           "security":  [
+                                                                                            {
+                                                                                                "HTTPBearer":  [
+
+                                                                                                               ]
+                                                                                            }
+                                                                                        ],
+                                                                           "parameters":  [
+                                                                                              {
+                                                                                                  "name":  "user_id",
+                                                                                                  "in":  "path",
+                                                                                                  "required":  true,
+                                                                                                  "schema":  {
+                                                                                                                 "type":  "integer",
+                                                                                                                 "title":  "User Id"
+                                                                                                             }
+                                                                                              }
+                                                                                          ],
+                                                                           "responses":  {
+                                                                                             "200":  {
+                                                                                                         "description":  "Successful Response",
+                                                                                                         "content":  {
+                                                                                                                         "application/json":  {
+                                                                                                                                                  "schema":  {
+                                                                                                                                                                 "type":  "object",
+                                                                                                                                                                 "additionalProperties":  true,
+                                                                                                                                                                 "title":  "Response Approve Api Auth Pending  User Id  Approve Post"
+                                                                                                                                                             }
+                                                                                                                                              }
+                                                                                                                     }
+                                                                                                     },
+                                                                                             "422":  {
+                                                                                                         "description":  "Validation Error",
+                                                                                                         "content":  {
+                                                                                                                         "application/json":  {
+                                                                                                                                                  "schema":  {
+                                                                                                                                                                 "$ref":  "#/components/schemas/HTTPValidationError"
+                                                                                                                                                             }
+                                                                                                                                              }
+                                                                                                                     }
+                                                                                                     }
+                                                                                         }
+                                                                       }
+                                                          },
+                  "/api/auth/pending/{user_id}/reject":  {
+                                                             "post":  {
+                                                                          "tags":  [
+                                                                                       "auth"
+                                                                                   ],
+                                                                          "summary":  "Reject a pending account (admin)",
+                                                                          "description":  "Marks the request as rejected; the user cannot log in. Admin only.",
+                                                                          "operationId":  "reject_api_auth_pending__user_id__reject_post",
+                                                                          "security":  [
+                                                                                           {
+                                                                                               "HTTPBearer":  [
+
+                                                                                                              ]
+                                                                                           }
+                                                                                       ],
+                                                                          "parameters":  [
+                                                                                             {
+                                                                                                 "name":  "user_id",
+                                                                                                 "in":  "path",
+                                                                                                 "required":  true,
+                                                                                                 "schema":  {
+                                                                                                                "type":  "integer",
+                                                                                                                "title":  "User Id"
+                                                                                                            }
+                                                                                             }
+                                                                                         ],
+                                                                          "responses":  {
+                                                                                            "200":  {
+                                                                                                        "description":  "Successful Response",
+                                                                                                        "content":  {
+                                                                                                                        "application/json":  {
+                                                                                                                                                 "schema":  {
+                                                                                                                                                                "type":  "object",
+                                                                                                                                                                "additionalProperties":  true,
+                                                                                                                                                                "title":  "Response Reject Api Auth Pending  User Id  Reject Post"
+                                                                                                                                                            }
+                                                                                                                                             }
+                                                                                                                    }
+                                                                                                    },
+                                                                                            "422":  {
+                                                                                                        "description":  "Validation Error",
+                                                                                                        "content":  {
+                                                                                                                        "application/json":  {
+                                                                                                                                                 "schema":  {
+                                                                                                                                                                "$ref":  "#/components/schemas/HTTPValidationError"
+                                                                                                                                                            }
+                                                                                                                                             }
+                                                                                                                    }
+                                                                                                    }
+                                                                                        }
+                                                                      }
+                                                         },
                   "/api/patients":  {
                                         "get":  {
                                                     "tags":  [
                                                                  "patients"
                                                              ],
                                                     "summary":  "List all patients",
+                                                    "description":  "Returns all patient records.  When authenticated, patients are filtered to those created by the current user (or all patients for admins).  Works without authentication for development convenience.",
                                                     "operationId":  "list_patients_api_patients_get",
                                                     "responses":  {
                                                                       "200":  {
@@ -97,13 +286,21 @@
                                                                                                                        }
                                                                                               }
                                                                               }
-                                                                  }
+                                                                  },
+                                                    "security":  [
+                                                                     {
+                                                                         "HTTPBearer":  [
+
+                                                                                        ]
+                                                                     }
+                                                                 ]
                                                 },
                                         "post":  {
                                                      "tags":  [
                                                                   "patients"
                                                               ],
                                                      "summary":  "Register a new patient",
+                                                     "description":  "Creates a patient record. Authentication is recommended (records the creator).",
                                                      "operationId":  "create_patient_api_patients_post",
                                                      "requestBody":  {
                                                                          "content":  {
@@ -116,7 +313,7 @@
                                                                          "required":  true
                                                                      },
                                                      "responses":  {
-                                                                       "200":  {
+                                                                       "201":  {
                                                                                    "description":  "Successful Response",
                                                                                    "content":  {
                                                                                                    "application/json":  {
@@ -136,7 +333,14 @@
                                                                                                                         }
                                                                                                }
                                                                                }
-                                                                   }
+                                                                   },
+                                                     "security":  [
+                                                                      {
+                                                                          "HTTPBearer":  [
+
+                                                                                         ]
+                                                                      }
+                                                                  ]
                                                  }
                                     },
                   "/api/patients/{patient_id}/studies":  {
@@ -144,7 +348,7 @@
                                                                          "tags":  [
                                                                                       "patients"
                                                                                   ],
-                                                                         "summary":  "List studies for a patient",
+                                                                         "summary":  "List DICOM studies for a patient",
                                                                          "operationId":  "list_studies_api_patients__patient_id__studies_get",
                                                                          "parameters":  [
                                                                                             {
@@ -191,7 +395,7 @@
                                                                 "upload"
                                                             ],
                                                    "summary":  "Upload DICOM files",
-                                                   "description":  "Accepts one or more DICOM files (multipart/form-data). Returns a session_id and the metadata of every series found.",
+                                                   "description":  "Accepts one or more DICOM files (multipart/form-data). Creates a new processing session, saves files to disk, and returns session_id and the metadata of every DICOM series detected.\n\nSend as `Content-Type: multipart/form-data` with field name `files`.",
                                                    "operationId":  "upload_dicom_api_upload_post",
                                                    "requestBody":  {
                                                                        "content":  {
@@ -233,7 +437,7 @@
                                                                                 "segmentation"
                                                                             ],
                                                                    "summary":  "Get auto-computed thresholds",
-                                                                   "description":  "Returns the automatically computed lower/upper thresholds for the loaded series, along with the strategy used and a human-readable hint.",
+                                                                   "description":  "Returns the automatically computed lower/upper HU thresholds for the DICOM series loaded in this session, along with the strategy key and a Spanish clinical hint string.\n\nThis endpoint uses WindowCenter/WindowWidth from the DICOM header to give an instant response. The **POST /segment** endpoint uses the actual voxel distribution for the final segmentation.\n\nStrategies: `ct_stats`, `ct_wc_ww`, `xa_band_pass`, `xa_wc_ww`, `dsa`, `mr_percentile`, `wc_ww`.",
                                                                    "operationId":  "get_thresholds_api_thresholds__session_id__get",
                                                                    "parameters":  [
                                                                                       {
@@ -276,7 +480,7 @@
                                                                  "segmentation"
                                                              ],
                                                     "summary":  "Run segmentation pipeline",
-                                                    "description":  "Runs marching-cubes segmentation with the provided thresholds, cleanup and smoothing levels. Returns the mesh URL (.vtp) for vtk.js.",
+                                                    "description":  "Loads the DICOM volume from disk, applies the requested lower/upper thresholds, and runs the full VTK Marching-Cubes pipeline (smoothing + decimation + normals). Returns the mesh URL (.vtp) ready for vtk.js rendering.\n\n**Processing time:** 5–60 s depending on volume size and smoothing level. Use the WebSocket `/ws/progress/{session_id}` endpoint to stream progress updates.",
                                                     "operationId":  "segment_api_segment_post",
                                                     "requestBody":  {
                                                                         "content":  {
@@ -317,8 +521,8 @@
                                                                 "tags":  [
                                                                              "detection"
                                                                          ],
-                                                                "summary":  "Detect aneurysm in the segmented mesh",
-                                                                "description":  "Runs the aneurysm detection algorithm on the segmented mesh. Returns the location and an isolated dome mesh URL.",
+                                                                "summary":  "Detect aneurysm candidates in the segmented mesh",
+                                                                "description":  "Runs the v6 aneurysm detector on the stored vessel-tree mesh.\n\n**Algorithm:** Gaussian curvature thresholding → connected-component analysis → 3 hard shape gates (positive_gauss_frac, compactness, sphericity) → composite score.\n\nEach candidate is written as an isolated `.vtp` mesh and its URL is returned so vtk.js can render individual domes.\n\n**Prerequisite:** `POST /segment` must be called first.",
                                                                 "operationId":  "detect_aneurysm_api_detect__session_id__post",
                                                                 "parameters":  [
                                                                                    {
@@ -360,8 +564,8 @@
                                                                     "tags":  [
                                                                                  "detection"
                                                                              ],
-                                                                    "summary":  "Get aneurysm morphometry",
-                                                                    "description":  "Returns quantitative morphometry of the detected aneurysm. All linear values are in millimetres. Check neck_valid before trusting AR, BF and DNR.",
+                                                                    "summary":  "Compute aneurysm morphometry",
+                                                                    "description":  "Runs the full morphometric analysis on the best-scoring candidate mesh from the most recent detection run.\n\nReturns all clinical indices:\n- **DNR** (Dome-to-Neck Ratio) — risk ↑ if \u003e 2.0\n- **AR** (Aspect Ratio) — risk ↑ if \u003e 1.6\n- **BF** (Bottleneck Factor) — wide neck if \u003e 1.5\n- **UI** (Undulation Index) — irregular dome if \u003e 0.15\n- **EI** (Ellipticity Index) — non-spherical if \u003e 0.35\n- **NSI** (Non-Sphericity Index)\n\nNeck origin is saved to session state for the perforators endpoint.\n\n**Prerequisite:** `POST /detect/{session_id}` must be called first.",
                                                                     "operationId":  "get_morphometry_api_morphometry__session_id__get",
                                                                     "parameters":  [
                                                                                        {
@@ -404,7 +608,7 @@
                                                                                  "perforators"
                                                                              ],
                                                                     "summary":  "Detect perforator vessels at risk",
-                                                                    "description":  "Returns all perforator vessel candidates found near the aneurysm neck. Each candidate includes its 3D position, radius, distance to the neck and risk classification (1=High/red, 2=Medium/yellow, 3=Low/green).",
+                                                                    "description":  "Analyses the full vascular mesh around the aneurysm neck to identify suspected perforator / branch-point candidates based on vertex-valence anomaly detection.\n\n**Risk zones** (centred on neck origin):\n- Zone 1 (high / red)   — ≤ 3 mm from neck\n- Zone 2 (medium / yellow) — 3–5 mm from neck\n- Zone 3 (low / green)  — 5–8 mm from neck\n\nThe tagged mesh (`perforators_risk.vtp`) is also written to the session for colour-mapped 3D display.\n\n**Best results:** run `POST /detect` and `GET /morphometry` first so the neck origin is accurate.  Falls back to the first detected candidate\u0027s centroid when morphometry has not been run.",
                                                                     "operationId":  "get_perforators_api_perforators__session_id__get",
                                                                     "parameters":  [
                                                                                        {
@@ -446,8 +650,8 @@
                                                                      "tags":  [
                                                                                   "longitudinal"
                                                                               ],
-                                                                     "summary":  "Get longitudinal follow-up data for the current patient",
-                                                                     "description":  "Returns all historical planning sessions for the same patient, ordered by date, plus computed deltas between the current and the most recent previous session.",
+                                                                     "summary":  "Get longitudinal follow-up data for this session\u0027s patient",
+                                                                     "description":  "Returns all historical planning sessions for the patient linked to this session, ordered by date, plus computed deltas against the previous session.\n\n**Prerequisite:** the session must have been saved via `POST /api/sessions/save` with a `patient_id` to enable longitudinal comparison. Without a saved record, returns only the current session\u0027s morphometry snapshot.",
                                                                      "operationId":  "get_longitudinal_api_longitudinal__session_id__get",
                                                                      "parameters":  [
                                                                                         {
@@ -490,7 +694,7 @@
                                                                             "treatment"
                                                                         ],
                                                                "summary":  "Compute CLIP vs ENDOVASCULAR recommendation",
-                                                               "description":  "Runs the multi-factor decision engine using aneurysm morphometry (from the current session) and optional clinical inputs. Returns a scored recommendation with individual factor breakdown.",
+                                                               "description":  "Runs the 8-factor evidence-based decision engine using aneurysm morphometry (stored in the session after Step 3 — Detección/Morfometría) and optional clinical inputs (location, rupture status). Returns a scored recommendation with full factor breakdown.\n\n**References:** ISAT 2002, BRAT 2013, AHA/ASA Guidelines 2015.",
                                                                "operationId":  "compute_treatment_decision_api_treatment_decision_post",
                                                                "requestBody":  {
                                                                                    "content":  {
@@ -532,6 +736,7 @@
                                                               "clips"
                                                           ],
                                                  "summary":  "Get clip device library",
+                                                 "description":  "Returns the full surgical clip library (40+ models across Yasargil, Sugita, Aesculap and Codman systems). Each entry includes blade length, shape, closing force, and the required applier.",
                                                  "operationId":  "get_clip_library_api_clips_get",
                                                  "responses":  {
                                                                    "200":  {
@@ -557,6 +762,7 @@
                                                                                            "clips"
                                                                                        ],
                                                                               "summary":  "Get clip recommendations from the Clip Recommender assistant",
+                                                                              "description":  "Scores all clips in the catalogue against the patient\u0027s neck diameter and aspect ratio (loaded from session morphometry). Returns up to 8 ranked recommendations.\n\nScoring weights: coverage ratio 45%, shape fit 40%, closing force 15%.",
                                                                               "operationId":  "get_clip_recommendations_api_clips_recommendations__session_id__get",
                                                                               "parameters":  [
                                                                                                  {
@@ -603,6 +809,7 @@
                                                                     "clips"
                                                                 ],
                                                        "summary":  "Compute clip placement plan",
+                                                       "description":  "Builds a real 3D mesh of each placed clip, checks collision against the segmented vessel with vtkCollisionDetectionFilter, and estimates neck coverage from the intersection of the clips with the neck plane. Returns the combined clip mesh URL (.vtp) for the 3D viewer.",
                                                        "operationId":  "plan_clips_api_clips_plan_post",
                                                        "requestBody":  {
                                                                            "content":  {
@@ -644,6 +851,7 @@
                                                               "coils"
                                                           ],
                                                  "summary":  "Get coil device library",
+                                                 "description":  "Returns the full endovascular coil library (40+ models: Stryker Target 360°, Penumbra Ruby, MicroVention HydroCoil, Medtronic Axium). Each entry includes diameter, length, coil type (framing/filling/finishing) and required microwire.",
                                                  "operationId":  "get_coil_library_api_coils_get",
                                                  "responses":  {
                                                                    "200":  {
@@ -669,6 +877,7 @@
                                                                     "coils"
                                                                 ],
                                                        "summary":  "Compute coil embolization plan",
+                                                       "description":  "Accepts a list of coil placements and estimates the resulting packing density based on coil wire volumes and the aneurysm sac volume (from session morphometry). Returns packing density and estimated angiographic occlusion grade.\n\nTarget: ≥ 20% packing density for durable occlusion (Sluzewski AJNR 2004).",
                                                        "operationId":  "plan_coils_api_coils_plan_post",
                                                        "requestBody":  {
                                                                            "content":  {
@@ -778,7 +987,7 @@
                                                                 "report"
                                                             ],
                                                    "summary":  "Generate surgical PDF report",
-                                                   "description":  "Generates the full surgical planning report as a PDF and optionally as a DICOM Structured Report. Returns download URLs.",
+                                                   "description":  "Assembles all session data (morphometry, treatment decision, patient info) and generates a structured PDF using ReportLab.\n\n**Prerequisite:** the session must have completed at least the morphometry step (Step 3) for the report to contain clinical data.\n\nAn optional `screenshot_png_b64` field (base64-encoded PNG) can be sent to embed the 3D viewer capture in the report.\n\nReturns a `/data/…` download URL pointing to the generated PDF.",
                                                    "operationId":  "generate_report_api_report_post",
                                                    "requestBody":  {
                                                                        "content":  {
@@ -820,8 +1029,8 @@
                                                                     "report"
                                                                 ],
                                                        "summary":  "Export mesh as STL for 3D printing",
-                                                       "description":  "Exports the segmented vessel tree and/or aneurysm dome as an STL file suitable for 3D printing (Step 6 â ImpresiÃ³n 3D).",
-                                                       "operationId":  "export_stl_api_export_stl_post",
+                                                       "description":  "Merges the selected session meshes (vessel tree and/or aneurysm dome) into a single STL file suitable for 3D printing.\n\n**Prerequisite:** the session must have completed the segmentation step (Step 2) so that `vessel_tree.vtp` exists.\n\nUse `scale_factor` to adjust physical dimensions (1.0 = real size in mm).\n\nReturns a `/data/…` download URL pointing to the generated `.stl` file.",
+                                                       "operationId":  "export_stl_endpoint_api_export_stl_post",
                                                        "requestBody":  {
                                                                            "content":  {
                                                                                            "application/json":  {
@@ -861,7 +1070,8 @@
                                                           "tags":  [
                                                                        "sessions"
                                                                    ],
-                                                          "summary":  "Save current session state",
+                                                          "summary":  "Save current session state to database",
+                                                          "description":  "Persists the session\u0027s morphometry snapshot and metadata to the database. Subsequent calls update the same record (upsert on session_id). Optionally links the session to a patient and/or study record.",
                                                           "operationId":  "save_session_api_sessions_save_post",
                                                           "requestBody":  {
                                                                               "content":  {
@@ -894,7 +1104,14 @@
                                                                                                                              }
                                                                                                     }
                                                                                     }
-                                                                        }
+                                                                        },
+                                                          "security":  [
+                                                                           {
+                                                                               "HTTPBearer":  [
+
+                                                                                              ]
+                                                                           }
+                                                                       ]
                                                       }
                                          },
                   "/api/sessions":  {
@@ -903,6 +1120,7 @@
                                                                  "sessions"
                                                              ],
                                                     "summary":  "List all saved sessions",
+                                                    "description":  "Returns all planning sessions from the database, newest first.",
                                                     "operationId":  "list_sessions_api_sessions_get",
                                                     "responses":  {
                                                                       "200":  {
@@ -928,6 +1146,7 @@
                                                                                        "sessions"
                                                                                    ],
                                                                           "summary":  "Restore a saved session",
+                                                                          "description":  "Creates a fresh temporary session and re-populates its state from the database record identified by `session_id`. Returns the new session_id to use for subsequent API calls.",
                                                                           "operationId":  "restore_session_api_sessions__session_id__restore_post",
                                                                           "parameters":  [
                                                                                              {
@@ -964,6 +1183,188 @@
                                                                                         }
                                                                       }
                                                          },
+                  "/api/volume/{session_id}/meta":  {
+                                                        "get":  {
+                                                                    "tags":  [
+                                                                                 "mpr"
+                                                                             ],
+                                                                    "summary":  "Get DICOM volume metadata for MPR",
+                                                                    "description":  "Loads (and caches) the primary DICOM series volume and returns its shape, spacing and default window/level so the frontend can set up the MPR sliders. First call triggers the volume load; subsequent calls are instant.",
+                                                                    "operationId":  "volume_meta_api_volume__session_id__meta_get",
+                                                                    "parameters":  [
+                                                                                       {
+                                                                                           "name":  "session_id",
+                                                                                           "in":  "path",
+                                                                                           "required":  true,
+                                                                                           "schema":  {
+                                                                                                          "type":  "string",
+                                                                                                          "title":  "Session Id"
+                                                                                                      }
+                                                                                       }
+                                                                                   ],
+                                                                    "responses":  {
+                                                                                      "200":  {
+                                                                                                  "description":  "Successful Response",
+                                                                                                  "content":  {
+                                                                                                                  "application/json":  {
+                                                                                                                                           "schema":  {
+                                                                                                                                                          "type":  "object",
+                                                                                                                                                          "additionalProperties":  true,
+                                                                                                                                                          "title":  "Response Volume Meta Api Volume  Session Id  Meta Get"
+                                                                                                                                                      }
+                                                                                                                                       }
+                                                                                                              }
+                                                                                              },
+                                                                                      "422":  {
+                                                                                                  "description":  "Validation Error",
+                                                                                                  "content":  {
+                                                                                                                  "application/json":  {
+                                                                                                                                           "schema":  {
+                                                                                                                                                          "$ref":  "#/components/schemas/HTTPValidationError"
+                                                                                                                                                      }
+                                                                                                                                       }
+                                                                                                              }
+                                                                                              }
+                                                                                  }
+                                                                }
+                                                    },
+                  "/api/slice/{session_id}/{plane}/{index}":  {
+                                                                  "get":  {
+                                                                              "tags":  [
+                                                                                           "mpr"
+                                                                                       ],
+                                                                              "summary":  "Get a single MPR slice as PNG",
+                                                                              "description":  "Returns a grayscale PNG of the requested plane and slice index, with the given window center/width applied. Planes: axial · coronal · sagital.",
+                                                                              "operationId":  "get_slice_api_slice__session_id___plane___index__get",
+                                                                              "parameters":  [
+                                                                                                 {
+                                                                                                     "name":  "session_id",
+                                                                                                     "in":  "path",
+                                                                                                     "required":  true,
+                                                                                                     "schema":  {
+                                                                                                                    "type":  "string",
+                                                                                                                    "title":  "Session Id"
+                                                                                                                }
+                                                                                                 },
+                                                                                                 {
+                                                                                                     "name":  "plane",
+                                                                                                     "in":  "path",
+                                                                                                     "required":  true,
+                                                                                                     "schema":  {
+                                                                                                                    "type":  "string",
+                                                                                                                    "title":  "Plane"
+                                                                                                                }
+                                                                                                 },
+                                                                                                 {
+                                                                                                     "name":  "index",
+                                                                                                     "in":  "path",
+                                                                                                     "required":  true,
+                                                                                                     "schema":  {
+                                                                                                                    "type":  "integer",
+                                                                                                                    "title":  "Index"
+                                                                                                                }
+                                                                                                 },
+                                                                                                 {
+                                                                                                     "name":  "wc",
+                                                                                                     "in":  "query",
+                                                                                                     "required":  false,
+                                                                                                     "schema":  {
+                                                                                                                    "anyOf":  [
+                                                                                                                                  {
+                                                                                                                                      "type":  "number"
+                                                                                                                                  },
+                                                                                                                                  {
+                                                                                                                                      "type":  "null"
+                                                                                                                                  }
+                                                                                                                              ],
+                                                                                                                    "description":  "Window center (defaults to volume WC)",
+                                                                                                                    "title":  "Wc"
+                                                                                                                },
+                                                                                                     "description":  "Window center (defaults to volume WC)"
+                                                                                                 },
+                                                                                                 {
+                                                                                                     "name":  "ww",
+                                                                                                     "in":  "query",
+                                                                                                     "required":  false,
+                                                                                                     "schema":  {
+                                                                                                                    "anyOf":  [
+                                                                                                                                  {
+                                                                                                                                      "type":  "number"
+                                                                                                                                  },
+                                                                                                                                  {
+                                                                                                                                      "type":  "null"
+                                                                                                                                  }
+                                                                                                                              ],
+                                                                                                                    "description":  "Window width (defaults to volume WW)",
+                                                                                                                    "title":  "Ww"
+                                                                                                                },
+                                                                                                     "description":  "Window width (defaults to volume WW)"
+                                                                                                 }
+                                                                                             ],
+                                                                              "responses":  {
+                                                                                                "200":  {
+                                                                                                            "description":  "Successful Response",
+                                                                                                            "content":  {
+                                                                                                                            "image/png":  {
+
+                                                                                                                                          }
+                                                                                                                        }
+                                                                                                        },
+                                                                                                "422":  {
+                                                                                                            "description":  "Validation Error",
+                                                                                                            "content":  {
+                                                                                                                            "application/json":  {
+                                                                                                                                                     "schema":  {
+                                                                                                                                                                    "$ref":  "#/components/schemas/HTTPValidationError"
+                                                                                                                                                                }
+                                                                                                                                                 }
+                                                                                                                        }
+                                                                                                        }
+                                                                                            }
+                                                                          }
+                                                              },
+                  "/api/phases":  {
+                                      "post":  {
+                                                   "tags":  [
+                                                                "phases"
+                                                            ],
+                                                   "summary":  "Compute the PHASES score",
+                                                   "description":  "Computes the PHASES 5-year rupture-risk score for an unruptured aneurysm (Greving et al., Lancet Neurology 2014) from six factors: Population, Hypertension, Age, Size, Earlier SAH and Site. The Size factor is usually filled from the morphometric analysis.",
+                                                   "operationId":  "phases_api_phases_post",
+                                                   "requestBody":  {
+                                                                       "content":  {
+                                                                                       "application/json":  {
+                                                                                                                "schema":  {
+                                                                                                                               "$ref":  "#/components/schemas/PhasesRequest"
+                                                                                                                           }
+                                                                                                            }
+                                                                                   },
+                                                                       "required":  true
+                                                                   },
+                                                   "responses":  {
+                                                                     "200":  {
+                                                                                 "description":  "Successful Response",
+                                                                                 "content":  {
+                                                                                                 "application/json":  {
+                                                                                                                          "schema":  {
+                                                                                                                                         "$ref":  "#/components/schemas/PhasesResult"
+                                                                                                                                     }
+                                                                                                                      }
+                                                                                             }
+                                                                             },
+                                                                     "422":  {
+                                                                                 "description":  "Validation Error",
+                                                                                 "content":  {
+                                                                                                 "application/json":  {
+                                                                                                                          "schema":  {
+                                                                                                                                         "$ref":  "#/components/schemas/HTTPValidationError"
+                                                                                                                                     }
+                                                                                                                      }
+                                                                                             }
+                                                                             }
+                                                                 }
+                                               }
+                                  },
                   "/health":  {
                                   "get":  {
                                               "tags":  [
@@ -1088,7 +1489,7 @@
                                                                                       "is_dsa":  {
                                                                                                      "type":  "boolean",
                                                                                                      "title":  "Is Dsa",
-                                                                                                     "description":  "True when DSA subtraction was detected (background â -1024 HU)",
+                                                                                                     "description":  "True when DSA subtraction was detected (background ≈ -1024 HU)",
                                                                                                      "default":  false
                                                                                                  },
                                                                                       "hint":  {
@@ -1097,9 +1498,16 @@
                                                                                                    "description":  "Human-readable explanation of the chosen strategy, shown as a tip in the segmentation panel"
                                                                                                },
                                                                                       "voxel_fraction":  {
-                                                                                                             "type":  "number",
+                                                                                                             "anyOf":  [
+                                                                                                                           {
+                                                                                                                               "type":  "number"
+                                                                                                                           },
+                                                                                                                           {
+                                                                                                                               "type":  "null"
+                                                                                                                           }
+                                                                                                                       ],
                                                                                                              "title":  "Voxel Fraction",
-                                                                                                             "description":  "Fraction of voxels captured by [lower, upper] in the full volume (0â1). Values \u003e 0.15 usually indicate the threshold is too permissive."
+                                                                                                             "description":  "Fraction of voxels captured by [lower, upper] in the full volume (0–1). Null when the DICOM volume has not been loaded yet. Values \u003e 0.15 usually indicate the threshold is too permissive."
                                                                                                          }
                                                                                   },
                                                                    "type":  "object",
@@ -1107,8 +1515,7 @@
                                                                                     "lower",
                                                                                     "upper",
                                                                                     "strategy",
-                                                                                    "hint",
-                                                                                    "voxel_fraction"
+                                                                                    "hint"
                                                                                 ],
                                                                    "title":  "AutoThresholdResult",
                                                                    "description":  "Auto-computed thresholds suggested to the user before segmentation."
@@ -1148,7 +1555,7 @@
                                                                                   "length_mm":  {
                                                                                                     "type":  "number",
                                                                                                     "title":  "Length Mm",
-                                                                                                    "description":  "Blade length (mm). Typical: 5â20 mm"
+                                                                                                    "description":  "Blade length (mm). Typical: 5–20 mm"
                                                                                                 },
                                                                                   "angle_deg":  {
                                                                                                     "type":  "number",
@@ -1165,7 +1572,7 @@
                                                                                   "closing_force_g":  {
                                                                                                           "type":  "number",
                                                                                                           "title":  "Closing Force G",
-                                                                                                          "description":  "Closing force in grams (typical: 80â200 g)"
+                                                                                                          "description":  "Closing force in grams (typical: 80–200 g)"
                                                                                                       },
                                                                                   "compatible_applier":  {
                                                                                                              "type":  "string",
@@ -1202,7 +1609,7 @@
                                                                                                          },
                                                                                                "type":  "array",
                                                                                                "title":  "Normal",
-                                                                                               "description":  "Clip blade normal vector [nx, ny, nz] â perpendicular to blade"
+                                                                                               "description":  "Clip blade normal vector [nx, ny, nz] — perpendicular to blade"
                                                                                            },
                                                                                 "rotation_deg":  {
                                                                                                      "type":  "number",
@@ -1380,12 +1787,12 @@
                                                                                   "diameter_mm":  {
                                                                                                       "type":  "number",
                                                                                                       "title":  "Diameter Mm",
-                                                                                                      "description":  "Primary coil loop diameter (mm). Typical: 2â20 mm"
+                                                                                                      "description":  "Primary coil loop diameter (mm). Typical: 2–20 mm"
                                                                                                   },
                                                                                   "length_cm":  {
                                                                                                     "type":  "number",
                                                                                                     "title":  "Length Cm",
-                                                                                                    "description":  "Coil length when uncoiled (cm). Typical: 5â40 cm"
+                                                                                                    "description":  "Coil length when uncoiled (cm). Typical: 5–40 cm"
                                                                                                 },
                                                                                   "coil_type":  {
                                                                                                     "type":  "string",
@@ -1427,7 +1834,7 @@
                                                                                                         "maximum":  1.0,
                                                                                                         "minimum":  0.0,
                                                                                                         "title":  "Packing Density",
-                                                                                                        "description":  "Local packing density contribution from this coil (0â1)"
+                                                                                                        "description":  "Local packing density contribution from this coil (0–1)"
                                                                                                     }
                                                                             },
                                                              "type":  "object",
@@ -1474,7 +1881,7 @@
                                                                                                                "maximum":  1.0,
                                                                                                                "minimum":  0.0,
                                                                                                                "title":  "Total Packing Density",
-                                                                                                               "description":  "Overall packing density of the aneurysm sac (volume of coils / sac volume). Target: â¥ 0.20 (20%). Typical: 0.20â0.35."
+                                                                                                               "description":  "Overall packing density of the aneurysm sac (volume of coils / sac volume). Target: ≥ 0.20 (20%). Typical: 0.20–0.35."
                                                                                                            },
                                                                                  "estimated_occlusion_pct":  {
                                                                                                                  "type":  "number",
@@ -1623,7 +2030,7 @@
                                                                                 "access_token":  {
                                                                                                      "type":  "string",
                                                                                                      "title":  "Access Token",
-                                                                                                     "description":  "JWT bearer token â include in Authorization header"
+                                                                                                     "description":  "JWT bearer token — include in Authorization header"
                                                                                                  },
                                                                                 "token_type":  {
                                                                                                    "type":  "string",
@@ -1671,7 +2078,7 @@
                                                                                     "delta":  {
                                                                                                   "type":  "number",
                                                                                                   "title":  "Delta",
-                                                                                                  "description":  "Absolute change (current â previous)"
+                                                                                                  "description":  "Absolute change (current − previous)"
                                                                                               },
                                                                                     "delta_pct":  {
                                                                                                       "type":  "number",
@@ -1681,7 +2088,7 @@
                                                                                     "trend":  {
                                                                                                   "type":  "string",
                                                                                                   "title":  "Trend",
-                                                                                                  "description":  "\u0027â crecimiento\u0027 | \u0027â reducciÃ³n\u0027 | \u0027â estable\u0027"
+                                                                                                  "description":  "\u0027↑ crecimiento\u0027 | \u0027↓ reducción\u0027 | \u0027→ estable\u0027"
                                                                                               },
                                                                                     "is_concerning":  {
                                                                                                           "type":  "boolean",
@@ -1787,7 +2194,7 @@
                                                                                      "growth_alert":  {
                                                                                                           "type":  "boolean",
                                                                                                           "title":  "Growth Alert",
-                                                                                                          "description":  "True when diameter growth \u003e 1 mm/year or volume growth \u003e 20% â triggers a clinical alert banner in the UI.",
+                                                                                                          "description":  "True when diameter growth \u003e 1 mm/year or volume growth \u003e 20% — triggers a clinical alert banner in the UI.",
                                                                                                           "default":  false
                                                                                                       },
                                                                                      "growth_alert_message":  {
@@ -1816,12 +2223,12 @@
                                                                                     "volume_mm3":  {
                                                                                                        "type":  "number",
                                                                                                        "title":  "Volume Mm3",
-                                                                                                       "description":  "Enclosed volume (mmÂ³)"
+                                                                                                       "description":  "Enclosed volume (mm³)"
                                                                                                    },
                                                                                     "surface_area_mm2":  {
                                                                                                              "type":  "number",
                                                                                                              "title":  "Surface Area Mm2",
-                                                                                                             "description":  "Total surface area (mmÂ²)"
+                                                                                                             "description":  "Total surface area (mm²)"
                                                                                                          },
                                                                                     "eq_sphere_diam_mm":  {
                                                                                                               "type":  "number",
@@ -1846,7 +2253,7 @@
                                                                                     "neck_mm":  {
                                                                                                     "type":  "number",
                                                                                                     "title":  "Neck Mm",
-                                                                                                    "description":  "Neck diameter â minimum cross-section (mm)"
+                                                                                                    "description":  "Neck diameter — minimum cross-section (mm)"
                                                                                                 },
                                                                                     "dome_height_mm":  {
                                                                                                            "type":  "number",
@@ -1856,31 +2263,31 @@
                                                                                     "dnr":  {
                                                                                                 "type":  "number",
                                                                                                 "title":  "Dnr",
-                                                                                                "description":  "Dome-to-Neck Ratio = max_diameter / neck_mm  (risk â if \u003e 2.0)"
+                                                                                                "description":  "Dome-to-Neck Ratio = max_diameter / neck_mm  (risk ↑ if \u003e 2.0)"
                                                                                             },
                                                                                     "ar":  {
                                                                                                "type":  "number",
                                                                                                "title":  "Ar",
-                                                                                               "description":  "Aspect Ratio = dome_height / neck_mm  (risk â if \u003e 1.6)"
+                                                                                               "description":  "Aspect Ratio = dome_height / neck_mm  (risk ↑ if \u003e 1.6)"
                                                                                            },
                                                                                     "bf":  {
                                                                                                "type":  "number",
                                                                                                "title":  "Bf",
-                                                                                               "description":  "Bottleneck Factor = max_diameter / neck_mm  (\u003e 1.5 â wide neck)"
+                                                                                               "description":  "Bottleneck Factor = max_diameter / neck_mm  (\u003e 1.5 → wide neck)"
                                                                                            },
                                                                                     "compactness":  {
                                                                                                         "type":  "number",
                                                                                                         "maximum":  1.0,
                                                                                                         "minimum":  0.0,
                                                                                                         "title":  "Compactness",
-                                                                                                        "description":  "Wadell sphericity â 1 = perfect sphere, 0 = highly irregular"
+                                                                                                        "description":  "Wadell sphericity — 1 = perfect sphere, 0 = highly irregular"
                                                                                                     },
                                                                                     "ui":  {
                                                                                                "type":  "number",
                                                                                                "maximum":  1.0,
                                                                                                "minimum":  0.0,
                                                                                                "title":  "Ui",
-                                                                                               "description":  "Undulation Index = 1 â V_sac / V_convex_hull  (\u003e 0.15 â irregular)",
+                                                                                               "description":  "Undulation Index = 1 − V_sac / V_convex_hull  (\u003e 0.15 → irregular)",
                                                                                                "default":  0.0
                                                                                            },
                                                                                     "ei":  {
@@ -1888,7 +2295,7 @@
                                                                                                "maximum":  1.0,
                                                                                                "minimum":  0.0,
                                                                                                "title":  "Ei",
-                                                                                               "description":  "Ellipticity Index  (\u003e 0.35 â non-spherical, higher rupture risk)",
+                                                                                               "description":  "Ellipticity Index  (\u003e 0.35 → non-spherical, higher rupture risk)",
                                                                                                "default":  0.0
                                                                                            },
                                                                                     "nsi":  {
@@ -1896,14 +2303,14 @@
                                                                                                 "maximum":  1.0,
                                                                                                 "minimum":  0.0,
                                                                                                 "title":  "Nsi",
-                                                                                                "description":  "Non-Sphericity Index = 1 â Wadell_sphericity  (0 = perfect sphere)",
+                                                                                                "description":  "Non-Sphericity Index = 1 − Wadell_sphericity  (0 = perfect sphere)",
                                                                                                 "default":  0.0
                                                                                             },
                                                                                     "sr":  {
                                                                                                "type":  "number",
                                                                                                "minimum":  0.0,
                                                                                                "title":  "Sr",
-                                                                                               "description":  "Size Ratio = max_diameter / parent_artery_diameter. 0 when parent artery not available (\u003e 3.0 â elevated risk)",
+                                                                                               "description":  "Size Ratio = max_diameter / parent_artery_diameter. 0 when parent artery not available (\u003e 3.0 → elevated risk)",
                                                                                                "default":  0.0
                                                                                            },
                                                                                     "rupture_risk_label":  {
@@ -1914,7 +2321,7 @@
                                                                                                                             "Bajo"
                                                                                                                         ],
                                                                                                                "title":  "Rupture Risk Label",
-                                                                                                               "description":  "Heuristic rupture-risk label derived from AR, DNR, UI, SR. NOT a clinical diagnosis â for planning reference only."
+                                                                                                               "description":  "Heuristic rupture-risk label derived from AR, DNR, UI, SR. NOT a clinical diagnosis — for planning reference only."
                                                                                                            },
                                                                                     "neck_valid":  {
                                                                                                        "type":  "boolean",
@@ -2118,6 +2525,71 @@
                                                               "title":  "PatientSummary",
                                                               "description":  "Compact patient record for list views."
                                                           },
+                                       "PendingUser":  {
+                                                           "properties":  {
+                                                                              "id":  {
+                                                                                         "type":  "integer",
+                                                                                         "title":  "Id"
+                                                                                     },
+                                                                              "username":  {
+                                                                                               "type":  "string",
+                                                                                               "title":  "Username"
+                                                                                           },
+                                                                              "full_name":  {
+                                                                                                "type":  "string",
+                                                                                                "title":  "Full Name"
+                                                                                            },
+                                                                              "national_id":  {
+                                                                                                  "type":  "string",
+                                                                                                  "title":  "National Id",
+                                                                                                  "default":  ""
+                                                                                              },
+                                                                              "professional_id":  {
+                                                                                                      "type":  "string",
+                                                                                                      "title":  "Professional Id",
+                                                                                                      "default":  ""
+                                                                                                  },
+                                                                              "specialty":  {
+                                                                                                "type":  "string",
+                                                                                                "title":  "Specialty",
+                                                                                                "default":  ""
+                                                                                            },
+                                                                              "university":  {
+                                                                                                 "type":  "string",
+                                                                                                 "title":  "University",
+                                                                                                 "default":  ""
+                                                                                             },
+                                                                              "hospital":  {
+                                                                                               "type":  "string",
+                                                                                               "title":  "Hospital",
+                                                                                               "default":  ""
+                                                                                           },
+                                                                              "position":  {
+                                                                                               "type":  "string",
+                                                                                               "title":  "Position",
+                                                                                               "default":  ""
+                                                                                           },
+                                                                              "orcid":  {
+                                                                                            "type":  "string",
+                                                                                            "title":  "Orcid",
+                                                                                            "default":  ""
+                                                                                        },
+                                                                              "created_at":  {
+                                                                                                 "type":  "string",
+                                                                                                 "title":  "Created At",
+                                                                                                 "description":  "ISO-8601 timestamp of the request"
+                                                                                             }
+                                                                          },
+                                                           "type":  "object",
+                                                           "required":  [
+                                                                            "id",
+                                                                            "username",
+                                                                            "full_name",
+                                                                            "created_at"
+                                                                        ],
+                                                           "title":  "PendingUser",
+                                                           "description":  "One pending registration request, shown in the admin approval panel."
+                                                       },
                                        "PerforatorCandidate":  {
                                                                    "properties":  {
                                                                                       "id":  {
@@ -2134,7 +2606,7 @@
                                                                                                         "maximum":  5.0,
                                                                                                         "minimum":  0.1,
                                                                                                         "title":  "Radius Mm",
-                                                                                                        "description":  "Estimated vessel radius (mm). Typical range: 0.15â0.75 mm"
+                                                                                                        "description":  "Estimated vessel radius (mm). Typical range: 0.15–0.75 mm"
                                                                                                     },
                                                                                       "distance_to_neck_mm":  {
                                                                                                                   "type":  "number",
@@ -2150,7 +2622,7 @@
                                                                                                                       3
                                                                                                                   ],
                                                                                                          "title":  "Risk Level",
-                                                                                                         "description":  "Risk classification: 1=High (\u003c3 mm), 2=Medium (3â6 mm), 3=Low (\u003e6 mm)"
+                                                                                                         "description":  "Risk classification: 1=High (\u003c3 mm), 2=Medium (3–6 mm), 3=Low (\u003e6 mm)"
                                                                                                      },
                                                                                       "risk_label":  {
                                                                                                          "type":  "string",
@@ -2218,6 +2690,128 @@
                                                                  "title":  "PerforatorsResult",
                                                                  "description":  "All perforator candidates detected near the aneurysm neck."
                                                              },
+                                       "PhasesRequest":  {
+                                                             "properties":  {
+                                                                                "population":  {
+                                                                                                   "type":  "string",
+                                                                                                   "enum":  [
+                                                                                                                "other",
+                                                                                                                "japan",
+                                                                                                                "finland"
+                                                                                                            ],
+                                                                                                   "title":  "Population",
+                                                                                                   "description":  "Patient population",
+                                                                                                   "default":  "other"
+                                                                                               },
+                                                                                "hypertension":  {
+                                                                                                     "type":  "boolean",
+                                                                                                     "title":  "Hypertension",
+                                                                                                     "description":  "History of hypertension",
+                                                                                                     "default":  false
+                                                                                                 },
+                                                                                "age_years":  {
+                                                                                                  "type":  "integer",
+                                                                                                  "maximum":  120.0,
+                                                                                                  "minimum":  0.0,
+                                                                                                  "title":  "Age Years",
+                                                                                                  "description":  "Patient age in years",
+                                                                                                  "default":  60
+                                                                                              },
+                                                                                "size_mm":  {
+                                                                                                "type":  "number",
+                                                                                                "minimum":  0.0,
+                                                                                                "title":  "Size Mm",
+                                                                                                "description":  "Aneurysm max diameter (mm)"
+                                                                                            },
+                                                                                "earlier_sah":  {
+                                                                                                    "type":  "boolean",
+                                                                                                    "title":  "Earlier Sah",
+                                                                                                    "description":  "Earlier subarachnoid haemorrhage from another aneurysm",
+                                                                                                    "default":  false
+                                                                                                },
+                                                                                "site":  {
+                                                                                             "type":  "string",
+                                                                                             "enum":  [
+                                                                                                          "ica",
+                                                                                                          "mca",
+                                                                                                          "aca_pcom_posterior"
+                                                                                                      ],
+                                                                                             "title":  "Site",
+                                                                                             "description":  "Aneurysm location category",
+                                                                                             "default":  "ica"
+                                                                                         }
+                                                                            },
+                                                             "type":  "object",
+                                                             "required":  [
+                                                                              "size_mm"
+                                                                          ],
+                                                             "title":  "PhasesRequest",
+                                                             "description":  "Clinical inputs for the PHASES score. Size auto-fills from morphometry."
+                                                         },
+                                       "PhasesResult":  {
+                                                            "properties":  {
+                                                                               "population_pts":  {
+                                                                                                      "type":  "integer",
+                                                                                                      "title":  "Population Pts"
+                                                                                                  },
+                                                                               "hypertension_pts":  {
+                                                                                                        "type":  "integer",
+                                                                                                        "title":  "Hypertension Pts"
+                                                                                                    },
+                                                                               "age_pts":  {
+                                                                                               "type":  "integer",
+                                                                                               "title":  "Age Pts"
+                                                                                           },
+                                                                               "size_pts":  {
+                                                                                                "type":  "integer",
+                                                                                                "title":  "Size Pts"
+                                                                                            },
+                                                                               "sah_pts":  {
+                                                                                               "type":  "integer",
+                                                                                               "title":  "Sah Pts"
+                                                                                           },
+                                                                               "site_pts":  {
+                                                                                                "type":  "integer",
+                                                                                                "title":  "Site Pts"
+                                                                                            },
+                                                                               "total_score":  {
+                                                                                                   "type":  "integer",
+                                                                                                   "maximum":  22.0,
+                                                                                                   "minimum":  0.0,
+                                                                                                   "title":  "Total Score",
+                                                                                                   "description":  "Sum of all PHASES factors"
+                                                                                               },
+                                                                               "risk_5yr_pct":  {
+                                                                                                    "type":  "number",
+                                                                                                    "title":  "Risk 5Yr Pct",
+                                                                                                    "description":  "Estimated 5-year rupture risk (%)"
+                                                                                                },
+                                                                               "risk_band":  {
+                                                                                                 "type":  "string",
+                                                                                                 "enum":  [
+                                                                                                              "low",
+                                                                                                              "moderate",
+                                                                                                              "high"
+                                                                                                          ],
+                                                                                                 "title":  "Risk Band",
+                                                                                                 "description":  "high ≥ 7% · moderate ≥ 2% · low \u003c 2%"
+                                                                                             }
+                                                                           },
+                                                            "type":  "object",
+                                                            "required":  [
+                                                                             "population_pts",
+                                                                             "hypertension_pts",
+                                                                             "age_pts",
+                                                                             "size_pts",
+                                                                             "sah_pts",
+                                                                             "site_pts",
+                                                                             "total_score",
+                                                                             "risk_5yr_pct",
+                                                                             "risk_band"
+                                                                         ],
+                                                            "title":  "PhasesResult",
+                                                            "description":  "PHASES total score, per-factor breakdown, and 5-year rupture risk."
+                                                        },
                                        "PlanRequest":  {
                                                            "properties":  {
                                                                               "session_id":  {
@@ -2248,7 +2842,7 @@
                                                                                                   "maximum":  100.0,
                                                                                                   "minimum":  0.0,
                                                                                                   "title":  "Coverage Pct",
-                                                                                                  "description":  "Percentage of the aneurysm neck area covered by the stent mesh. Target: â¥ 30% for flow diverter effect. Typical: 30â70%."
+                                                                                                  "description":  "Percentage of the aneurysm neck area covered by the stent mesh. Target: ≥ 30% for flow diverter effect. Typical: 30–70%."
                                                                                               },
                                                                              "neck_diameter_covered_mm":  {
                                                                                                               "type":  "number",
@@ -2369,6 +2963,18 @@
                                                                                                               "description":  "Include a screenshot of the current 3D view in the report",
                                                                                                               "default":  true
                                                                                                           },
+                                                                                "screenshot_png_b64":  {
+                                                                                                           "anyOf":  [
+                                                                                                                         {
+                                                                                                                             "type":  "string"
+                                                                                                                         },
+                                                                                                                         {
+                                                                                                                             "type":  "null"
+                                                                                                                         }
+                                                                                                                     ],
+                                                                                                           "title":  "Screenshot Png B64",
+                                                                                                           "description":  "Base64-encoded PNG screenshot of the 3D viewer. When provided it is embedded in the report as the aneurysm image."
+                                                                                                       },
                                                                                 "force_morphometry_note":  {
                                                                                                                "anyOf":  [
                                                                                                                              {
@@ -2477,7 +3083,7 @@
                                                                                                    "maximum":  10.0,
                                                                                                    "minimum":  0.0,
                                                                                                    "title":  "Smoothing",
-                                                                                                   "description":  "Smoothing level 0â10 (combines Laplacian smoothing + decimation)",
+                                                                                                   "description":  "Smoothing level 0–10 (combines Laplacian smoothing + decimation)",
                                                                                                    "default":  3
                                                                                                },
                                                                                  "cleanup":  {
@@ -2485,7 +3091,7 @@
                                                                                                  "maximum":  10.0,
                                                                                                  "minimum":  0.0,
                                                                                                  "title":  "Cleanup",
-                                                                                                 "description":  "Cleanup level 0â10 (removes disconnected mesh fragments)",
+                                                                                                 "description":  "Cleanup level 0–10 (removes disconnected mesh fragments)",
                                                                                                  "default":  3
                                                                                              }
                                                                              },
@@ -2507,9 +3113,16 @@
                                                                                                  "description":  "URL of the segmented mesh file (.vtp) relative to the API base. Loaded directly by vtk.js in the browser."
                                                                                              },
                                                                                 "voxel_fraction":  {
-                                                                                                       "type":  "number",
+                                                                                                       "anyOf":  [
+                                                                                                                     {
+                                                                                                                         "type":  "number"
+                                                                                                                     },
+                                                                                                                     {
+                                                                                                                         "type":  "null"
+                                                                                                                     }
+                                                                                                                 ],
                                                                                                        "title":  "Voxel Fraction",
-                                                                                                       "description":  "Fraction of voxels captured by the applied thresholds (0â1)"
+                                                                                                       "description":  "Fraction of voxels captured by the applied thresholds (0–1). Null until real segmentation runs."
                                                                                                    },
                                                                                 "strategy":  {
                                                                                                  "type":  "string",
@@ -2536,7 +3149,6 @@
                                                              "type":  "object",
                                                              "required":  [
                                                                               "mesh_url",
-                                                                              "voxel_fraction",
                                                                               "strategy",
                                                                               "vertices",
                                                                               "faces"
@@ -2564,7 +3176,7 @@
                                                                              "modality":  {
                                                                                               "type":  "string",
                                                                                               "title":  "Modality",
-                                                                                              "description":  "DICOM Modality tag (CT, XA, MR, â¦)"
+                                                                                              "description":  "DICOM Modality tag (CT, XA, MR, …)"
                                                                                           },
                                                                              "slices":  {
                                                                                             "type":  "integer",
@@ -2588,7 +3200,7 @@
                                                                              "is_projection":  {
                                                                                                    "type":  "boolean",
                                                                                                    "title":  "Is Projection",
-                                                                                                   "description":  "True when the series appears to be a 2D projection (\u003c 10 slices or spacing_z \u003e 4 Ã spacing_xy). 3D segmentation will not be meaningful.",
+                                                                                                   "description":  "True when the series appears to be a 2D projection (\u003c 10 slices or spacing_z \u003e 4 × spacing_xy). 3D segmentation will not be meaningful.",
                                                                                                    "default":  false
                                                                                                },
                                                                              "projection_warning":  {
@@ -2768,7 +3380,7 @@
                                                                                                           "maximum":  5.0,
                                                                                                           "minimum":  0.0,
                                                                                                           "title":  "Current Step",
-                                                                                                          "description":  "Current workflow step index (0-based, 0=Paciente â¦ 5=Exportar)",
+                                                                                                          "description":  "Current workflow step index (0-based, 0=Paciente … 5=Exportar)",
                                                                                                           "default":  0
                                                                                                       }
                                                                                  },
@@ -2806,6 +3418,98 @@
                                                                  "title":  "SessionSaveResult",
                                                                  "description":  "Confirmation of a successful session save."
                                                              },
+                                       "SignupRequest":  {
+                                                             "properties":  {
+                                                                                "username":  {
+                                                                                                 "type":  "string",
+                                                                                                 "minLength":  3,
+                                                                                                 "title":  "Username",
+                                                                                                 "description":  "Desired username"
+                                                                                             },
+                                                                                "password":  {
+                                                                                                 "type":  "string",
+                                                                                                 "minLength":  8,
+                                                                                                 "title":  "Password",
+                                                                                                 "description":  "Password (min 8 chars)"
+                                                                                             },
+                                                                                "full_name":  {
+                                                                                                  "type":  "string",
+                                                                                                  "minLength":  1,
+                                                                                                  "title":  "Full Name",
+                                                                                                  "description":  "Full professional name"
+                                                                                              },
+                                                                                "national_id":  {
+                                                                                                    "type":  "string",
+                                                                                                    "title":  "National Id",
+                                                                                                    "description":  "National ID / cédula",
+                                                                                                    "default":  ""
+                                                                                                },
+                                                                                "professional_id":  {
+                                                                                                        "type":  "string",
+                                                                                                        "title":  "Professional Id",
+                                                                                                        "description":  "Professional licence ID",
+                                                                                                        "default":  ""
+                                                                                                    },
+                                                                                "specialty":  {
+                                                                                                  "type":  "string",
+                                                                                                  "title":  "Specialty",
+                                                                                                  "description":  "Medical specialty",
+                                                                                                  "default":  ""
+                                                                                              },
+                                                                                "university":  {
+                                                                                                   "type":  "string",
+                                                                                                   "title":  "University",
+                                                                                                   "description":  "Affiliated university",
+                                                                                                   "default":  ""
+                                                                                               },
+                                                                                "hospital":  {
+                                                                                                 "type":  "string",
+                                                                                                 "title":  "Hospital",
+                                                                                                 "description":  "Hospital / centre",
+                                                                                                 "default":  ""
+                                                                                             },
+                                                                                "position":  {
+                                                                                                 "type":  "string",
+                                                                                                 "title":  "Position",
+                                                                                                 "description":  "Role / position",
+                                                                                                 "default":  ""
+                                                                                             },
+                                                                                "orcid":  {
+                                                                                              "type":  "string",
+                                                                                              "title":  "Orcid",
+                                                                                              "description":  "ORCID identifier",
+                                                                                              "default":  ""
+                                                                                          }
+                                                                            },
+                                                             "type":  "object",
+                                                             "required":  [
+                                                                              "username",
+                                                                              "password",
+                                                                              "full_name"
+                                                                          ],
+                                                             "title":  "SignupRequest",
+                                                             "description":  "Public self-registration — creates a pending account for admin review."
+                                                         },
+                                       "SignupResponse":  {
+                                                              "properties":  {
+                                                                                 "status":  {
+                                                                                                "type":  "string",
+                                                                                                "title":  "Status",
+                                                                                                "description":  "Always \u0027pending\u0027 on success"
+                                                                                            },
+                                                                                 "message":  {
+                                                                                                 "type":  "string",
+                                                                                                 "title":  "Message",
+                                                                                                 "description":  "Human-readable confirmation for the UI"
+                                                                                             }
+                                                                             },
+                                                              "type":  "object",
+                                                              "required":  [
+                                                                               "status",
+                                                                               "message"
+                                                                           ],
+                                                              "title":  "SignupResponse"
+                                                          },
                                        "SpacingXYZ":  {
                                                           "properties":  {
                                                                              "x":  {
@@ -2893,14 +3597,14 @@
                                                                                                   "maximum":  10.0,
                                                                                                   "minimum":  1.0,
                                                                                                   "title":  "Diameter Mm",
-                                                                                                  "description":  "Stent nominal diameter (mm). Typical range: 2.5â5.0 mm"
+                                                                                                  "description":  "Stent nominal diameter (mm). Typical range: 2.5–5.0 mm"
                                                                                               },
                                                                               "length_mm":  {
                                                                                                 "type":  "number",
                                                                                                 "maximum":  50.0,
                                                                                                 "minimum":  5.0,
                                                                                                 "title":  "Length Mm",
-                                                                                                "description":  "Stent deployed length (mm). Typical range: 15â35 mm"
+                                                                                                "description":  "Stent deployed length (mm). Typical range: 15–35 mm"
                                                                                             },
                                                                               "position":  {
                                                                                                "$ref":  "#/components/schemas/Position3D",
@@ -2983,14 +3687,14 @@
                                                                                                             "type":  "string",
                                                                                                             "enum":  [
                                                                                                                          "Desconocida / No especificada",
-                                                                                                                         "ACM â Arteria Cerebral Media",
-                                                                                                                         "ACA / ACoA â Arteria Comunicante Anterior",
+                                                                                                                         "ACM — Arteria Cerebral Media",
+                                                                                                                         "ACA / ACoA — Arteria Comunicante Anterior",
                                                                                                                          "ACI proximal (segm. cavernoso / clinoideo)",
-                                                                                                                         "ACI distal (PCOM / oftÃ¡lmica)",
-                                                                                                                         "ACoP â Arteria Comunicante Posterior",
+                                                                                                                         "ACI distal (PCOM / oftálmica)",
+                                                                                                                         "ACoP — Arteria Comunicante Posterior",
                                                                                                                          "Basilar (punta, tronco o AICA)",
                                                                                                                          "PICA / Vertebral",
-                                                                                                                         "Otra localizaciÃ³n"
+                                                                                                                         "Otra localización"
                                                                                                                      ],
                                                                                                             "title":  "Location",
                                                                                                             "description":  "Anatomical location of the aneurysm",
@@ -3014,7 +3718,7 @@
                                                                                                                              }
                                                                                                                          ],
                                                                                                                "title":  "Patient Age",
-                                                                                                               "description":  "Patient age in years â older patients may favour endovascular"
+                                                                                                               "description":  "Patient age in years — older patients may favour endovascular"
                                                                                                            },
                                                                                            "has_comorbidities":  {
                                                                                                                      "type":  "boolean",
@@ -3037,19 +3741,19 @@
                                                                                                            "maximum":  100.0,
                                                                                                            "minimum":  0.0,
                                                                                                            "title":  "Clip Pct",
-                                                                                                           "description":  "Clip score as percentage (0â100)"
+                                                                                                           "description":  "Clip score as percentage (0–100)"
                                                                                                        },
                                                                                           "endo_pct":  {
                                                                                                            "type":  "integer",
                                                                                                            "maximum":  100.0,
                                                                                                            "minimum":  0.0,
                                                                                                            "title":  "Endo Pct",
-                                                                                                           "description":  "Endo score as percentage (0â100)"
+                                                                                                           "description":  "Endo score as percentage (0–100)"
                                                                                                        },
                                                                                           "balance":  {
                                                                                                           "type":  "integer",
                                                                                                           "title":  "Balance",
-                                                                                                          "description":  "clip_score â endo_score (positive â clip preferred)"
+                                                                                                          "description":  "clip_score − endo_score (positive → clip preferred)"
                                                                                                       },
                                                                                           "recommendation":  {
                                                                                                                  "type":  "string",
@@ -3077,11 +3781,6 @@
                                                                                                              "title":  "Confidence",
                                                                                                              "description":  "Confidence level of the recommendation"
                                                                                                          },
-                                                                                          "icon":  {
-                                                                                                       "type":  "string",
-                                                                                                       "title":  "Icon",
-                                                                                                       "description":  "Single emoji for the recommendation badge"
-                                                                                                   },
                                                                                           "factors":  {
                                                                                                           "items":  {
                                                                                                                         "$ref":  "#/components/schemas/DecisionFactor"
@@ -3115,7 +3814,6 @@
                                                                                         "recommendation",
                                                                                         "recommendation_key",
                                                                                         "confidence",
-                                                                                        "icon",
                                                                                         "factors",
                                                                                         "clip_factors",
                                                                                         "endo_factors"
@@ -3240,6 +3938,12 @@
                                                                             ],
                                                                "title":  "ValidationError"
                                                            }
-                                   }
+                                   },
+                       "securitySchemes":  {
+                                               "HTTPBearer":  {
+                                                                  "type":  "http",
+                                                                  "scheme":  "bearer"
+                                                              }
+                                           }
                    }
 }

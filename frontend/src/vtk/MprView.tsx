@@ -36,6 +36,10 @@ export function MprView({
 }) {
   const count = planeCount(meta, plane);
   const [index, setIndex] = useState(Math.floor(count / 2));
+  // Debounced index that actually drives the image fetch. The slider/label use
+  // `index` for instant feedback; the backend PNG is only requested once the
+  // user pauses, so a fast drag/scroll doesn't fire one render per slice.
+  const [loadIndex, setLoadIndex] = useState(index);
   const ref = useRef<HTMLDivElement>(null);
 
   // Reset to mid-slice if the volume changes.
@@ -43,9 +47,15 @@ export function MprView({
     setIndex(Math.floor(count / 2));
   }, [count, sessionId]);
 
+  useEffect(() => {
+    const t = setTimeout(() => setLoadIndex(index), 90);
+    return () => clearTimeout(t);
+  }, [index]);
+
   const wcv = wc ?? meta.wc;
   const wwv = ww ?? meta.ww;
-  const src = api.sliceUrl(sessionId, plane, index, wcv, wwv);
+  const safeLoadIndex = Math.max(0, Math.min(count - 1, loadIndex));
+  const src = api.sliceUrl(sessionId, plane, safeLoadIndex, wcv, wwv);
 
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault();

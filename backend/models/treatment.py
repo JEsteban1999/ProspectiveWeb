@@ -75,7 +75,6 @@ class TreatmentDecisionResult(BaseModel):
         ..., description="Machine-readable recommendation key"
     )
     confidence: Confidence = Field(..., description="Confidence level of the recommendation")
-    icon: str = Field(..., description="Single emoji for the recommendation badge")
 
     # ── Factors breakdown ─────────────────────────────────────────────────── #
     factors: list[DecisionFactor] = Field(

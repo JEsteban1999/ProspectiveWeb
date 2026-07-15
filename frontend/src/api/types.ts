@@ -269,7 +269,6 @@ export interface TreatmentDecisionResult {
   recommendation: string;
   recommendation_key: "clip" | "endo" | "mdt" | "surveillance";
   confidence: "Alta" | "Moderada" | "Baja";
-  icon: string;
   factors: DecisionFactor[];
   clip_factors: string[];
   endo_factors: string[];

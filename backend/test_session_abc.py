@@ -114,7 +114,7 @@ class TestTreatmentDecision:
         d = resp.json()
         for key in ("recommendation", "recommendation_key", "confidence",
                     "clip_pct", "endo_pct", "balance", "factors",
-                    "clip_factors", "endo_factors", "icon"):
+                    "clip_factors", "endo_factors"):
             assert key in d, f"Missing key: {key}"
 
     def test_recommendation_key_valid(self):

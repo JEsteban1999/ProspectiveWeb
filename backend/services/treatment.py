@@ -57,7 +57,6 @@ class _Decision:
     recommendation:    str
     recommendation_key: str
     confidence:        str
-    icon:              str
     factors: list[_Factor] = field(default_factory=list)
     notes:   list[str]     = field(default_factory=list)
 
@@ -106,7 +105,6 @@ def compute_decision(
             recommendation="VIGILANCIA ACTIVA",
             recommendation_key="surveillance",
             confidence="Alta",
-            icon="👁",
             factors=[], notes=notes,
         ))
 
@@ -313,11 +311,11 @@ def compute_decision(
     confidence = "Alta" if abs_bal >= 50 else "Moderada" if abs_bal >= 25 else "Baja"
 
     if balance >= 20:
-        rec, rec_key, icon = "CLIPPING QUIRÚRGICO", "clip", "✂"
+        rec, rec_key = "CLIPPING QUIRÚRGICO", "clip"
     elif balance <= -20:
-        rec, rec_key, icon = "TRATAMIENTO ENDOVASCULAR", "endo", "💊"
+        rec, rec_key = "TRATAMIENTO ENDOVASCULAR", "endo"
     else:
-        rec, rec_key, icon = "DISCUSIÓN MULTIDISCIPLINARIA", "mdt", "👥"
+        rec, rec_key = "DISCUSIÓN MULTIDISCIPLINARIA", "mdt"
         if confidence == "Baja":
             notes.append(
                 "Resultado ambiguo: se recomienda presentar el caso en sesión "
@@ -333,7 +331,7 @@ def compute_decision(
         clip_raw=clip_pts, endo_raw=endo_pts, balance=balance,
         clip_pct=clip_pct, endo_pct=endo_pct,
         recommendation=rec, recommendation_key=rec_key,
-        confidence=confidence, icon=icon,
+        confidence=confidence,
         factors=factors, notes=notes,
     ))
 
@@ -358,7 +356,6 @@ def _to_dict(d: _Decision) -> dict[str, Any]:
         "recommendation":     d.recommendation,
         "recommendation_key": d.recommendation_key,
         "confidence":         d.confidence,
-        "icon":               d.icon,
         "factors":            factor_dicts,
         "clip_factors":       [f.name for f in d.factors if f.direction == "clip"],
         "endo_factors":       [f.name for f in d.factors if f.direction == "endo"],
