@@ -11,6 +11,7 @@ import { PanelHead, ErrorNote } from "../PanelHead";
 import { ProgressBar } from "../ProgressBar";
 import { Tabs } from "../Tabs";
 import { PhasesCalculator } from "./PhasesCalculator";
+import { LongitudinalChart } from "./LongitudinalChart";
 import { usePlanning } from "../../store/planning";
 
 const TABS = ["Métricas", "Índices", "PHASES", "Seguimiento"] as const;
@@ -120,6 +121,7 @@ export function MorphometryPanel({ onNext }: { onNext: () => void }) {
                     </div>
                   </div>
                 )}
+                {longi && longi.entries.length >= 2 && <LongitudinalChart entries={longi.entries} />}
                 {longi && longi.entries.length > 0 ? (
                   longi.entries.map((e) => (
                     <Metric

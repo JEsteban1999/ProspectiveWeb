@@ -189,17 +189,66 @@ export function Viewer({ step }: { step: string }) {
   );
 }
 
-/* MprStrip — franja inferior con los tres planos reales del volumen DICOM. */
+/* MprStrip — franja inferior con los tres planos reales, crosshairs
+   sincronizados y window/level por arrastre compartido. */
 export function MprStrip() {
   const { sessionId, series } = usePlanning();
   const meta = useVolumeMeta(sessionId);
 
+  // Shared crosshair voxel {x,y,z} and window/level across the three planes.
+  const [nz, ny, nx] = meta?.shape ?? [1, 1, 1];
+  const [vox, setVox] = useState<{ x: number; y: number; z: number }>({ x: 0, y: 0, z: 0 });
+  const [wl, setWl] = useState<{ wc: number; ww: number } | null>(null);
+
+  useEffect(() => {
+    if (meta) {
+      setVox({ x: Math.floor(nx / 2), y: Math.floor(ny / 2), z: Math.floor(nz / 2) });
+      setWl({ wc: meta.wc, ww: meta.ww });
+    }
+  }, [meta, nx, ny, nz]);
+
+  // Per-plane wiring: controlled index, crosshair {u,v}, click→voxel.
+  const cfg = (plane: "axial" | "coronal" | "sagital") => {
+    const f = (n: number, i: number) => (n > 1 ? i / (n - 1) : 0.5);
+    const clamp = (n: number, u: number) => Math.max(0, Math.min(n - 1, Math.round(u * (n - 1))));
+    if (plane === "axial")
+      return {
+        index: vox.z,
+        crosshair: { u: f(nx, vox.x), v: f(ny, vox.y) },
+        onIndexChange: (i: number) => setVox((p) => ({ ...p, z: i })),
+        onPlaneClick: (u: number, v: number) => setVox((p) => ({ ...p, x: clamp(nx, u), y: clamp(ny, v) })),
+      };
+    if (plane === "coronal")
+      return {
+        index: vox.y,
+        crosshair: { u: f(nx, vox.x), v: f(nz, vox.z) },
+        onIndexChange: (i: number) => setVox((p) => ({ ...p, y: i })),
+        onPlaneClick: (u: number, v: number) => setVox((p) => ({ ...p, x: clamp(nx, u), z: clamp(nz, v) })),
+      };
+    return {
+      index: vox.x,
+      crosshair: { u: f(ny, vox.y), v: f(nz, vox.z) },
+      onIndexChange: (i: number) => setVox((p) => ({ ...p, x: i })),
+      onPlaneClick: (u: number, v: number) => setVox((p) => ({ ...p, y: clamp(ny, u), z: clamp(nz, v) })),
+    };
+  };
+
   return (
     <div style={{ height: 132, flexShrink: 0, display: "flex", gap: 1, background: "var(--border)", borderTop: "1px solid var(--border)" }}>
-      {(["axial", "coronal", "sagital"] as const).map((plane) => (
+      {(["axial", "coronal", "sagital"] as const).map((plane) => {
+        const c = cfg(plane);
+        return (
         <div key={plane} style={{ flex: 1, position: "relative", minWidth: 0 }}>
           {sessionId && meta ? (
-            <MprView sessionId={sessionId} meta={meta} plane={plane} compact />
+            <MprView
+              sessionId={sessionId} meta={meta} plane={plane} compact
+              wc={wl?.wc} ww={wl?.ww}
+              index={c.index}
+              onIndexChange={c.onIndexChange}
+              crosshair={c.crosshair}
+              onPlaneClick={c.onPlaneClick}
+              onWindowLevel={(wc, ww) => setWl({ wc, ww })}
+            />
           ) : (
             <div style={{ width: "100%", height: "100%", background: "var(--viewer-bg)", position: "relative" }}>
               <span style={{ position: "absolute", top: 8, left: 10, fontSize: 10, fontFamily: "var(--font-mono)", color: "rgba(168,184,198,0.7)" }}>
@@ -211,7 +260,8 @@ export function MprStrip() {
             </div>
           )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
