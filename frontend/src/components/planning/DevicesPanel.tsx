@@ -345,7 +345,7 @@ export function DevicesPanel({ onNext }: { onNext: () => void }) {
   const [tab, setTab] = useState<string>("Clips");
   return (
     <div className="fade-rise">
-      <PanelHead title="Planificación de dispositivos" desc="GET /api/clips · /api/coils · /api/stents" />
+      <PanelHead title="Planificación de dispositivos" desc="Elige clip, coils o stent del catálogo y verifica su colocación." />
       <Tabs tabs={TABS} value={tab} onChange={setTab} />
       {tab === "Clips" && <ClipsTab />}
       {tab === "Coils" && <CoilsTab />}

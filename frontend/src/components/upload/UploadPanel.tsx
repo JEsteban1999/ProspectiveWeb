@@ -119,7 +119,7 @@ export function UploadPanel({ onNext }: { onNext: () => void }) {
     <div className="fade-rise">
       <PanelHead
         title="Carga DICOM"
-        desc="POST /api/upload — sube la serie del estudio"
+        desc="Sube la serie del estudio (carpeta o arrastrando los archivos)."
         right={series && <Badge variant="success">Cargado</Badge>}
       />
 

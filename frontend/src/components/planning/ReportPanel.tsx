@@ -104,7 +104,7 @@ export function ReportPanel({ onFinish }: { onFinish: () => void }) {
 
   return (
     <div className="fade-rise">
-      <PanelHead title="Informe y exportación" desc="POST /api/report · POST /api/export/stl" />
+      <PanelHead title="Informe y exportación" desc="Genera el informe del caso y exporta la malla o el informe estructurado." />
 
       <Card style={{ padding: "16px 18px" }}>
         <SectionLabel>Resumen del caso</SectionLabel>
@@ -160,7 +160,7 @@ export function ReportPanel({ onFinish }: { onFinish: () => void }) {
         )}
         <Separator style={{ margin: "6px 0" }} />
         <Button variant="secondary" leadingIcon={<Icon name="SAVE" />} onClick={() => void save()} disabled={busy !== null}>
-          {busy === "save" ? "Guardando…" : "Guardar sesión (POST /api/sessions/save)"}
+          {busy === "save" ? "Guardando…" : "Guardar sesión"}
         </Button>
       </div>
 

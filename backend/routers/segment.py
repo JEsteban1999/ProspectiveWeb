@@ -34,6 +34,34 @@ _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="seg-worker")
 # volume — only the mesh is coarsened, mirroring the desktop's preview downsample.
 _SEG_MAX_AXIS = 256
 
+# Voxels sampled when deriving auto-thresholds. Percentiles are stable well
+# below this, and it keeps a 1 GB CT from being read whole just to get p90/p99.
+_THRESHOLD_SAMPLE = 8_000_000
+
+
+def _threshold_volume(session_id: str) -> "np.ndarray | None":
+    """Subsampled copy of the session volume for threshold statistics.
+
+    Reads the .npy the MPR service caches on upload (memmap → only the sampled
+    voxels are actually read). Returns None if no volume is available yet, in
+    which case the caller falls back to WC/WW.
+    """
+    try:
+        from services.mpr import _cache_paths, ensure_volume_cached, _get_volume
+
+        npy_path, _ = _cache_paths(session_id)
+        if not npy_path.exists():
+            ensure_volume_cached(session_id)  # idempotent; MPR needs it anyway
+        vol = _get_volume(session_id)
+        flat = vol.ravel()
+        if flat.size > _THRESHOLD_SAMPLE:
+            stride = int(np.ceil(flat.size / _THRESHOLD_SAMPLE))
+            return np.asarray(flat[::stride], dtype=np.float32)
+        return np.asarray(flat, dtype=np.float32)
+    except Exception as exc:  # noqa: BLE001 — thresholds must never 500
+        logger.warning("Threshold volume unavailable for %s (%s); using WC/WW", session_id, exc)
+        return None
+
 
 def _maybe_downsample(
     volume: np.ndarray,
@@ -75,11 +103,12 @@ def _load_float(session_id: str, key: str, default: float) -> float:
         "Returns the automatically computed lower/upper HU thresholds for the "
         "DICOM series loaded in this session, along with the strategy key and a "
         "Spanish clinical hint string.\n\n"
-        "This endpoint uses WindowCenter/WindowWidth from the DICOM header to give "
-        "an instant response. The **POST /segment** endpoint uses the actual voxel "
-        "distribution for the final segmentation.\n\n"
+        "Thresholds are derived from the **actual voxel distribution** (which is "
+        "what detects DSA subtraction, display-preset windows, etc.). The volume "
+        "is read from the MPR cache and subsampled, so the call stays fast; if no "
+        "volume is available yet it falls back to WindowCenter/WindowWidth.\n\n"
         "Strategies: `ct_stats`, `ct_wc_ww`, `xa_band_pass`, `xa_wc_ww`, "
-        "`dsa`, `mr_percentile`, `wc_ww`."
+        "`xa_window_mismatch`, `xa_raw16`, `dsa`, `mr_percentile`, `wc_ww`."
     ),
 )
 async def get_thresholds(session_id: str) -> AutoThresholdResult:
@@ -91,10 +120,14 @@ async def get_thresholds(session_id: str) -> AutoThresholdResult:
     window_center = _load_float(session_id, "dicom.window_center", 400.0)
     window_width  = _load_float(session_id, "dicom.window_width",  1500.0)
 
-    # Fast path: WC/WW-only thresholds (no volume load).
-    # When volume IS available after segmentation, the voxel_fraction key is updated.
+    # Thresholds MUST see the voxel distribution: the WC/WW header is often a
+    # display preset (e.g. a DSA reading 0/1000, or a 3DRA reading 0/200) and
+    # deriving the band from it alone segments background instead of vessels.
+    loop = asyncio.get_event_loop()
+    volume = await loop.run_in_executor(_executor, partial(_threshold_volume, session_id))
+
     lower, upper, strategy = compute_auto_thresholds(
-        volume=None,
+        volume=volume,
         modality=modality,
         window_center=window_center,
         window_width=window_width,

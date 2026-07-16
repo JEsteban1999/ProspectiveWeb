@@ -73,9 +73,10 @@ def strategy_hint(strategy: str, lower: float, upper: float, is_dsa: bool) -> st
         ),
         "xa_window_mismatch": (
             f"3DRA: la ventana WC/WW del DICOM es un preset de visualización que "
-            f"queda por debajo de los vóxeles con contraste, así que se ha ignorado. "
-            f"Banda p90–p99 sobre los datos: inferior = {lower:.0f} HU, "
-            f"superior = {upper:.0f} HU."
+            f"queda por debajo de los vóxeles con contraste, así que se ha ignorado "
+            f"y el umbral se ha derivado de los datos (banda p99–p99.9): "
+            f"inferior = {lower:.0f} HU, superior = {upper:.0f} HU. "
+            f"Baja el umbral inferior si falta vasculatura."
         ),
         "xa_raw16": (
             f"3DRA en crudo de 16 bits (sin reescalado a HU). Banda p99–p99.9: "
@@ -140,7 +141,12 @@ def _xa_thresholds(
         lower = max(-200.0, window_center - window_width * 0.35)
         upper = window_center + window_width * 0.45
         if upper < p90:
-            return p90, p99, False, "xa_window_mismatch"
+            # No usable window → infer from the data. In a non-subtracted 3DRA
+            # the contrast-filled vessels are the brightest ~1% of voxels; the
+            # p90–p99 band would start just above background and drag in soft
+            # tissue (measured: 9 % of the volume vs 0.9 % for p99–p99.9).
+            p999 = float(np.percentile(flat, 99.9))
+            return p99, p999, False, "xa_window_mismatch"
         return lower, upper, False, "xa_wc_ww"
 
     # No volume: WC/WW is all we have.

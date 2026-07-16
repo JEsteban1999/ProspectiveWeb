@@ -12,13 +12,15 @@ class AutoThresholdResult(BaseModel):
     lower: float = Field(..., description="Lower iso-surface threshold (HU or raw units)")
     upper: float = Field(..., description="Upper iso-surface threshold (HU or raw units)")
     strategy: Literal[
-        "dsa",          # DSA subtraction detected (p99 < 0, max >> 0)
-        "xa_band_pass", # 3DRA wide WW > 2000 → p90–p99 band
-        "xa_wc_ww",     # 3DRA narrow WW → calibrated WC/WW formula
-        "ct_stats",     # CTA with contrast → WC-based formula clamped to [150, 500] HU
-        "ct_wc_ww",     # CT fallback → WC/WW derivation
-        "mr_percentile",# MR → p90–p99 of non-background voxels
-        "wc_ww",        # Generic fallback
+        "dsa",                # DSA subtraction detected (p99 < 0, max >> 0)
+        "xa_band_pass",       # 3DRA wide WW > 2000 → p90–p99 band
+        "xa_wc_ww",           # 3DRA narrow WW → calibrated WC/WW formula
+        "xa_window_mismatch", # 3DRA whose WC/WW is a display preset → p99–p99.9 band
+        "xa_raw16",           # 3DRA raw 16-bit (no HU rescale) → p99–p99.9 band
+        "ct_stats",           # CTA with contrast → WC-based formula clamped to [150, 500] HU
+        "ct_wc_ww",           # CT fallback → WC/WW derivation
+        "mr_percentile",      # MR → p90–p99 of non-background voxels
+        "wc_ww",              # Generic fallback
     ] = Field(..., description="Strategy used to compute the thresholds")
     is_dsa: bool = Field(
         False,

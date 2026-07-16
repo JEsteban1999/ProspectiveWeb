@@ -437,7 +437,7 @@
                                                                                 "segmentation"
                                                                             ],
                                                                    "summary":  "Get auto-computed thresholds",
-                                                                   "description":  "Returns the automatically computed lower/upper HU thresholds for the DICOM series loaded in this session, along with the strategy key and a Spanish clinical hint string.\n\nThis endpoint uses WindowCenter/WindowWidth from the DICOM header to give an instant response. The **POST /segment** endpoint uses the actual voxel distribution for the final segmentation.\n\nStrategies: `ct_stats`, `ct_wc_ww`, `xa_band_pass`, `xa_wc_ww`, `dsa`, `mr_percentile`, `wc_ww`.",
+                                                                   "description":  "Returns the automatically computed lower/upper HU thresholds for the DICOM series loaded in this session, along with the strategy key and a Spanish clinical hint string.\n\nThresholds are derived from the **actual voxel distribution** (which is what detects DSA subtraction, display-preset windows, etc.). The volume is read from the MPR cache and subsampled, so the call stays fast; if no volume is available yet it falls back to WindowCenter/WindowWidth.\n\nStrategies: `ct_stats`, `ct_wc_ww`, `xa_band_pass`, `xa_wc_ww`, `xa_window_mismatch`, `xa_raw16`, `dsa`, `mr_percentile`, `wc_ww`.",
                                                                    "operationId":  "get_thresholds_api_thresholds__session_id__get",
                                                                    "parameters":  [
                                                                                       {
@@ -2001,6 +2001,8 @@
                                                                                                                     "dsa",
                                                                                                                     "xa_band_pass",
                                                                                                                     "xa_wc_ww",
+                                                                                                                    "xa_window_mismatch",
+                                                                                                                    "xa_raw16",
                                                                                                                     "ct_stats",
                                                                                                                     "ct_wc_ww",
                                                                                                                     "mr_percentile",

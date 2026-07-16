@@ -43,7 +43,7 @@ export function DetectPanel({ onNext }: { onNext: () => void }) {
     <div className="fade-rise">
       <PanelHead
         title="Candidatos detectados"
-        desc="POST /api/detect/{session} — curvatura gaussiana v6"
+        desc="Localiza candidatos aneurismáticos por curvatura de la superficie."
         right={ran && <Badge variant="subtle">{candidates.length} encontrados</Badge>}
       />
 

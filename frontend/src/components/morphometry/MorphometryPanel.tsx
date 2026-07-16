@@ -47,7 +47,7 @@ export function MorphometryPanel({ onNext }: { onNext: () => void }) {
     <div className="fade-rise">
       <PanelHead
         title="Morfometría"
-        desc="GET /api/morphometry/{session} — todas las medidas en mm"
+        desc="Medidas e índices del aneurisma. Todas las dimensiones en milímetros."
         right={m && <Badge variant={riskVariant(m.rupture_risk_label)}>Riesgo {m.rupture_risk_label}</Badge>}
       />
 

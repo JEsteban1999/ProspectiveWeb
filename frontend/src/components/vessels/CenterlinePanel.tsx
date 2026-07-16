@@ -116,7 +116,7 @@ export function CenterlinePanel() {
     <div className="fade-rise">
       <PanelHead
         title="Línea central del vaso"
-        desc="POST /api/centerline — eje medial entre dos puntos (EDT + Dijkstra)"
+        desc="Traza el eje del vaso entre dos puntos: longitud, tortuosidad y calibre."
       />
 
       {!hasMesh && (

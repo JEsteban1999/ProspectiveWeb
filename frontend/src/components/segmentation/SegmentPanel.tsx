@@ -11,6 +11,24 @@ import { ProgressBar } from "../ProgressBar";
 import { Slider } from "../Slider";
 import { usePlanning } from "../../store/planning";
 
+/* El backend identifica la estrategia de umbral con un código interno; aquí se
+   traduce a algo que un clínico pueda leer. */
+const STRATEGY_LABEL: Record<string, string> = {
+  dsa: "angiografía sustraída (DSA)",
+  xa_band_pass: "3DRA, ventana ancha",
+  xa_wc_ww: "3DRA, ventana del estudio",
+  xa_window_mismatch: "3DRA, calculado de la imagen",
+  xa_raw16: "3DRA sin calibrar",
+  ct_stats: "TC con contraste",
+  ct_wc_ww: "TC, ventana del estudio",
+  mr_percentile: "resonancia magnética",
+  wc_ww: "ventana del estudio",
+};
+
+function strategyLabel(strategy: string): string {
+  return STRATEGY_LABEL[strategy] ?? "automático";
+}
+
 export function SegmentPanel({ onNext }: { onNext: () => void }) {
   const planning = usePlanning();
   const { sessionId, series, thresholds, segmentation } = planning;
@@ -55,12 +73,12 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
     <div className="fade-rise">
       <PanelHead
         title="Segmentación vascular"
-        desc="GET /api/thresholds · POST /api/segment (Marching Cubes)"
+        desc="Aísla el árbol vascular por umbral de intensidad y reconstruye su superficie 3D."
         right={segmentation && <Badge variant="success">Malla lista</Badge>}
       />
 
       <SectionLabel style={{ marginBottom: 10 }}>
-        Umbral {thresholds ? `(auto · ${thresholds.strategy})` : ""}
+        Umbral {thresholds ? `· ${strategyLabel(thresholds.strategy)}` : ""}
       </SectionLabel>
       {thresholds?.hint && (
         <div style={{ fontSize: 12, color: "var(--muted-foreground)", marginBottom: 12 }}>{thresholds.hint}</div>

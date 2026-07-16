@@ -61,7 +61,7 @@ export function TreatmentPanel({ onNext }: { onNext: () => void }) {
 
   return (
     <div className="fade-rise">
-      <PanelHead title="Decisión terapéutica" desc="POST /api/treatment-decision — motor de 8 factores" />
+      <PanelHead title="Decisión terapéutica" desc="Compara clipaje y tratamiento endovascular ponderando 8 factores." />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
         <Select
