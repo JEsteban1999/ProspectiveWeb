@@ -9,7 +9,9 @@ from functools import partial
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
-from services.mpr import ensure_volume_cached, render_slice_png
+from services.mpr import (
+    ensure_volume_cached, render_slice_png, render_oblique_png, get_volume_raw_uint8,
+)
 from services.sessions import session_exists
 
 logger = logging.getLogger(__name__)
@@ -38,6 +40,72 @@ async def volume_meta(session_id: str) -> dict:
         logger.error("Volume meta failed for %s: %s", session_id, exc, exc_info=True)
         raise HTTPException(status_code=422, detail=f"No se pudo cargar el volumen: {exc}") from exc
     return meta
+
+
+@router.get(
+    "/volume/{session_id}/raw",
+    summary="Get the downsampled volume as raw uint8 for 3D volume rendering",
+    description=(
+        "Returns the DICOM volume as raw uint8 bytes (C-order, z·y·x), downsampled "
+        "so the largest axis is ≤ 192 and rescaled over a robust intensity window. "
+        "Dimensions and spacing are returned in the X-Dims / X-Spacing headers. "
+        "Consumed by the client-side vtk.js volume renderer."
+    ),
+    response_class=Response,
+    responses={200: {"content": {"application/octet-stream": {}}}},
+)
+async def get_volume_raw(session_id: str) -> Response:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    loop = asyncio.get_event_loop()
+    try:
+        data, dims, spacing = await loop.run_in_executor(
+            _executor, partial(get_volume_raw_uint8, session_id)
+        )
+    except Exception as exc:
+        logger.error("Volume raw failed for %s: %s", session_id, exc, exc_info=True)
+        raise HTTPException(status_code=422, detail=f"No se pudo cargar el volumen: {exc}") from exc
+    return Response(
+        content=data,
+        media_type="application/octet-stream",
+        headers={
+            "X-Dims": ",".join(str(d) for d in dims),
+            "X-Spacing": ",".join(f"{s:.5f}" for s in spacing),
+            "Access-Control-Expose-Headers": "X-Dims, X-Spacing",
+            "Cache-Control": "public, max-age=3600",
+        },
+    )
+
+
+@router.get(
+    "/slice-oblique/{session_id}",
+    summary="Get an oblique (tilted) MPR slice as PNG",
+    description=(
+        "Resamples an oblique plane through the volume centre, tilted by `tilt` "
+        "degrees around the x- or y-axis, scanned along its normal by `pos` (0–1)."
+    ),
+    response_class=Response,
+    responses={200: {"content": {"image/png": {}}}},
+)
+async def get_oblique_slice(
+    session_id: str,
+    tilt: float = Query(0.0, ge=-80.0, le=80.0, description="Tilt angle in degrees"),
+    pos: float = Query(0.5, ge=0.0, le=1.0, description="Position along the normal (0–1)"),
+    axis: str = Query("x", description="Tilt axis: 'x' or 'y'"),
+    wc: float | None = Query(None),
+    ww: float | None = Query(None),
+) -> Response:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    loop = asyncio.get_event_loop()
+    try:
+        png = await loop.run_in_executor(
+            _executor, partial(render_oblique_png, session_id, tilt, pos, axis, wc, ww)
+        )
+    except Exception as exc:
+        logger.error("Oblique slice failed %s: %s", session_id, exc, exc_info=True)
+        raise HTTPException(status_code=422, detail=f"No se pudo generar el corte oblicuo: {exc}") from exc
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "public, max-age=600"})
 
 
 @router.get(

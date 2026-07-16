@@ -11,12 +11,14 @@ import { Icon } from "../components/Icon";
 import { usePlanning } from "../store/planning";
 import type { MeshLayer, MeshMarker, MeshLine } from "./MeshView";
 import { MprView } from "./MprView";
+import { ObliqueMprView } from "./ObliqueMprView";
 import type { Vector3 } from "@kitware/vtk.js/types";
 
 // vtk.js (~1 MB) is only needed once a 3D mesh is shown, so load MeshView — and
 // with it the whole vtk.js runtime — lazily. The landing/login/MPR-only views
 // never pull it into their bundle.
 const MeshView = lazy(() => import("./MeshView").then((m) => ({ default: m.MeshView })));
+const VolumeView = lazy(() => import("./VolumeView").then((m) => ({ default: m.VolumeView })));
 
 const STEP_SCENE: Record<string, string> = {
   upload: "Vista previa DICOM",
@@ -74,6 +76,7 @@ export function Viewer({ step }: { step: string }) {
   const meshUrl = segmentation?.mesh_url ?? null;
   const candidate = candidates[selectedCandidate];
   const meta = useVolumeMeta(sessionId);
+  const [viewMode, setViewMode] = useState<"default" | "volume" | "oblique">("default");
   // Only show a placed device mesh once its URL points at a real session file.
   const showDevice = step === "devices" && !!deviceMesh && deviceMesh.startsWith("/data/");
   const showCenterline = !!centerlineMesh && centerlineMesh.startsWith("/data/");
@@ -128,7 +131,13 @@ export function Viewer({ step }: { step: string }) {
 
   return (
     <div style={{ flex: 1, position: "relative", background: "var(--viewer-bg)", overflow: "hidden", minHeight: 0 }}>
-      {meshUrl ? (
+      {viewMode === "volume" && sessionId && meta ? (
+        <Suspense fallback={<ViewerLoading label="Cargando volumen 3D…" />}>
+          <VolumeView sessionId={sessionId} />
+        </Suspense>
+      ) : viewMode === "oblique" && sessionId && meta ? (
+        <ObliqueMprView sessionId={sessionId} wc={meta.wc} ww={meta.ww} />
+      ) : meshUrl ? (
         <Suspense fallback={<ViewerLoading label="Cargando visor 3D…" />}>
           <MeshView layers={layers} markers={markers} lines={lines} pickMode={pickMode !== null} onPick={onPick} />
         </Suspense>
@@ -159,9 +168,28 @@ export function Viewer({ step }: { step: string }) {
 
       {/* Scene label */}
       <div style={{ position: "absolute", top: 14, left: 16, fontSize: 11, fontFamily: "var(--font-mono)", color: "rgba(168,184,198,0.75)", pointerEvents: "none" }}>
-        {STEP_SCENE[step]} · {meshUrl ? "vtk.js" : "MPR"}
+        {STEP_SCENE[step]} · {viewMode === "volume" ? "volumen" : viewMode === "oblique" ? "oblicuo" : meshUrl ? "vtk.js" : "MPR"}
         {step === "detect" && candidate && <span style={{ marginLeft: 10, color: "#A8B8C6" }}>· {candidate.id}</span>}
       </div>
+
+      {/* View-mode switcher (only when a volume is available) */}
+      {sessionId && meta && !pickMode && (
+        <div style={{ position: "absolute", top: 12, right: 14, display: "flex", gap: 2, background: "rgba(20,24,28,0.72)", borderRadius: 999, padding: 3 }}>
+          {([["default", meshUrl ? "3D" : "MPR"], ["volume", "Volumen"], ["oblique", "Oblicuo"]] as const).map(([m, lbl]) => (
+            <button
+              key={m}
+              onClick={() => setViewMode(m)}
+              style={{
+                padding: "4px 12px", fontSize: 11, fontWeight: 600, borderRadius: 999, border: "none", cursor: "pointer",
+                background: viewMode === m ? "var(--brand-mist, #8B9BAA)" : "transparent",
+                color: viewMode === m ? "#0e1114" : "rgba(200,210,220,0.8)",
+              }}
+            >
+              {lbl}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Pick-mode banner */}
       {pickMode && meshUrl && (

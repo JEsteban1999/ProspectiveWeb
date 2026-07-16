@@ -1270,6 +1270,160 @@
                                                                                   }
                                                                 }
                                                     },
+                  "/api/volume/{session_id}/raw":  {
+                                                       "get":  {
+                                                                   "tags":  [
+                                                                                "mpr"
+                                                                            ],
+                                                                   "summary":  "Get the downsampled volume as raw uint8 for 3D volume rendering",
+                                                                   "description":  "Returns the DICOM volume as raw uint8 bytes (C-order, z·y·x), downsampled so the largest axis is ≤ 192 and rescaled over a robust intensity window. Dimensions and spacing are returned in the X-Dims / X-Spacing headers. Consumed by the client-side vtk.js volume renderer.",
+                                                                   "operationId":  "get_volume_raw_api_volume__session_id__raw_get",
+                                                                   "parameters":  [
+                                                                                      {
+                                                                                          "name":  "session_id",
+                                                                                          "in":  "path",
+                                                                                          "required":  true,
+                                                                                          "schema":  {
+                                                                                                         "type":  "string",
+                                                                                                         "title":  "Session Id"
+                                                                                                     }
+                                                                                      }
+                                                                                  ],
+                                                                   "responses":  {
+                                                                                     "200":  {
+                                                                                                 "description":  "Successful Response",
+                                                                                                 "content":  {
+                                                                                                                 "application/octet-stream":  {
+
+                                                                                                                                              }
+                                                                                                             }
+                                                                                             },
+                                                                                     "422":  {
+                                                                                                 "description":  "Validation Error",
+                                                                                                 "content":  {
+                                                                                                                 "application/json":  {
+                                                                                                                                          "schema":  {
+                                                                                                                                                         "$ref":  "#/components/schemas/HTTPValidationError"
+                                                                                                                                                     }
+                                                                                                                                      }
+                                                                                                             }
+                                                                                             }
+                                                                                 }
+                                                               }
+                                                   },
+                  "/api/slice-oblique/{session_id}":  {
+                                                          "get":  {
+                                                                      "tags":  [
+                                                                                   "mpr"
+                                                                               ],
+                                                                      "summary":  "Get an oblique (tilted) MPR slice as PNG",
+                                                                      "description":  "Resamples an oblique plane through the volume centre, tilted by `tilt` degrees around the x- or y-axis, scanned along its normal by `pos` (0–1).",
+                                                                      "operationId":  "get_oblique_slice_api_slice_oblique__session_id__get",
+                                                                      "parameters":  [
+                                                                                         {
+                                                                                             "name":  "session_id",
+                                                                                             "in":  "path",
+                                                                                             "required":  true,
+                                                                                             "schema":  {
+                                                                                                            "type":  "string",
+                                                                                                            "title":  "Session Id"
+                                                                                                        }
+                                                                                         },
+                                                                                         {
+                                                                                             "name":  "tilt",
+                                                                                             "in":  "query",
+                                                                                             "required":  false,
+                                                                                             "schema":  {
+                                                                                                            "type":  "number",
+                                                                                                            "maximum":  80.0,
+                                                                                                            "minimum":  -80.0,
+                                                                                                            "description":  "Tilt angle in degrees",
+                                                                                                            "default":  0.0,
+                                                                                                            "title":  "Tilt"
+                                                                                                        },
+                                                                                             "description":  "Tilt angle in degrees"
+                                                                                         },
+                                                                                         {
+                                                                                             "name":  "pos",
+                                                                                             "in":  "query",
+                                                                                             "required":  false,
+                                                                                             "schema":  {
+                                                                                                            "type":  "number",
+                                                                                                            "maximum":  1.0,
+                                                                                                            "minimum":  0.0,
+                                                                                                            "description":  "Position along the normal (0–1)",
+                                                                                                            "default":  0.5,
+                                                                                                            "title":  "Pos"
+                                                                                                        },
+                                                                                             "description":  "Position along the normal (0–1)"
+                                                                                         },
+                                                                                         {
+                                                                                             "name":  "axis",
+                                                                                             "in":  "query",
+                                                                                             "required":  false,
+                                                                                             "schema":  {
+                                                                                                            "type":  "string",
+                                                                                                            "description":  "Tilt axis: \u0027x\u0027 or \u0027y\u0027",
+                                                                                                            "default":  "x",
+                                                                                                            "title":  "Axis"
+                                                                                                        },
+                                                                                             "description":  "Tilt axis: \u0027x\u0027 or \u0027y\u0027"
+                                                                                         },
+                                                                                         {
+                                                                                             "name":  "wc",
+                                                                                             "in":  "query",
+                                                                                             "required":  false,
+                                                                                             "schema":  {
+                                                                                                            "anyOf":  [
+                                                                                                                          {
+                                                                                                                              "type":  "number"
+                                                                                                                          },
+                                                                                                                          {
+                                                                                                                              "type":  "null"
+                                                                                                                          }
+                                                                                                                      ],
+                                                                                                            "title":  "Wc"
+                                                                                                        }
+                                                                                         },
+                                                                                         {
+                                                                                             "name":  "ww",
+                                                                                             "in":  "query",
+                                                                                             "required":  false,
+                                                                                             "schema":  {
+                                                                                                            "anyOf":  [
+                                                                                                                          {
+                                                                                                                              "type":  "number"
+                                                                                                                          },
+                                                                                                                          {
+                                                                                                                              "type":  "null"
+                                                                                                                          }
+                                                                                                                      ],
+                                                                                                            "title":  "Ww"
+                                                                                                        }
+                                                                                         }
+                                                                                     ],
+                                                                      "responses":  {
+                                                                                        "200":  {
+                                                                                                    "description":  "Successful Response",
+                                                                                                    "content":  {
+                                                                                                                    "image/png":  {
+
+                                                                                                                                  }
+                                                                                                                }
+                                                                                                },
+                                                                                        "422":  {
+                                                                                                    "description":  "Validation Error",
+                                                                                                    "content":  {
+                                                                                                                    "application/json":  {
+                                                                                                                                             "schema":  {
+                                                                                                                                                            "$ref":  "#/components/schemas/HTTPValidationError"
+                                                                                                                                                        }
+                                                                                                                                         }
+                                                                                                                }
+                                                                                                }
+                                                                                    }
+                                                                  }
+                                                      },
                   "/api/slice/{session_id}/{plane}/{index}":  {
                                                                   "get":  {
                                                                               "tags":  [

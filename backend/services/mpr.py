@@ -72,6 +72,23 @@ def _get_volume(session_id: str) -> np.ndarray:
     return _load_memmap(str(npy_path), npy_path.stat().st_mtime)
 
 
+@lru_cache(maxsize=4)
+def _downsampled_volume(npy_path_str: str, mtime: float, max_dim: int) -> tuple:
+    """Cache a strided-down float32 copy of the volume + the stride used."""
+    vol = np.load(npy_path_str, mmap_mode="r")
+    z, y, x = vol.shape
+    stride = max(1, int(np.ceil(max(z, y, x) / float(max_dim))))
+    sub = np.ascontiguousarray(vol[::stride, ::stride, ::stride], dtype=np.float32)
+    return sub, stride
+
+
+def _get_downsampled(session_id: str, max_dim: int = 256) -> tuple:
+    npy_path, _ = _cache_paths(session_id)
+    if not npy_path.exists():
+        ensure_volume_cached(session_id)
+    return _downsampled_volume(str(npy_path), npy_path.stat().st_mtime, max_dim)
+
+
 def slice_count(session_id: str, plane: Plane) -> int:
     meta = ensure_volume_cached(session_id)
     z, y, x = meta["shape"]
@@ -98,6 +115,88 @@ def _apply_window(slc: np.ndarray, wc: float, ww: float) -> np.ndarray:
     lo = wc - ww / 2.0
     hi = wc + ww / 2.0
     return ((np.clip(slc, lo, hi) - lo) / (hi - lo) * 255.0).astype(np.uint8)
+
+
+def get_volume_raw_uint8(session_id: str, max_dim: int = 192) -> tuple[bytes, list[int], list[float]]:
+    """Return the volume as raw uint8 bytes for client-side volume rendering.
+
+    Downsampled by an integer stride so the largest axis is <= max_dim, and
+    rescaled over a robust [p1, p99] intensity window to 0-255. Returns
+    (bytes, dims[z,y,x], spacing[sz,sy,sx]).
+    """
+    meta = ensure_volume_cached(session_id)
+    vol = _get_volume(session_id)
+    z, y, x = vol.shape
+
+    stride = max(1, int(np.ceil(max(z, y, x) / float(max_dim))))
+    sub = np.ascontiguousarray(vol[::stride, ::stride, ::stride], dtype=np.float32)
+
+    lo, hi = np.percentile(sub, [1.0, 99.0])
+    if hi - lo < 1e-3:
+        lo, hi = float(sub.min()), float(sub.max()) or 1.0
+    u8 = np.clip((sub - lo) / (hi - lo) * 255.0, 0, 255).astype(np.uint8)
+
+    sp = meta["spacing"]  # [sz, sy, sx]
+    dims = [int(d) for d in u8.shape]
+    spacing = [float(sp[i]) * stride for i in range(3)]
+    return u8.tobytes(order="C"), dims, spacing
+
+
+def render_oblique_png(
+    session_id: str,
+    tilt_deg: float,
+    pos: float,
+    axis: str = "x",
+    wc: float | None = None,
+    ww: float | None = None,
+) -> bytes:
+    """Resample an oblique plane through the volume centre and return a PNG.
+
+    The plane starts axial and is tilted by *tilt_deg* around the x-axis
+    (axis='x') or y-axis (axis='y'); *pos* in [0,1] scans it along its normal.
+    """
+    from PIL import Image
+    from scipy.ndimage import map_coordinates
+
+    meta = ensure_volume_cached(session_id)
+    # Oblique resampling is interactive → sample from a downsampled copy for speed.
+    vol, _stride = _get_downsampled(session_id, max_dim=256)
+    z, y, x = vol.shape
+    if wc is None:
+        wc = meta["wc"]
+    if ww is None:
+        ww = meta["ww"]
+
+    z0, y0, x0 = z / 2.0, y / 2.0, x / 2.0
+    th = np.deg2rad(tilt_deg)
+    ct, st = np.cos(th), np.sin(th)
+    offset = (pos - 0.5) * z  # scan along the normal over ~volume depth
+
+    if axis == "y":
+        # Tilt the axial plane toward x: rows=y, cols=x tilted into z.
+        H, W = y, x
+        ii, jj = np.mgrid[0:H, 0:W].astype(np.float32)
+        di, dj = ii - H / 2.0, jj - W / 2.0
+        zc = z0 + dj * st - offset * ct
+        yc = y0 + di
+        xc = x0 + dj * ct + offset * st
+    else:
+        # Tilt the axial plane toward y (default): rows=y tilted into z, cols=x.
+        H, W = y, x
+        ii, jj = np.mgrid[0:H, 0:W].astype(np.float32)
+        di, dj = ii - H / 2.0, jj - W / 2.0
+        zc = z0 + di * st - offset * ct
+        yc = y0 + di * ct + offset * st
+        xc = x0 + dj
+
+    coords = np.stack([zc.ravel(), yc.ravel(), xc.ravel()])
+    sampled = map_coordinates(vol, coords, order=1, mode="constant", cval=float(vol.min()))
+    slc = sampled.reshape(H, W)[::-1, :]  # flip so superior is up
+
+    img8 = _apply_window(slc, wc, ww)
+    buf = io.BytesIO()
+    Image.fromarray(img8, mode="L").save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def render_slice_png(

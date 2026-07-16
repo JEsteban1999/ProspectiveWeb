@@ -132,6 +132,13 @@ export const api = {
 
   /* MPR / DICOM slice preview */
   volumeMeta: (sessionId: string) => get<VolumeMeta>(`/api/volume/${sessionId}/meta`),
+  volumeRawUrl: (sessionId: string) => `/api/volume/${sessionId}/raw`,
+  sliceObliqueUrl: (sessionId: string, tilt: number, pos: number, axis: string, wc?: number, ww?: number) => {
+    const q = new URLSearchParams({ tilt: String(tilt), pos: String(pos), axis });
+    if (wc !== undefined) q.set("wc", String(Math.round(wc)));
+    if (ww !== undefined) q.set("ww", String(Math.round(ww)));
+    return `/api/slice-oblique/${sessionId}?${q.toString()}`;
+  },
   sliceUrl: (sessionId: string, plane: string, index: number, wc?: number, ww?: number) => {
     const q = new URLSearchParams();
     if (wc !== undefined) q.set("wc", String(Math.round(wc)));
