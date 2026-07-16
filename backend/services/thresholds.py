@@ -35,13 +35,7 @@ def compute_auto_thresholds(
     mod = (modality or "").upper()
 
     if mod in _XA_MODALITIES:
-        lower, upper, is_dsa = _xa_thresholds(volume, window_center, window_width)
-        if is_dsa:
-            strategy = "dsa"
-        elif window_width > 2000 and volume is not None:
-            strategy = "xa_band_pass"
-        else:
-            strategy = "xa_wc_ww"
+        lower, upper, _is_dsa, strategy = _xa_thresholds(volume, window_center, window_width)
         return lower, upper, strategy
 
     if mod == "CT":
@@ -77,6 +71,16 @@ def strategy_hint(strategy: str, lower: float, upper: float, is_dsa: bool) -> st
             f"3DRA ventana calibrada. Derivado de WC/WW: "
             f"inferior = {lower:.0f} HU, superior = {upper:.0f} HU."
         ),
+        "xa_window_mismatch": (
+            f"3DRA: la ventana WC/WW del DICOM es un preset de visualización que "
+            f"queda por debajo de los vóxeles con contraste, así que se ha ignorado. "
+            f"Banda p90–p99 sobre los datos: inferior = {lower:.0f} HU, "
+            f"superior = {upper:.0f} HU."
+        ),
+        "xa_raw16": (
+            f"3DRA en crudo de 16 bits (sin reescalado a HU). Banda p99–p99.9: "
+            f"inferior = {lower:.0f}, superior = {upper:.0f}."
+        ),
         "ct_stats": (
             f"CTA con contraste (>2% vóxeles > 150 HU). "
             f"Umbral inferior fijado a {lower:.0f} HU para capturar vasos y excluir parénquima. "
@@ -104,8 +108,8 @@ def _xa_thresholds(
     volume: "np.ndarray | None",
     window_center: float,
     window_width: float,
-) -> tuple[float, float, bool]:
-    """XA/3DRA threshold — 4-branch logic (matches desktop segmentation_panel.py)."""
+) -> tuple[float, float, bool, str]:
+    """XA/3DRA threshold — returns (lower, upper, is_dsa, strategy)."""
     if volume is not None:
         flat = volume.ravel().astype("float32")
         p90  = float(np.percentile(flat, 90))
@@ -117,22 +121,32 @@ def _xa_thresholds(
             p999  = float(np.percentile(flat, 99.9))
             lower = max(p999, 50.0)
             upper = vmax * 0.95
-            return lower, upper, True
+            return lower, upper, True, "dsa"
 
         # Branch 2: Raw 16-bit 3DRA (no HU rescale)
         if p90 > 5_000 and vmax > 50_000:
             lower = p99
             upper = float(np.percentile(flat, 99.9))
-            return lower, upper, False
+            return lower, upper, False, "xa_raw16"
 
         # Branch 3: Standard 3DRA, wide WW
         if window_width > 2000:
-            return p90, p99, False
+            return p90, p99, False, "xa_band_pass"
 
-    # Branch 4: Narrow WW or no volume
+        # Branch 4: Narrow WW — derive from WC/WW, but only if that window
+        # actually covers the bright voxels. Some 3DRA series carry a *display*
+        # preset (e.g. WC=0/WW=200) unrelated to the contrast intensities; using
+        # it verbatim segments background instead of vessels.
+        lower = max(-200.0, window_center - window_width * 0.35)
+        upper = window_center + window_width * 0.45
+        if upper < p90:
+            return p90, p99, False, "xa_window_mismatch"
+        return lower, upper, False, "xa_wc_ww"
+
+    # No volume: WC/WW is all we have.
     lower = max(-200.0, window_center - window_width * 0.35)
     upper = window_center + window_width * 0.45
-    return lower, upper, False
+    return lower, upper, False, "xa_wc_ww"
 
 
 # ── CT ────────────────────────────────────────────────────────────────────── #

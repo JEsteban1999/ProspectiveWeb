@@ -1,0 +1,55 @@
+/* PROSPECTIVE Web — capa responsive.
+
+   El resto de la UI usa estilos inline, que no admiten media queries. Estas
+   clases cubren lo que clamp()/flex no puede resolver: ocultar o reordenar
+   bloques por debajo de un ancho. Breakpoints:
+     ≤1180px  portátiles pequeños / ventana partida
+     ≤900px   tablets
+     ≤680px   móvil */
+
+/* ── Nunca desbordar horizontalmente ────────────────────────────────────── */
+html, body, #root {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Cualquier bloque marcado no puede forzar scroll horizontal */
+.no-overflow { min-width: 0; }
+
+/* ── Login: el panel de vídeo cede y desaparece en pantallas estrechas ──── */
+@media (max-width: 1100px) {
+  .login-media { flex: 1 1 45% !important; }
+}
+@media (max-width: 900px) {
+  .login-media { display: none !important; }
+  .login-form { flex: 1 1 100% !important; min-width: 0 !important; }
+}
+
+/* ── Workspace: el rail se estrecha y oculta textos; luego se oculta ────── */
+@media (max-width: 1024px) {
+  .ws-rail { width: 62px !important; padding-left: 6px !important; padding-right: 6px !important; }
+  .ws-rail .ws-rail-label { display: none !important; }
+  .ws-rail .ws-patient-card { display: none !important; }
+}
+@media (max-width: 820px) {
+  .ws-rail { display: none !important; }
+}
+
+/* ── Workspace: la franja MPR se encoge y desaparece en pantallas bajas ─── */
+@media (max-height: 700px) {
+  .mpr-strip { height: 104px !important; }
+}
+@media (max-height: 560px) {
+  .mpr-strip { display: none !important; }
+}
+
+/* ── Tablas anchas: scroll propio en vez de romper la página ───────────── */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* ── Utilidad: truncar texto largo (nombres de paciente, rutas) ────────── */
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}

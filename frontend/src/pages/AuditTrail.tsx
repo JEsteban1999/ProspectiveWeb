@@ -73,8 +73,8 @@ export function AuditTrail({ onBack }: { onBack: () => void }) {
         <ErrorNote>{error}</ErrorNote>
 
         <SectionLabel style={{ marginTop: 8 }}>Bloques ({blocks.length})</SectionLabel>
-        <div style={{ overflowX: "auto", marginTop: 8 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+        <div className="table-scroll" style={{ marginTop: 8 }}>
+          <table style={{ width: "100%", minWidth: 560, borderCollapse: "collapse", fontSize: 12 }}>
             <thead>
               <tr style={{ textAlign: "left", color: "var(--muted-foreground)" }}>
                 <th style={{ padding: "6px 8px" }}>#</th>

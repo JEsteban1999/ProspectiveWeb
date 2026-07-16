@@ -45,8 +45,10 @@ export function Login({ onLogin, onSignup, notice }: { onLogin: () => void; onSi
 
   return (
     <div style={{ display: "flex", height: "100%", background: "var(--canvas)" }}>
-      {/* Brand panel — cinematic dark backdrop with radial vignette */}
+      {/* Brand panel — cinematic dark backdrop with radial vignette.
+          Cede espacio y desaparece bajo 900px (ver styles/responsive.css). */}
       <div
+        className="login-media"
         style={{
           flex: "1 1 62%",
           position: "relative",
@@ -98,7 +100,7 @@ export function Login({ onLogin, onSignup, notice }: { onLogin: () => void; onSi
       </div>
 
       {/* Form panel */}
-      <div style={{ flex: "1 1 38%", display: "flex", flexDirection: "column", padding: "0 clamp(32px, 4vw, 72px)", minWidth: 360 }}>
+      <div className="login-form" style={{ flex: "1 1 38%", display: "flex", flexDirection: "column", padding: "0 clamp(24px, 4vw, 72px)", minWidth: 320 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 24 }}>
           <button
             onClick={() => navigate("/")}

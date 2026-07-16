@@ -200,15 +200,18 @@ export function Viewer({ step }: { step: string }) {
         </div>
       )}
 
-      {(step === "morpho" || step === "treatment" || step === "devices") && (
-        <div style={{ position: "absolute", bottom: 14, right: 16, display: "flex", gap: 12, fontSize: 10, color: "rgba(235,235,235,0.7)", pointerEvents: "none" }}>
+      {/* Perforator legend — only over the mesh scene (the oblique view has its
+          own control bar down there, and the volume view has no perforators). */}
+      {viewMode === "default" && meshUrl && (step === "morpho" || step === "treatment" || step === "devices") && (
+        <div style={{ position: "absolute", bottom: 14, right: 16, display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: "4px 12px", maxWidth: "60%", fontSize: 10, color: "rgba(235,235,235,0.7)", pointerEvents: "none" }}>
           <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: "#ef4444" }} />perforante &lt;3mm</span>
           <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: "#eab308" }} />3–6mm</span>
           <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: "#22c55e" }} />&gt;6mm</span>
         </div>
       )}
 
-      {meshUrl && (
+      {/* Rotate/zoom hint — only for the rotatable 3D scenes (mesh & volume). */}
+      {((viewMode === "default" && meshUrl) || viewMode === "volume") && (
         <div style={{ position: "absolute", bottom: 14, left: 16, fontSize: 10, fontFamily: "var(--font-mono)", color: "rgba(168,184,198,0.55)", pointerEvents: "none" }}>
           arrastra para rotar · rueda para zoom
         </div>
@@ -262,7 +265,7 @@ export function MprStrip() {
   };
 
   return (
-    <div style={{ height: 132, flexShrink: 0, display: "flex", gap: 1, background: "var(--border)", borderTop: "1px solid var(--border)" }}>
+    <div className="mpr-strip" style={{ height: 132, flexShrink: 0, display: "flex", gap: 1, background: "var(--border)", borderTop: "1px solid var(--border)" }}>
       {(["axial", "coronal", "sagital"] as const).map((plane) => {
         const c = cfg(plane);
         return (

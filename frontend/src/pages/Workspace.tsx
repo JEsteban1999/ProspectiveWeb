@@ -80,9 +80,10 @@ export function Workspace({
       </Topbar>
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-        {/* Rail de flujo */}
-        <div style={{ width: 232, flexShrink: 0, background: "var(--background)", borderRight: "1px solid var(--border)", padding: "18px 14px", overflowY: "auto" }}>
-          <SectionLabel style={{ margin: "0 6px 14px" }}>Flujo de planificación</SectionLabel>
+        {/* Rail de flujo — ancho fluido; en pantallas estrechas colapsa a iconos
+            y bajo 820px se oculta (ver styles/responsive.css). */}
+        <div className="ws-rail" style={{ width: "clamp(176px, 15vw, 232px)", flexShrink: 0, background: "var(--background)", borderRight: "1px solid var(--border)", padding: "18px 12px", overflowY: "auto" }}>
+          <SectionLabel className="ws-rail-label" style={{ margin: "0 6px 14px" }}>Flujo de planificación</SectionLabel>
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {STEPS.map((s, i) => {
               const active = i === stepIdx;
@@ -129,8 +130,8 @@ export function Workspace({
                   >
                     {done ? <Icon name="STATUS_OK" size={13} /> : i + 1}
                   </span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: active ? 700 : 500 }}>{s.label}</div>
+                  <div className="ws-rail-label" style={{ flex: 1, minWidth: 0 }}>
+                    <div className="truncate" style={{ fontSize: 13, fontWeight: active ? 700 : 500 }}>{s.label}</div>
                   </div>
                   <Icon name={s.icon} size={14} color={active ? "var(--brand-subtle-foreground)" : "var(--muted-foreground)"} />
                 </button>
@@ -139,10 +140,10 @@ export function Workspace({
           </div>
 
           {patient && (
-            <Card style={{ marginTop: 22, padding: "12px 12px" }}>
+            <Card className="ws-patient-card" style={{ marginTop: 22, padding: "12px 12px" }}>
               <SectionLabel style={{ marginBottom: 6 }}>Paciente</SectionLabel>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>{patient.full_name}</div>
-              <div style={{ fontSize: 11, color: "var(--muted-foreground)", fontFamily: "var(--font-mono)" }}>
+              <div className="truncate" style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>{patient.full_name}</div>
+              <div className="truncate" style={{ fontSize: 11, color: "var(--muted-foreground)", fontFamily: "var(--font-mono)" }}>
                 {patient.hospital_id || "—"} · {patient.sex || "—"}
               </div>
               {morphometry && (
@@ -160,8 +161,8 @@ export function Workspace({
           <MprStrip />
         </div>
 
-        {/* Panel del paso */}
-        <div style={{ width: 384, flexShrink: 0, background: "var(--background)", borderLeft: "1px solid var(--border)", overflowY: "auto", padding: "20px 20px 40px" }}>
+        {/* Panel del paso — ancho fluido con mínimo legible */}
+        <div style={{ width: "clamp(300px, 27vw, 384px)", flexShrink: 0, background: "var(--background)", borderLeft: "1px solid var(--border)", overflowY: "auto", padding: "20px 18px 40px" }}>
           {panel}
         </div>
       </div>

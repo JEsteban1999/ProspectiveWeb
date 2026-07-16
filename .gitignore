@@ -64,6 +64,11 @@ frontend/.env.production
 *.dcm
 *.DCM
 *.dicom
+# Muchos DICOM vienen SIN extensión (IM_0001, 1.2.840…), así que las reglas por
+# extensión no bastan: se ignoran las carpetas de estudios enteras.
+Archivos DICOM/
+DICOM/
+**/DICOMDIR
 
 # ── Large binary meshes (use Git LFS or external storage) ────────────────── #
 *.stl

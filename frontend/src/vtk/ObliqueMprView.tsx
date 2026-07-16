@@ -20,11 +20,10 @@ export function ObliqueMprView({ sessionId, wc, ww }: { sessionId: string; wc?: 
 
   return (
     <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: "var(--viewer-bg)" }}>
+      {/* No floating label here: the Viewer already labels the scene top-left and
+          the tilt/axis are shown in the control bar below. */}
       <div style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 0 }}>
         <img src={src} alt="oblicuo" draggable={false} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", userSelect: "none" }} />
-        <span style={{ position: "absolute", top: 10, left: 12, fontSize: 11, fontFamily: "var(--font-mono)", color: "rgba(168,184,198,0.85)" }}>
-          Oblicuo · {debounced.tilt}° · eje {debounced.axis.toUpperCase()}
-        </span>
       </div>
 
       <div style={{ flexShrink: 0, padding: "10px 16px", display: "flex", flexDirection: "column", gap: 8, borderTop: "1px solid var(--border)", background: "var(--background)" }}>

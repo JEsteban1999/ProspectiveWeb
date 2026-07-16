@@ -17,9 +17,10 @@ export function PanelHead({ title, desc, right }: { title: string; desc?: string
 }
 
 /* SectionLabel — small uppercase tracking label (CANDIDATOS, SERIE DETECTADA…) */
-export function SectionLabel({ children, style }: { children: ReactNode; style?: React.CSSProperties }) {
+export function SectionLabel({ children, style, className }: { children: ReactNode; style?: React.CSSProperties; className?: string }) {
   return (
     <div
+      className={className}
       style={{
         fontSize: 11,
         fontWeight: 700,
@@ -56,9 +57,10 @@ export function ErrorNote({ children }: { children: ReactNode }) {
 }
 
 /* Card — standard elevated surface (radius 14, shadow sm, border 1px). */
-export function Card({ children, style }: { children: ReactNode; style?: React.CSSProperties }) {
+export function Card({ children, style, className }: { children: ReactNode; style?: React.CSSProperties; className?: string }) {
   return (
     <div
+      className={className}
       style={{
         background: "var(--card)",
         border: "1px solid var(--border)",
