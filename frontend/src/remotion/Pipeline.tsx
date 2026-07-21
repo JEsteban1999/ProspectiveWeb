@@ -14,11 +14,19 @@ import {
   AbsoluteFill,
   Easing,
   interpolate,
+  Loop,
+  OffthreadVideo,
   Sequence,
+  staticFile,
   useCurrentFrame,
 } from "remotion";
 
 export const FPS = 30;
+
+// Cinematic background: the landing/login clip (surgical footage), looped and
+// dimmed behind a dark scrim so the pipeline text stays readable.
+const BG_VIDEO = "media/intro.mp4";
+const BG_VIDEO_SECONDS = 12.2; // intro.mp4 duration → one loop
 
 // Design-system ease-out (cubic-bezier(0.16, 1, 0.3, 1))
 const EASE = Easing.bezier(0.16, 1, 0.3, 1);
@@ -44,8 +52,8 @@ interface Step {
 
 const STEPS: Step[] = [
   { n: "01", title: "Carga DICOM", desc: "Sube el estudio del paciente", metric: "CTA · MRA · 3DRA" },
-  { n: "02", title: "Segmentación vascular 3D", desc: "Marching Cubes sobre VTK", metric: "≈ 285 000 vértices" },
-  { n: "03", title: "Detección de aneurismas", desc: "Curvatura gaussiana v6", metric: "candidatos + domo aislado" },
+  { n: "02", title: "Reconstrucción 3D de las arterias", desc: "Del estudio a un modelo medible", metric: "≈ 285 000 vértices" },
+  { n: "03", title: "Detección del aneurisma", desc: "Lo localiza y aísla su forma", metric: "candidatos + domo aislado" },
   { n: "04", title: "Morfometría", desc: "Medidas e índices clínicos", metric: "Ø 6.2 mm · cuello 2.9 · AR 1.42" },
   { n: "05", title: "Decisión terapéutica", desc: "Motor de 8 factores", metric: "CLIP 72%  ·  ENDO 28%" },
   { n: "06", title: "Planificación de dispositivos", desc: "Catálogos reales", metric: "42 clips · 39 coils · stents" },
@@ -76,12 +84,36 @@ export const PIPELINE_DURATION = TITLE_D + HOOK_D + STEPS.length * STEP_D + OUTR
 function Backdrop() {
   const frame = useCurrentFrame();
   const shift = interpolate(frame, [0, PIPELINE_DURATION], [0, 44]);
+  // Slow zoom on the background video so the loop point is less noticeable.
+  const bgScale = interpolate(frame, [0, PIPELINE_DURATION], [1.06, 1.16]);
   return (
-    <AbsoluteFill style={{ background: `radial-gradient(90% 70% at 30% 15%, ${C.bg1}, ${C.bg0} 70%)` }}>
+    <AbsoluteFill style={{ background: C.bg0 }}>
+      {/* Looped surgical footage from the landing page */}
+      <AbsoluteFill style={{ scale: String(bgScale) }}>
+        <Loop durationInFrames={Math.round(BG_VIDEO_SECONDS * FPS)}>
+          <OffthreadVideo
+            src={staticFile(BG_VIDEO)}
+            muted
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+        </Loop>
+      </AbsoluteFill>
+
+      {/* Dark scrim + vignette: keeps the video atmospheric (~30 %) and the
+          text readable, and biases it darker toward the top-left wordmark. */}
+      <AbsoluteFill
+        style={{
+          background:
+            `linear-gradient(115deg, rgba(6,11,18,0.94) 0%, rgba(6,11,18,0.7) 42%, rgba(8,16,26,0.62) 100%),` +
+            `radial-gradient(120% 100% at 50% 45%, transparent 30%, rgba(6,11,18,0.82) 100%)`,
+        }}
+      />
+
+      {/* Faint technical grid on top, for the same look as before */}
       <AbsoluteFill
         style={{
           backgroundImage:
-            "linear-gradient(rgba(139,155,170,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(139,155,170,0.05) 1px, transparent 1px)",
+            "linear-gradient(rgba(139,155,170,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(139,155,170,0.045) 1px, transparent 1px)",
           backgroundSize: "52px 52px",
           backgroundPosition: `${shift}px ${shift}px`,
           maskImage: "radial-gradient(80% 80% at 50% 45%, #000, transparent)",
