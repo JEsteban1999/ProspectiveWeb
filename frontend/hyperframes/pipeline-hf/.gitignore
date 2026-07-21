@@ -1,0 +1,9 @@
+# Artefactos de render y dependencias
+node_modules/
+out/
+snapshots/
+
+# Media de entrada: es una copia de frontend/public/media/intro.mp4 (8 MB), no
+# se versiona por duplicado. Para re-renderizar:
+#   cp ../../public/media/intro.mp4 assets/intro.mp4
+assets/

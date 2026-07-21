@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1280, height=720" />
+    <title>PROSPECTIVE — pipeline (HyperFrames)</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/CustomEase.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        width: 1280px; height: 720px; overflow: hidden; background: #060b12;
+        font-family: "Inter", "Segoe UI", Arial, sans-serif;
+      }
+      .mono { font-family: "JetBrains Mono", "Consolas", monospace; }
+
+      #root { position: relative; width: 1280px; height: 720px; overflow: hidden; }
+
+      /* El relleno a pantalla completa va en hijos full-bleed, nunca en el root:
+         el compositor de frames puede descartar el background del propio root. */
+      .fill { position: absolute; inset: 0; }
+
+      /* Fondo de vídeo (hijos directos del root, como exige el contrato de media) */
+      #bg-a, #bg-b { width: 1280px; height: 720px; object-fit: cover; }
+
+      #scrim {
+        background:
+          linear-gradient(115deg, rgba(6,11,18,0.94) 0%, rgba(6,11,18,0.70) 42%, rgba(8,16,26,0.62) 100%),
+          radial-gradient(120% 100% at 50% 45%, transparent 30%, rgba(6,11,18,0.82) 100%);
+      }
+      #grid {
+        background-image:
+          linear-gradient(rgba(139,155,170,0.045) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(139,155,170,0.045) 1px, transparent 1px);
+        background-size: 52px 52px;
+        -webkit-mask-image: radial-gradient(80% 80% at 50% 45%, #000, transparent);
+        mask-image: radial-gradient(80% 80% at 50% 45%, #000, transparent);
+      }
+
+      #wordmark { display: flex; align-items: flex-start; gap: 14px; padding: 48px 0 0 64px; }
+      #wordmark .dot { width: 28px; height: 28px; border-radius: 8px; background: #A8B8C6; }
+      #wordmark .name { color: #fff; font-weight: 800; font-size: 26px; letter-spacing: -0.02em; line-height: 28px; }
+
+      /* El framework controla la visibilidad de .clip; el fundido se anima en un
+         envoltorio interior (.scene-inner), no sobre el clip. */
+      .scene { display: grid; place-items: center; padding: 0 120px; }
+      .scene-inner { display: flex; flex-direction: column; align-items: center; text-align: center; }
+
+      .title-name { font-weight: 800; font-size: 104px; letter-spacing: -0.03em; color: #fff; line-height: 1; }
+      .title-sub  { font-size: 40px; color: rgba(168,184,198,0.78); max-width: 900px; line-height: 1.35; margin-top: 26px; }
+
+      .kicker { font-size: 30px; color: #6A8399; letter-spacing: 0.28em; margin-bottom: 22px; }
+      .hook-h { font-weight: 800; font-size: 72px; letter-spacing: -0.02em; color: #fff; line-height: 1.1; max-width: 1000px; }
+
+      .step-n      { font-size: 30px; color: #6A8399; letter-spacing: 0.3em; }
+      .step-title  { font-weight: 800; font-size: 74px; letter-spacing: -0.02em; color: #fff; line-height: 1.06; margin-top: 20px; }
+      .step-desc   { font-size: 38px; color: rgba(168,184,198,0.78); margin-top: 20px; }
+      .step-metric {
+        margin-top: 32px; padding: 14px 30px; border-radius: 14px;
+        background: rgba(139,155,170,0.12); border: 1px solid rgba(139,155,170,0.28);
+        font-size: 32px; color: #A8B8C6;
+      }
+
+      .stepper { position: absolute; bottom: 60px; left: 0; right: 0; display: flex; justify-content: center; gap: 16px; }
+      .stepper i { width: 11px; height: 11px; border-radius: 6px; background: rgba(139,155,170,0.25); display: block; }
+      .stepper i.done { background: #6A8399; }
+      .stepper i.on   { width: 44px; background: #A8B8C6; }
+
+      .outro-h   { font-weight: 800; font-size: 64px; letter-spacing: -0.02em; color: #fff; line-height: 1.1; max-width: 1000px; }
+      .outro-sub { font-size: 28px; color: #6A8399; margin-top: 22px; }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="pipeline"
+      data-start="0"
+      data-duration="23.4"
+      data-fps="30"
+      data-width="1280"
+      data-height="720"
+    >
+      <!-- Fondo: intro.mp4 dura 12.2 s y la pieza 23.4 s, así que se encadenan
+           dos instancias en la misma pista en lugar de un bucle infinito
+           (repeat:-1 lo prohíben las reglas de determinismo). -->
+      <video id="bg-a" class="clip fill" src="assets/intro.mp4" data-start="0" data-duration="12.2" data-track-index="0" muted playsinline></video>
+      <video id="bg-b" class="clip fill" src="assets/intro.mp4" data-start="12.2" data-duration="11.2" data-track-index="0" muted playsinline></video>
+
+      <div id="scrim" class="fill"></div>
+      <div id="grid" class="fill"></div>
+
+      <div id="wordmark" class="clip fill" data-start="0" data-duration="23.4" data-track-index="9">
+        <span class="dot"></span><span class="name">PROSPECTIVE</span>
+      </div>
+
+      <!-- ── Título ── -->
+      <section id="sc-title" class="clip fill scene" data-start="0" data-duration="2.6" data-track-index="1">
+        <div class="scene-inner" id="in-title">
+          <div class="title-name" id="el-title-name">PROSPECTIVE</div>
+          <div class="title-sub" id="el-title-sub">Planificación quirúrgica de aneurismas cerebrales — objetiva y medible.</div>
+        </div>
+      </section>
+
+      <!-- ── Gancho ── -->
+      <section id="sc-hook" class="clip fill scene" data-start="2.6" data-duration="1.9333" data-track-index="1">
+        <div class="scene-inner" id="in-hook">
+          <div class="kicker mono" id="el-hook-k">EL PIPELINE</div>
+          <div class="hook-h" id="el-hook-h">Del estudio de imagen al plan quirúrgico, en 7 pasos</div>
+        </div>
+      </section>
+
+      <!-- ── Paso 01 ── -->
+      <section id="sc-step-0" class="clip fill scene" data-start="4.5333" data-duration="2.3333" data-track-index="1">
+        <div class="scene-inner" id="in-step-0">
+          <div class="step-n mono" id="el-n-0">PASO 01 / 07</div>
+          <div class="step-title" id="el-t-0">Carga DICOM</div>
+          <div class="step-desc" id="el-d-0">Sube el estudio del paciente</div>
+          <div class="step-metric mono" id="el-m-0">CTA · MRA · 3DRA</div>
+        </div>
+        <div class="stepper"><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      </section>
+
+      <!-- ── Paso 02 ── -->
+      <section id="sc-step-1" class="clip fill scene" data-start="6.8667" data-duration="2.3333" data-track-index="1">
+        <div class="scene-inner" id="in-step-1">
+          <div class="step-n mono" id="el-n-1">PASO 02 / 07</div>
+          <div class="step-title" id="el-t-1">Reconstrucción 3D de las arterias</div>
+          <div class="step-desc" id="el-d-1">Del estudio a un modelo medible</div>
+          <div class="step-metric mono" id="el-m-1">≈ 285 000 vértices</div>
+        </div>
+        <div class="stepper"><i class="done"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i></div>
+      </section>
+
+      <!-- ── Paso 03 ── -->
+      <section id="sc-step-2" class="clip fill scene" data-start="9.2" data-duration="2.3333" data-track-index="1">
+        <div class="scene-inner" id="in-step-2">
+          <div class="step-n mono" id="el-n-2">PASO 03 / 07</div>
+          <div class="step-title" id="el-t-2">Detección del aneurisma</div>
+          <div class="step-desc" id="el-d-2">Lo localiza y aísla su forma</div>
+          <div class="step-metric mono" id="el-m-2">candidatos + domo aislado</div>
+        </div>
+        <div class="stepper"><i class="done"></i><i class="done"></i><i class="on"></i><i></i><i></i><i></i><i></i></div>
+      </section>
+
+      <!-- ── Paso 04 ── -->
+      <section id="sc-step-3" class="clip fill scene" data-start="11.5333" data-duration="2.3333" data-track-index="1">
+        <div class="scene-inner" id="in-step-3">
+          <div class="step-n mono" id="el-n-3">PASO 04 / 07</div>
+          <div class="step-title" id="el-t-3">Morfometría</div>
+          <div class="step-desc" id="el-d-3">Medidas e índices clínicos</div>
+          <div class="step-metric mono" id="el-m-3">Ø 6.2 mm · cuello 2.9 · AR 1.42</div>
+        </div>
+        <div class="stepper"><i class="done"></i><i class="done"></i><i class="done"></i><i class="on"></i><i></i><i></i><i></i></div>
+      </section>
+
+      <!-- ── Paso 05 ── -->
+      <section id="sc-step-4" class="clip fill scene" data-start="13.8667" data-duration="2.3333" data-track-index="1">
+        <div class="scene-inner" id="in-step-4">
+          <div class="step-n mono" id="el-n-4">PASO 05 / 07</div>
+          <div class="step-title" id="el-t-4">Decisión terapéutica</div>
+          <div class="step-desc" id="el-d-4">Motor de 8 factores</div>
+          <div class="step-metric mono" id="el-m-4">CLIP 72%  ·  ENDO 28%</div>
+        </div>
+        <div class="stepper"><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="on"></i><i></i><i></i></div>
+      </section>
+
+      <!-- ── Paso 06 ── -->
+      <section id="sc-step-5" class="clip fill scene" data-start="16.2" data-duration="2.3333" data-track-index="1">
+        <div class="scene-inner" id="in-step-5">
+          <div class="step-n mono" id="el-n-5">PASO 06 / 07</div>
+          <div class="step-title" id="el-t-5">Planificación de dispositivos</div>
+          <div class="step-desc" id="el-d-5">Catálogos reales</div>
+          <div class="step-metric mono" id="el-m-5">42 clips · 39 coils · stents</div>
+        </div>
+        <div class="stepper"><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="on"></i><i></i></div>
+      </section>
+
+      <!-- ── Paso 07 ── -->
+      <section id="sc-step-6" class="clip fill scene" data-start="18.5333" data-duration="2.3333" data-track-index="1">
+        <div class="scene-inner" id="in-step-6">
+          <div class="step-n mono" id="el-n-6">PASO 07 / 07</div>
+          <div class="step-title" id="el-t-6">Informe y export</div>
+          <div class="step-desc" id="el-d-6">Documenta y comparte</div>
+          <div class="step-metric mono" id="el-m-6">PDF · STL · seguimiento</div>
+        </div>
+        <div class="stepper"><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="on"></i></div>
+      </section>
+
+      <!-- ── Cierre ── -->
+      <section id="sc-outro" class="clip fill scene" data-start="20.8667" data-duration="2.5333" data-track-index="1">
+        <div class="scene-inner" id="in-outro">
+          <div class="outro-h" id="el-outro-h">Planificación neurovascular, medible.</div>
+          <div class="outro-sub mono" id="el-outro-sub">SkullApp · Laboratorio de Imagen Médica</div>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      gsap.registerPlugin(CustomEase);
+
+      // Mismo ease del sistema de diseño que la versión Remotion:
+      // cubic-bezier(0.16, 1, 0.3, 1).
+      const EASE = CustomEase.create("dsEase", "M0,0 C0.16,1 0.3,1 1,1");
+
+      const FPS = 30;
+      const f = (frames) => frames / FPS;   // frames → segundos
+      const FADE = f(14);
+      const STEP_D = f(70);
+      const START_STEPS = f(136);
+
+      const tl = gsap.timeline({ paused: true });
+
+      /* Envolvente de escena: entra en FADE, se mantiene y sale en FADE. Como
+         las escenas van seguidas sin solape, la saliente llega a opacidad 0
+         antes de que aparezca la entrante — nunca hay dos textos a la vez. */
+      function scene(sel, start, dur) {
+        tl.fromTo(sel, { opacity: 0 }, { opacity: 1, duration: FADE, ease: EASE }, start);
+        tl.to(sel, { opacity: 0, duration: FADE, ease: EASE }, start + dur - FADE);
+      }
+
+      /* Entrada por elemento: pequeña subida, como el rise() de Remotion. */
+      function rise(sel, start, delayFrames, durFrames) {
+        tl.fromTo(sel, { y: 26 }, { y: 0, duration: f(durFrames || 18), ease: EASE }, start + f(delayFrames));
+      }
+
+      // Título
+      scene("#in-title", 0, f(78));
+      rise("#el-title-name", 0, 4);
+      rise("#el-title-sub", 0, 16);
+
+      // Gancho
+      scene("#in-hook", f(78), f(58));
+      rise("#el-hook-k", f(78), 4);
+      rise("#el-hook-h", f(78), 4);
+
+      // Los 7 pasos
+      for (let i = 0; i < 7; i++) {
+        const start = START_STEPS + i * STEP_D;
+        scene("#in-step-" + i, start, STEP_D);
+        rise("#el-n-" + i, start, 2, 14);
+        rise("#el-t-" + i, start, 7);
+        rise("#el-d-" + i, start, 12);
+        rise("#el-m-" + i, start, 17);
+      }
+
+      // Cierre
+      scene("#in-outro", f(626), f(76));
+      rise("#el-outro-h", f(626), 4);
+      rise("#el-outro-sub", f(626), 16);
+
+      window.__timelines["pipeline"] = tl;
+    </script>
+  </body>
+</html>
