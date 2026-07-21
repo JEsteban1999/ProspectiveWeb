@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { BorderBeam } from "border-beam";
 import logo from "../assets/logo.png";
 import { Icon } from "../components/Icon";
 import type { IconName } from "../components/Icon";
@@ -87,12 +88,14 @@ function Nav({ onEnter }: { onEnter: () => void }) {
           ))}
         </nav>
         <ThemeToggle size="sm" />
-        <button
-          onClick={onEnter}
-          style={{ height: 38, padding: "0 18px", borderRadius: "var(--radius-md)", border: "none", background: "var(--primary)", color: "var(--primary-foreground)", fontWeight: 700, fontSize: 12.5, letterSpacing: "0.04em", textTransform: "uppercase", cursor: "pointer" }}
-        >
-          Entrar
-        </button>
+        <BorderBeam size="sm" colorVariant="ocean" style={{ display: "inline-flex" }}>
+          <button
+            onClick={onEnter}
+            style={{ height: 38, padding: "0 18px", borderRadius: "var(--radius-md)", border: "none", background: "var(--primary)", color: "var(--primary-foreground)", fontWeight: 700, fontSize: 12.5, letterSpacing: "0.04em", textTransform: "uppercase", cursor: "pointer" }}
+          >
+            Entrar
+          </button>
+        </BorderBeam>
       </div>
     </div>
   );
@@ -126,12 +129,14 @@ function Hero({ onEnter }: { onEnter: () => void }) {
             el mejor tratamiento. Todo en el navegador, sin instalar nada.
           </p>
           <div style={{ display: "flex", gap: 14, marginTop: 34, flexWrap: "wrap" }}>
-            <button
-              onClick={onEnter}
-              style={{ height: 50, padding: "0 28px", borderRadius: "var(--radius-md)", border: "none", background: "var(--primary)", color: "var(--primary-foreground)", fontWeight: 700, fontSize: 15, cursor: "pointer" }}
-            >
-              Iniciar sesión
-            </button>
+            <BorderBeam size="sm" colorVariant="ocean" theme="dark" style={{ display: "inline-flex" }}>
+              <button
+                onClick={onEnter}
+                style={{ height: 50, padding: "0 28px", borderRadius: "var(--radius-md)", border: "none", background: "var(--primary)", color: "var(--primary-foreground)", fontWeight: 700, fontSize: 15, cursor: "pointer" }}
+              >
+                Iniciar sesión
+              </button>
+            </BorderBeam>
             <a
               href="#pipeline"
               style={{ height: 50, display: "inline-flex", alignItems: "center", padding: "0 24px", borderRadius: "var(--radius-md)", border: "1px solid rgba(139,155,170,0.4)", background: "rgba(5,9,15,0.3)", color: "#fff", fontWeight: 700, fontSize: 15, textDecoration: "none" }}
@@ -593,12 +598,14 @@ function CTA({ onEnter }: { onEnter: () => void }) {
           <p style={{ fontSize: 16, color: "rgba(235,235,235,0.72)", marginTop: 14, lineHeight: 1.6 }}>
             Accede con tu cuenta o solicita el registro profesional. La aprobación la gestiona el administrador.
           </p>
-          <button
-            onClick={onEnter}
-            style={{ marginTop: 28, height: 50, padding: "0 32px", borderRadius: "var(--radius-md)", border: "none", background: "var(--brand-mist)", color: "#1c1c1c", fontWeight: 700, fontSize: 15, cursor: "pointer" }}
-          >
-            Entrar a la plataforma
-          </button>
+          <BorderBeam size="sm" colorVariant="ocean" theme="dark" style={{ display: "inline-flex", marginTop: 28 }}>
+            <button
+              onClick={onEnter}
+              style={{ height: 50, padding: "0 32px", borderRadius: "var(--radius-md)", border: "none", background: "var(--brand-mist)", color: "#1c1c1c", fontWeight: 700, fontSize: 15, cursor: "pointer" }}
+            >
+              Entrar a la plataforma
+            </button>
+          </BorderBeam>
         </div>
       </div>
     </Section>

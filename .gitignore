@@ -47,6 +47,10 @@ coverage.xml
 Thumbs.db
 desktop.ini
 
+# ── Agent skills (tooling vendorizado; se reinstala con skills-lock.json) ── #
+.agents/
+frontend/.agents/
+
 # ── Frontend build artifacts ──────────────────────────────────────────────── #
 frontend/node_modules/
 frontend/dist/
