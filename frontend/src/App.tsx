@@ -15,7 +15,7 @@ import { PlanningProvider, usePlanning } from "./store/planning";
 import { NavProvider } from "./store/nav";
 import type { Screen } from "./store/nav";
 
-function Router({ splashDone }: { splashDone: boolean }) {
+function Router() {
   const { user, ready } = useAuth();
   const planning = usePlanning();
   const [screen, setScreen] = useState<Screen>("login");
@@ -23,29 +23,6 @@ function Router({ splashDone }: { splashDone: boolean }) {
   const [toast, setToast] = useState<string | null>(null);
   const [loginNotice, setLoginNotice] = useState<string | null>(null);
   const [loadingIn, setLoadingIn] = useState(false);
-  const [entryChecked, setEntryChecked] = useState(false);
-  const [pendingEntryLoad, setPendingEntryLoad] = useState(false);
-
-  // Entrada desde la landing: si ya hay sesión, el login se salta, así que aquí
-  // marcamos la carga pendiente. Si NO hay sesión, se limpia la señal y la carga
-  // la dispara el login tras autenticarse (sin duplicarla).
-  useEffect(() => {
-    if (!ready || entryChecked) return;
-    setEntryChecked(true);
-    if (sessionStorage.getItem("prospective.enterLoading") === "1") {
-      sessionStorage.removeItem("prospective.enterLoading");
-      if (user) setPendingEntryLoad(true);
-    }
-  }, [ready, user, entryChecked]);
-
-  // Arranca la carga de entrada solo cuando el splash ya no está → en la primera
-  // entrada de la sesión se ven en secuencia: splash → carga → Pacientes.
-  useEffect(() => {
-    if (pendingEntryLoad && splashDone) {
-      setPendingEntryLoad(false);
-      setLoadingIn(true);
-    }
-  }, [pendingEntryLoad, splashDone]);
 
   if (!ready) return null; // restoring stored token
 
@@ -121,23 +98,32 @@ function Router({ splashDone }: { splashDone: boolean }) {
 }
 
 const SPLASH_KEY = "prospective.splashShown";
+const ENTER_KEY = "prospective.enterLoading";
 
 export default function App() {
-  // Show the intro splash only once per browser session — otherwise it replays
-  // every time the user bounces between the landing (/) and the app (/app).
-  const [splashDone, setSplashDone] = useState(() => sessionStorage.getItem(SPLASH_KEY) === "1");
+  // Muestra el splash de intro SIEMPRE que se entra por los botones "Entrar" /
+  // "Entrar a la plataforma" de la landing (la landing deja la señal ENTER_KEY);
+  // en cualquier otro caso (recarga directa de /app) solo una vez por sesión.
+  const [dismissed, setDismissed] = useState(() => {
+    if (sessionStorage.getItem(ENTER_KEY) === "1") return false; // entró por botón → splash siempre
+    return sessionStorage.getItem(SPLASH_KEY) === "1";
+  });
+
+  // Consume la señal de entrada para que una recarga de /app no repita el splash.
+  useEffect(() => { sessionStorage.removeItem(ENTER_KEY); }, []);
+
   return (
     <AuthProvider>
       <PlanningProvider>
-        {!splashDone && (
+        {!dismissed && (
           <VideoSplash
             onDone={() => {
               sessionStorage.setItem(SPLASH_KEY, "1");
-              setSplashDone(true);
+              setDismissed(true);
             }}
           />
         )}
-        <Router splashDone={splashDone} />
+        <Router />
       </PlanningProvider>
     </AuthProvider>
   );
