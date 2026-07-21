@@ -15,7 +15,7 @@ import { PlanningProvider, usePlanning } from "./store/planning";
 import { NavProvider } from "./store/nav";
 import type { Screen } from "./store/nav";
 
-function Router() {
+function Router({ splashDone }: { splashDone: boolean }) {
   const { user, ready } = useAuth();
   const planning = usePlanning();
   const [screen, setScreen] = useState<Screen>("login");
@@ -24,18 +24,28 @@ function Router() {
   const [loginNotice, setLoginNotice] = useState<string | null>(null);
   const [loadingIn, setLoadingIn] = useState(false);
   const [entryChecked, setEntryChecked] = useState(false);
+  const [pendingEntryLoad, setPendingEntryLoad] = useState(false);
 
   // Entrada desde la landing: si ya hay sesión, el login se salta, así que aquí
-  // mostramos la pantalla de carga a mano. Si NO hay sesión, se limpia la señal
-  // y la carga la dispara el login tras autenticarse (sin duplicarla).
+  // marcamos la carga pendiente. Si NO hay sesión, se limpia la señal y la carga
+  // la dispara el login tras autenticarse (sin duplicarla).
   useEffect(() => {
     if (!ready || entryChecked) return;
     setEntryChecked(true);
     if (sessionStorage.getItem("prospective.enterLoading") === "1") {
       sessionStorage.removeItem("prospective.enterLoading");
-      if (user) setLoadingIn(true);
+      if (user) setPendingEntryLoad(true);
     }
   }, [ready, user, entryChecked]);
+
+  // Arranca la carga de entrada solo cuando el splash ya no está → en la primera
+  // entrada de la sesión se ven en secuencia: splash → carga → Pacientes.
+  useEffect(() => {
+    if (pendingEntryLoad && splashDone) {
+      setPendingEntryLoad(false);
+      setLoadingIn(true);
+    }
+  }, [pendingEntryLoad, splashDone]);
 
   if (!ready) return null; // restoring stored token
 
@@ -127,7 +137,7 @@ export default function App() {
             }}
           />
         )}
-        <Router />
+        <Router splashDone={splashDone} />
       </PlanningProvider>
     </AuthProvider>
   );
