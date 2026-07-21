@@ -628,7 +628,12 @@ function Footer() {
 /* ── Page ───────────────────────────────────────────────────────────────── */
 export function Landing() {
   const navigate = useNavigate();
-  const enter = () => navigate("/app");
+  // Señala que se entra desde la landing → la app mostrará la pantalla de carga
+  // aunque ya haya sesión activa (si no, saltaría el login y no se vería).
+  const enter = () => {
+    sessionStorage.setItem("prospective.enterLoading", "1");
+    navigate("/app");
+  };
   return (
     <div style={{ background: "var(--canvas)", minHeight: "100%" }}>
       <Nav onEnter={enter} />
