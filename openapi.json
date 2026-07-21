@@ -4,8 +4,8 @@
                  "title":  "PROSPECTIVE Web API",
                  "description":  "REST + WebSocket API for cerebral aneurysm segmentation, detection, morphometry, perforator risk assessment and stent planning.\n\nAll linear dimensions are in **millimetres (mm)**. All HU values follow the standard Hounsfield scale.",
                  "contact":  {
-                                 "name":  "UniNavarra — Laboratorio de Imagen Médica",
-                                 "email":  "juesnaca99@gmail.com"
+                                 "name":  "SkullApp — Laboratorio de Imagen Médica",
+                                 "email":  "ingprospective@skullapp.tech"
                              },
                  "license":  {
                                  "name":  "Proprietary"

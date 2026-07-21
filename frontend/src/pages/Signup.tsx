@@ -174,7 +174,7 @@ export function Signup({ onBack, onDone }: { onBack: () => void; onDone: (msg: s
           </form>
 
           <div style={{ textAlign: "center", marginTop: 16, fontSize: 10, color: "rgba(139,155,170,0.6)" }}>
-            Hybrid Neurovascular Planning Platform · UNINAVARRA
+            Hybrid Neurovascular Planning Platform · SKULLAPP
           </div>
         </div>
       </div>

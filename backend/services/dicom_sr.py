@@ -186,7 +186,7 @@ class DicomSRGenerator:
         ds.SeriesNumber = "999"
         ds.SeriesDescription = "PROSPECTIVE Surgical Plan"
 
-        ds.Manufacturer = "Fundación Universitaria Navarra UNINAVARRA"
+        ds.Manufacturer = "SkullApp"
         ds.ManufacturerModelName = "PROSPECTIVE"
         ds.SoftwareVersions = "0.1.0"
 

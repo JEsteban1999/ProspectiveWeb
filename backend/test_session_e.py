@@ -122,7 +122,7 @@ class TestReportGeneration:
                 "session_id": sid,
                 "patient_name": "Garcia Fernandez, Maria",
                 "surgeon_name": "Dr. Navarro",
-                "institution":  "Clinica UniNavarra",
+                "institution":  "SkullApp",
                 "clinical_notes": "Control postoperatorio a 6 meses.",
             },
         )

@@ -84,8 +84,8 @@ app = FastAPI(
     ),
     version="0.1.0",
     contact={
-        "name": "UniNavarra — Laboratorio de Imagen Médica",
-        "email": "juesnaca99@gmail.com",
+        "name": "SkullApp — Laboratorio de Imagen Médica",
+        "email": "ingprospective@skullapp.tech",
     },
     license_info={"name": "Proprietary"},
 )

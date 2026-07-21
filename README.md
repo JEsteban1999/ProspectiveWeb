@@ -376,4 +376,4 @@ to scaffold the React frontend.
 
 ## License
 
-Proprietary — UniNavarra, Laboratorio de Imagen Médica.
+Proprietary — SkullApp, Laboratorio de Imagen Médica.

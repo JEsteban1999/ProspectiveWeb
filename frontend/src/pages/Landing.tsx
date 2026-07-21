@@ -81,7 +81,7 @@ function Nav({ onEnter }: { onEnter: () => void }) {
         <div style={{ flex: 1 }} />
         <nav className="landing-nav-links" style={{ display: "flex", gap: 20, marginRight: 8 }}>
           {links.map(([label, id]) => (
-            <a key={id} href={`#${id}`} style={{ fontSize: 13.5, fontWeight: 600, color: "var(--muted-foreground)", textDecoration: "none" }}>
+            <a key={id} href={`#${id}`} style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--muted-foreground)", textDecoration: "none" }}>
               {label}
             </a>
           ))}
@@ -89,7 +89,7 @@ function Nav({ onEnter }: { onEnter: () => void }) {
         <ThemeToggle size="sm" />
         <button
           onClick={onEnter}
-          style={{ height: 38, padding: "0 18px", borderRadius: "var(--radius-md)", border: "none", background: "var(--primary)", color: "var(--primary-foreground)", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
+          style={{ height: 38, padding: "0 18px", borderRadius: "var(--radius-md)", border: "none", background: "var(--primary)", color: "var(--primary-foreground)", fontWeight: 700, fontSize: 12.5, letterSpacing: "0.04em", textTransform: "uppercase", cursor: "pointer" }}
         >
           Entrar
         </button>
@@ -115,7 +115,7 @@ function Hero({ onEnter }: { onEnter: () => void }) {
         <div style={{ maxWidth: 760 }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: "var(--radius-full)", border: "1px solid rgba(139,155,170,0.35)", background: "rgba(139,155,170,0.08)", color: "rgba(168,184,198,0.95)", fontSize: 12.5, fontWeight: 600, marginBottom: 26 }}>
             <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#3FB950" }} />
-            Plataforma de planificación neurovascular · UniNavarra
+            Plataforma de planificación neurovascular · SkullApp
           </div>
           <h1 style={{ fontSize: "clamp(38px, 6vw, 68px)", fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.04, color: "#fff", margin: 0 }}>
             Planificar la cirugía de un aneurisma cerebral, con datos y en 3D
@@ -530,8 +530,8 @@ function Roadmap() {
 /* ── Contact ────────────────────────────────────────────────────────────── */
 function Contact() {
   const rows: [IconName, string, string, string | null][] = [
-    ["MAIL", "Correo", "juesnaca99@gmail.com", "mailto:juesnaca99@gmail.com"],
-    ["PIN", "Institución", "Fundación Universitaria Navarra (UniNavarra)", null],
+    ["MAIL", "Correo", "ingprospective@skullapp.tech", "mailto:ingprospective@skullapp.tech"],
+    ["PIN", "Institución", "SkullApp", null],
     ["BRAIN", "Laboratorio", "Laboratorio de Imagen Médica", null],
   ];
   return (
@@ -615,7 +615,7 @@ function Footer() {
         </div>
         <div style={{ flex: 1 }} />
         <div style={{ fontSize: 12.5, color: "var(--muted-foreground)", textAlign: "right" }}>
-          <div>Fundación Universitaria Navarra (UniNavarra) · Laboratorio de Imagen Médica</div>
+          <div>SkullApp · Laboratorio de Imagen Médica</div>
           <div style={{ marginTop: 4 }}>
             PROSPECTIVE™ es una herramienta de apoyo a la planificación. No sustituye el juicio clínico.
           </div>

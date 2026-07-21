@@ -73,7 +73,7 @@ export function VideoSplash({ onDone }: { onDone: () => void }) {
           PROSPECTIVE
         </span>
         <span style={{ color: "rgba(168,184,198,0.9)", fontSize: 13, letterSpacing: "0.18em", textTransform: "uppercase" }}>
-          Hybrid Neurovascular Planning · UNINAVARRA
+          Hybrid Neurovascular Planning · SKULLAPP
         </span>
       </div>
       <span style={{ position: "absolute", bottom: 22, right: 26, color: "rgba(235,235,235,0.6)", fontSize: 11, fontFamily: "var(--font-mono)", pointerEvents: "none" }}>

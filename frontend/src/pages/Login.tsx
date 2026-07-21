@@ -95,7 +95,7 @@ export function Login({ onLogin, onSignup, notice }: { onLogin: () => void; onSi
           <span>·</span>
           <span>VTK · SimpleITK</span>
           <span>·</span>
-          <span>UNINAVARRA</span>
+          <span>SKULLAPP</span>
         </div>
       </div>
 
@@ -165,7 +165,7 @@ export function Login({ onLogin, onSignup, notice }: { onLogin: () => void; onSi
           </div>
         </div>
         <div style={{ textAlign: "center", paddingBottom: 24, fontSize: 11, color: "var(--muted-foreground)" }}>
-          PROSPECTIVE™ Web · UniNavarra — Laboratorio de Imagen Médica
+          PROSPECTIVE™ Web · SkullApp — Laboratorio de Imagen Médica
         </div>
       </div>
     </div>

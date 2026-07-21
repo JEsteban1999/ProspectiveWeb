@@ -260,7 +260,7 @@ def seed_default_user(db: Session) -> None:
         hashed_password = get_password_hash("admin123"),
         full_name       = "Administrador",
         role            = "admin",
-        institution     = "Clinica UniNavarra",
+        institution     = "SkullApp",
     )
     db.add(admin)
     db.commit()

@@ -176,7 +176,7 @@ class TestPatients:
                 "hospital_id": f"HN-{suffix or '001'}",
                 "dob": "1975-03-21",
                 "sex": "F",
-                "institution": "Clinica UniNavarra",
+                "institution": "SkullApp",
             },
             headers=_auth(token),
         )

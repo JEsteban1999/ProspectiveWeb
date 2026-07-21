@@ -221,7 +221,7 @@ function OutroScene() {
           Planificación neurovascular, medible.
         </div>
         <div style={{ translate: `0px ${rise(f, 16)}px`, fontFamily: MONO, fontSize: 28, color: C.slate }}>
-          UniNavarra · Laboratorio de Imagen Médica
+          SkullApp · Laboratorio de Imagen Médica
         </div>
       </div>
     </SceneShell>
