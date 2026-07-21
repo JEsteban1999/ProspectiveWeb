@@ -58,22 +58,28 @@ function Nav({ onEnter }: { onEnter: () => void }) {
         position: "sticky",
         top: 0,
         zIndex: 100,
-        height: 76,
+        height: 68,
         display: "flex",
         alignItems: "center",
         gap: 12,
         padding: "0 24px",
-        background: scrolled ? "color-mix(in srgb, var(--background) 88%, transparent)" : "transparent",
-        backdropFilter: scrolled ? "blur(10px)" : "none",
-        borderBottom: scrolled ? "1px solid var(--border)" : "1px solid transparent",
-        transition: "background .2s, border-color .2s",
+        // Fondo sólido SIEMPRE: así el contenido nunca se transparenta a través
+        // del navbar (el bug del "remontado"). Al scrollear se opaca un poco más.
+        background: scrolled
+          ? "color-mix(in srgb, var(--background) 97%, transparent)"
+          : "color-mix(in srgb, var(--background) 90%, transparent)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+        borderBottom: `1px solid ${scrolled ? "var(--border)" : "color-mix(in srgb, var(--border) 55%, transparent)"}`,
+        boxShadow: scrolled ? "var(--shadow-sm)" : "none",
+        transition: "background .2s, border-color .2s, box-shadow .2s",
       }}
     >
       <div style={{ maxWidth: MAXW, margin: "0 auto", width: "100%", display: "flex", alignItems: "center", gap: 14 }}>
-        <img className="logo-mark" src={logo} alt="" style={{ height: 48 }} />
-        <span style={{ fontWeight: 800, fontSize: 21, letterSpacing: "-0.02em", color: "var(--foreground)" }}>PROSPECTIVE</span>
+        <img className="logo-mark" src={logo} alt="" style={{ height: 42 }} />
+        <span style={{ fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em", color: "var(--foreground)" }}>PROSPECTIVE</span>
         <div style={{ flex: 1 }} />
-        <nav style={{ display: "flex", gap: 20, marginRight: 8 }}>
+        <nav className="landing-nav-links" style={{ display: "flex", gap: 20, marginRight: 8 }}>
           {links.map(([label, id]) => (
             <a key={id} href={`#${id}`} style={{ fontSize: 13.5, fontWeight: 600, color: "var(--muted-foreground)", textDecoration: "none" }}>
               {label}
@@ -95,7 +101,7 @@ function Nav({ onEnter }: { onEnter: () => void }) {
 /* ── Hero ───────────────────────────────────────────────────────────────── */
 function Hero({ onEnter }: { onEnter: () => void }) {
   return (
-    <div style={{ position: "relative", overflow: "hidden", minHeight: "calc(100vh - 64px)", display: "flex", alignItems: "center", background: "#05090f" }}>
+    <div style={{ position: "relative", overflow: "hidden", minHeight: "calc(100vh - 68px)", display: "flex", alignItems: "center", background: "#05090f" }}>
       <video
         src="/media/intro.mp4"
         autoPlay
@@ -112,12 +118,12 @@ function Hero({ onEnter }: { onEnter: () => void }) {
             Plataforma de planificación neurovascular · UniNavarra
           </div>
           <h1 style={{ fontSize: "clamp(38px, 6vw, 68px)", fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.04, color: "#fff", margin: 0 }}>
-            Detección y simulación quirúrgica de aneurismas cerebrales
+            Planificar la cirugía de un aneurisma cerebral, con datos y en 3D
           </h1>
-          <p style={{ fontSize: "clamp(16px, 2vw, 20px)", color: "rgba(235,235,235,0.72)", lineHeight: 1.55, marginTop: 22, maxWidth: 620 }}>
-            Carga el estudio DICOM y PROSPECTIVE segmenta la vasculatura en 3D, detecta el aneurisma,
-            lo mide, evalúa el riesgo y te ayuda a decidir entre clipaje y tratamiento endovascular —
-            todo en el navegador.
+          <p style={{ fontSize: "clamp(16px, 2vw, 20px)", color: "rgba(235,235,235,0.72)", lineHeight: 1.55, marginTop: 22, maxWidth: 640 }}>
+            A partir de la tomografía o angiografía del paciente, PROSPECTIVE reconstruye la arteria
+            en 3D, localiza y mide el aneurisma, estima su riesgo de rotura y ayuda al médico a elegir
+            el mejor tratamiento. Todo en el navegador, sin instalar nada.
           </p>
           <div style={{ display: "flex", gap: 14, marginTop: 34, flexWrap: "wrap" }}>
             <button
@@ -133,8 +139,10 @@ function Hero({ onEnter }: { onEnter: () => void }) {
               Ver el pipeline ↓
             </a>
           </div>
-          <div style={{ display: "flex", gap: 26, marginTop: 40, color: "rgba(168,184,198,0.8)", fontSize: 13, fontFamily: "var(--font-mono)", flexWrap: "wrap" }}>
-            <span>7 pasos de flujo</span><span>·</span><span>VTK · SimpleITK</span><span>·</span><span>Render 3D en navegador</span>
+          <div style={{ display: "flex", gap: 26, marginTop: 40, color: "rgba(168,184,198,0.85)", fontSize: 13.5, flexWrap: "wrap" }}>
+            <span>Sin instalar nada</span><span style={{ opacity: 0.4 }}>·</span>
+            <span>Modelo 3D en el navegador</span><span style={{ opacity: 0.4 }}>·</span>
+            <span>Medidas objetivas en milímetros</span>
           </div>
         </div>
       </div>
@@ -149,25 +157,38 @@ function What() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 48, alignItems: "center" }}>
         <div>
           <Kicker>Qué es</Kicker>
-          <H2>Decisiones quirúrgicas basadas en datos, no solo en la inspección visual</H2>
+          <H2>Decisiones quirúrgicas con datos, no solo a ojo</H2>
           <p style={{ fontSize: 16, color: "var(--muted-foreground)", lineHeight: 1.7, marginTop: 18 }}>
-            Los aneurismas cerebrales exigen una planificación preoperatoria precisa: elegir entre
-            <b style={{ color: "var(--foreground)" }}> clipaje quirúrgico</b> o
-            <b style={{ color: "var(--foreground)" }}> tratamiento endovascular</b> depende de la
-            morfología exacta del aneurisma, su cuello, su relación con perforantes y el riesgo de rotura.
+            Un <b style={{ color: "var(--foreground)" }}>aneurisma cerebral</b> es una dilatación en la
+            pared de una arteria del cerebro —como un pequeño globo— que puede romperse y causar una
+            hemorragia grave. Antes de tratarlo, el equipo médico debe decidir cómo hacerlo, y hacerlo
+            con precisión milimétrica.
           </p>
           <p style={{ fontSize: 16, color: "var(--muted-foreground)", lineHeight: 1.7, marginTop: 14 }}>
-            PROSPECTIVE convierte el estudio DICOM en un modelo 3D medible y aporta métricas objetivas
-            (DNR, AR, BF, PHASES…), un motor de decisión y catálogos reales de dispositivos — para apoyar
-            al equipo en cada paso.
+            Hoy esa decisión se apoya mucho en mirar las imágenes. PROSPECTIVE convierte el estudio en
+            un <b style={{ color: "var(--foreground)" }}>modelo 3D que se puede medir</b>, calcula
+            indicadores objetivos de riesgo y sugiere el tratamiento — para que el equipo decida con
+            datos y de forma reproducible.
           </p>
+          {/* Glosario en lenguaje sencillo de los dos tratamientos posibles */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 22 }}>
+            {([
+              ["Clipaje quirúrgico", "Cirugía abierta: se coloca un pequeño clip metálico en la base del aneurisma para cerrarlo."],
+              ["Tratamiento endovascular", "Sin abrir el cráneo: por dentro de la arteria, con un catéter, se rellena o cubre el aneurisma."],
+            ] as [string, string][]).map(([t, d]) => (
+              <div key={t} style={{ background: "var(--muted)", borderRadius: "var(--radius-md)", padding: "12px 14px" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>{t}</div>
+                <div style={{ fontSize: 12.5, color: "var(--muted-foreground)", marginTop: 4, lineHeight: 1.5 }}>{d}</div>
+              </div>
+            ))}
+          </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           {([
-            ["TARGET", "Objetivo", "Medidas reproducibles en milímetros, no estimaciones a ojo."],
-            ["STEP_MORPHO", "Cuantitativo", "Índices morfológicos y de riesgo validados en la literatura."],
-            ["STEP_PLAN", "Accionable", "Recomendación clip vs endovascular y planificación de dispositivo."],
-            ["DOC", "Trazable", "Informe PDF y seguimiento longitudinal del aneurisma."],
+            ["TARGET", "Objetivo", "Medidas en milímetros, reproducibles — no estimaciones a ojo."],
+            ["STEP_MORPHO", "Con respaldo", "Indicadores de forma y riesgo respaldados por estudios clínicos."],
+            ["STEP_PLAN", "Accionable", "Sugiere el tratamiento y el dispositivo, y verifica su colocación."],
+            ["DOC", "Trazable", "Informe en PDF y seguimiento del aneurisma en el tiempo."],
           ] as [IconName, string, string][]).map(([icon, t, d]) => (
             <div key={t} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "18px 18px", boxShadow: "var(--shadow-sm)" }}>
               <div style={{ width: 40, height: 40, borderRadius: "var(--radius-md)", background: "var(--brand-subtle)", color: "var(--brand-subtle-foreground)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -203,11 +224,11 @@ function Pipeline() {
   return (
     <Section id="pipeline" style={{ background: "var(--background)" }}>
       <div style={{ textAlign: "center", maxWidth: 720, margin: "0 auto 40px" }}>
-        <Kicker>El pipeline</Kicker>
-        <H2>Del DICOM al plan quirúrgico en siete pasos</H2>
+        <Kicker>El proceso</Kicker>
+        <H2>Del estudio de imagen al plan quirúrgico, en siete pasos</H2>
         <p style={{ fontSize: 16, color: "var(--muted-foreground)", lineHeight: 1.7, marginTop: 16 }}>
-          Un recorrido animado por el flujo completo de PROSPECTIVE, desde la carga del estudio
-          hasta el informe final.
+          Un recorrido animado por el flujo completo de PROSPECTIVE, desde que se cargan las imágenes
+          del paciente hasta el informe final.
         </p>
       </div>
       <div style={{ position: "relative", borderRadius: "var(--radius-xl)", overflow: "hidden", border: "1px solid var(--border)", boxShadow: "var(--shadow-lg)", background: "#000", aspectRatio: "16 / 9", maxWidth: 980, margin: "0 auto" }}>
@@ -238,14 +259,14 @@ function Pipeline() {
 
 /* ── Features ───────────────────────────────────────────────────────────── */
 const FEATURES: [IconName, string, string][] = [
-  ["STEP_SEGMENT", "Segmentación vascular 3D", "Marching Cubes sobre VTK con umbrales auto por modalidad (CTA · MRA · 3DRA) y limpieza de fragmentos."],
-  ["STEP_DETECT", "Detección de aneurismas", "Análisis de curvatura gaussiana (v6) con puertas de forma para localizar candidatos y aislar el domo."],
-  ["STEP_MORPHO", "Morfometría completa", "Cuello, domo, volumen y los índices clínicos: DNR, AR, BF, UI, EI, NSI, SR y PHASES."],
-  ["MARK_PERF", "Riesgo de perforantes", "Detección de arterias perforantes cercanas al cuello y clasificación de riesgo por distancia."],
-  ["STEP_PLAN", "Decisión terapéutica", "Motor de 8 factores que pondera clipaje vs endovascular con desglose de cada factor."],
-  ["CLIPS", "Planificación de dispositivos", "Catálogos reales: 42 clips, 39 coils y stents/flow-diverters, con recomendación y cobertura."],
-  ["STEP_EXPORT", "Informe y export 3D", "Informe PDF de planificación quirúrgica y export de la malla en STL para impresión 3D."],
-  ["GROWTH", "Seguimiento longitudinal", "Comparación entre estudios con alerta automática de crecimiento del aneurisma."],
+  ["STEP_SEGMENT", "Reconstrucción 3D de las arterias", "Convierte la imagen médica en un modelo 3D de la red arterial. Compatible con TC, resonancia y angiografía rotacional."],
+  ["STEP_DETECT", "Detección del aneurisma", "Localiza el aneurisma sobre el modelo y aísla su forma para poder medirla con exactitud."],
+  ["STEP_MORPHO", "Medidas e índices de riesgo", "Mide cuello, domo y volumen, y calcula los índices de forma y riesgo usados en la literatura clínica."],
+  ["MARK_PERF", "Aviso de arterias sensibles", "Señala las pequeñas arterias (perforantes) cercanas al aneurisma y las clasifica por riesgo según su distancia."],
+  ["STEP_PLAN", "Ayuda a la decisión", "Compara cirugía abierta y tratamiento endovascular ponderando 8 factores, y muestra el porqué de cada uno."],
+  ["CLIPS", "Planificación del dispositivo", "Catálogos reales de clips, coils y stents; sugiere el dispositivo adecuado y comprueba su colocación en 3D."],
+  ["STEP_EXPORT", "Informe y modelo para imprimir", "Genera un informe en PDF del plan quirúrgico y exporta el modelo 3D para impresión."],
+  ["GROWTH", "Seguimiento en el tiempo", "Compara estudios del mismo paciente entre controles y avisa automáticamente si el aneurisma crece."],
 ];
 function Features() {
   return (
@@ -304,9 +325,9 @@ function UseCases() {
 /* ── How it works (3 steps) ─────────────────────────────────────────────── */
 function HowItWorks() {
   const steps: [string, string, string][] = [
-    ["01", "Sube el estudio", "Arrastra la carpeta DICOM (CTA, MRA o 3DRA). El servidor detecta la serie y calcula los umbrales automáticamente."],
-    ["02", "El sistema analiza", "Segmenta la vasculatura, detecta el aneurisma, lo mide y evalúa riesgo de rotura y perforantes."],
-    ["03", "Recibes el plan", "Recomendación de tratamiento, dispositivo sugerido con cobertura, informe PDF y malla 3D."],
+    ["01", "Sube el estudio", "Arrastra la carpeta con las imágenes del paciente (tomografía, resonancia o angiografía). El sistema las prepara automáticamente."],
+    ["02", "El sistema analiza", "Reconstruye las arterias en 3D, detecta y mide el aneurisma, y evalúa su riesgo de rotura y las arterias sensibles alrededor."],
+    ["03", "Recibes el plan", "Tratamiento recomendado, dispositivo sugerido con su cobertura, informe en PDF y modelo 3D para imprimir."],
   ];
   return (
     <Section style={{ background: "var(--canvas)" }}>
@@ -331,22 +352,26 @@ function HowItWorks() {
 function Technology() {
   const stack = ["VTK", "SimpleITK", "pydicom", "scipy", "FastAPI", "React", "vtk.js", "SQLite"];
   const stats: [string, string][] = [
-    ["26", "endpoints REST"],
-    ["100%", "procesamiento en servidor"],
-    ["3D", "render en el navegador (vtk.js)"],
-    ["JWT", "autenticación segura"],
+    ["Web", "Funciona en el navegador, sin instalar nada"],
+    ["Servidor", "El cálculo pesado corre en el servidor, no en tu equipo"],
+    ["3D", "El modelo se explora en 3D en la propia página"],
+    ["Seguro", "Acceso con inicio de sesión y cuentas aprobadas"],
   ];
   return (
     <Section id="tecnologia" style={{ background: "var(--background)" }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 44, alignItems: "center" }}>
         <div>
           <Kicker>Tecnología</Kicker>
-          <H2>Imagen médica de verdad, servida a la web</H2>
+          <H2>La potencia de una estación de trabajo, en una página web</H2>
           <p style={{ fontSize: 16, color: "var(--muted-foreground)", lineHeight: 1.7, marginTop: 16 }}>
-            El procesamiento pesado (segmentación, detección, morfometría) corre en el servidor con las
-            mismas librerías que la aplicación de escritorio; el navegador solo renderiza la malla 3D.
+            El análisis pesado se hace en el servidor con las mismas herramientas de imagen médica que
+            un programa de escritorio profesional; tu navegador solo muestra el resultado en 3D. No hay
+            nada que instalar ni configurar.
           </p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 22 }}>
+          <div style={{ fontSize: 12.5, color: "var(--muted-foreground)", marginTop: 22, marginBottom: 8 }}>
+            Construido sobre tecnologías estándar de la industria:
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {stack.map((s) => (
               <span key={s} style={{ padding: "6px 12px", borderRadius: "var(--radius-full)", background: "var(--muted)", color: "var(--foreground)", fontSize: 12.5, fontWeight: 600, fontFamily: "var(--font-mono)" }}>{s}</span>
             ))}
@@ -354,9 +379,9 @@ function Technology() {
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           {stats.map(([v, l]) => (
-            <div key={l} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "22px 20px", boxShadow: "var(--shadow-sm)" }}>
-              <div style={{ fontSize: 30, fontWeight: 800, fontFamily: "var(--font-mono)", color: "var(--foreground)" }}>{v}</div>
-              <div style={{ fontSize: 13, color: "var(--muted-foreground)", marginTop: 4 }}>{l}</div>
+            <div key={l} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "20px 18px", boxShadow: "var(--shadow-sm)" }}>
+              <div style={{ fontSize: 21, fontWeight: 800, color: "var(--brand-slate)" }}>{v}</div>
+              <div style={{ fontSize: 13, color: "var(--muted-foreground)", marginTop: 6, lineHeight: 1.45 }}>{l}</div>
             </div>
           ))}
         </div>
@@ -368,10 +393,10 @@ function Technology() {
 /* ── Security + Team + Disclaimer + CTA ──────────────────────────────────── */
 function Security() {
   const items: [IconName, string, string][] = [
-    ["LOCK", "Autenticación JWT", "Acceso con token firmado; sesión persistente y protegida."],
-    ["USER", "Aprobación de cuentas", "El registro profesional queda pendiente hasta que un administrador lo autoriza."],
-    ["FOLDER", "Datos pseudonimizados", "Los pacientes se registran sin datos identificativos directos."],
-    ["SAVE", "Sesiones aisladas", "Cada estudio vive en su propio espacio temporal en el servidor."],
+    ["LOCK", "Acceso seguro", "Cada persona entra con su usuario y contraseña; la sesión queda protegida."],
+    ["USER", "Cuentas verificadas", "El registro de un profesional queda pendiente hasta que un administrador lo aprueba."],
+    ["FOLDER", "Sin datos personales", "Los pacientes se registran sin nombre ni datos identificativos directos."],
+    ["SAVE", "Cada caso, por separado", "El estudio de cada paciente vive en su propio espacio y no se mezcla con otros."],
   ];
   return (
     <Section style={{ background: "var(--canvas)" }}>
@@ -409,10 +434,15 @@ function Indices() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 44, alignItems: "start" }}>
         <div style={{ position: "sticky", top: 96 }}>
           <Kicker>Rigor clínico</Kicker>
-          <H2>Índices morfológicos validados en la literatura</H2>
+          <H2>Indicadores objetivos, respaldados por la literatura</H2>
           <p style={{ fontSize: 16, color: "var(--muted-foreground)", lineHeight: 1.7, marginTop: 16 }}>
-            PROSPECTIVE no da una opinión: calcula los índices morfométricos estándar y la escala
-            PHASES a partir de la geometría real del aneurisma, con los umbrales de riesgo publicados.
+            PROSPECTIVE no da una opinión: calcula medidas estándar a partir de la geometría real del
+            aneurisma y las compara con los umbrales de riesgo publicados.
+          </p>
+          <p style={{ fontSize: 15, color: "var(--muted-foreground)", lineHeight: 1.7, marginTop: 12 }}>
+            <b style={{ color: "var(--foreground)" }}>No hace falta conocer estas siglas:</b> el sistema
+            las traduce a un nivel de riesgo (bajo · moderado · alto). Se muestran aquí, con su umbral,
+            para el especialista que quiera el detalle.
           </p>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 20, fontSize: 13, color: "var(--muted-foreground)" }}>
             <Icon name="BOOK" size={17} color="var(--brand-slate)" />
@@ -436,9 +466,9 @@ function Indices() {
 /* ── Device catalogs ────────────────────────────────────────────────────── */
 function Devices() {
   const groups: [IconName, string, string, string[]][] = [
-    ["CLIPS", "Clips quirúrgicos", "42 modelos · rectos, curvos, angulados, fenestrados", ["Aesculap Yasargil", "Sugita (Mizuho)", "Codman (DePuy)"]],
-    ["COIL", "Coils de embolización", "39 modelos · framing, filling, finishing", ["Target 360", "GDC", "Axium Prime"]],
-    ["STENT", "Stents y desviadores de flujo", "flow-diverters + stents de coiling asistido", ["Pipeline (Medtronic)", "Surpass (Stryker)", "FRED · Enterprise 2 · Leo+"]],
+    ["CLIPS", "Clips quirúrgicos", "42 modelos, en distintas formas y ángulos, para la cirugía abierta", ["Aesculap Yasargil", "Sugita (Mizuho)", "Codman (DePuy)"]],
+    ["COIL", "Coils (rellenos)", "39 modelos que rellenan el aneurisma desde dentro de la arteria", ["Target 360", "GDC", "Axium Prime"]],
+    ["STENT", "Stents y desviadores de flujo", "Mallas que se colocan en la arteria para apoyar o desviar el flujo", ["Pipeline (Medtronic)", "Surpass (Stryker)", "FRED · Enterprise 2 · Leo+"]],
   ];
   return (
     <Section style={{ background: "var(--canvas)" }}>

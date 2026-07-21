@@ -8,13 +8,22 @@
      ≤680px   móvil */
 
 /* ── Nunca desbordar horizontalmente ────────────────────────────────────── */
+/* `overflow-x: clip` evita el scroll horizontal SIN crear un contenedor de
+   scroll (a diferencia de `hidden`, que en #root —con height:100%— convertía
+   #root en el scroller y rompía window.scrollY: la landing dejaba de detectar
+   el scroll y el navbar sticky no se opacaba). */
 html, body, #root {
   max-width: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* Cualquier bloque marcado no puede forzar scroll horizontal */
 .no-overflow { min-width: 0; }
+
+/* ── Landing: los enlaces del navbar se ocultan en pantallas estrechas ──── */
+@media (max-width: 860px) {
+  .landing-nav-links { display: none !important; }
+}
 
 /* ── Login: el panel de vídeo cede y desaparece en pantallas estrechas ──── */
 @media (max-width: 1100px) {
