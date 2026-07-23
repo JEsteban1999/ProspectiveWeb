@@ -175,9 +175,17 @@ class SegmentationPipeline:
         logger.info("Marching Cubes: %d triangles", n_raw)
 
         if n_raw == 0:
+            n_sel = int(mask.sum())
+            vmax  = float(vol_f.max())
+            if n_sel == 0:
+                raise ValueError(
+                    f"Ningún vóxel supera el umbral inferior de {self.threshold_hu:.0f} HU "
+                    f"(intensidad máxima del volumen = {vmax:.0f}). Baja el umbral inferior."
+                )
             raise ValueError(
-                f"No iso-surface found at {self.threshold_hu:.0f} HU. "
-                "Try lowering the threshold."
+                f"El umbral de {self.threshold_hu:.0f} HU selecciona {n_sel} vóxeles, pero no "
+                "forman una superficie (volumen demasiado fino o todo fragmentos pequeños). "
+                "Prueba la serie principal del estudio o reduce la limpieza de fragmentos."
             )
 
         # 6. Smoothing

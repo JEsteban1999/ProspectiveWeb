@@ -29,6 +29,36 @@ def _cache_paths(session_id: str) -> tuple[Path, Path]:
     return d / "_volume.npy", d / "_volume_meta.json"
 
 
+def _display_window(vol: np.ndarray, tag_wc: float, tag_ww: float) -> tuple[float, float]:
+    """Pick a window/level that actually shows the anatomy.
+
+    DICOM window tags are often a *display preset* unrelated to the pixel data —
+    a subtracted DSA typically carries WC=0/WW=1000, which lands in the empty gap
+    between the subtracted background (≈ −1024) and the bright vessels (≥ ~2500),
+    so almost no voxel falls inside it and the MPR renders nearly black. When the
+    tag window contains too few voxels, derive a robust window from the data range
+    (1st–99.9th percentile) instead. Well-tagged CT keeps its radiological window.
+    """
+    # Subsample so the percentile pass is cheap on large volumes.
+    flat = vol.reshape(-1)
+    if flat.size > 8_000_000:
+        flat = flat[:: int(flat.size // 8_000_000) + 1]
+
+    tag_wc = float(tag_wc)
+    tag_ww = float(tag_ww)
+    if tag_ww > 1.0:
+        lo, hi = tag_wc - tag_ww / 2.0, tag_wc + tag_ww / 2.0
+        inside = float(np.mean((flat >= lo) & (flat <= hi)))
+        if inside >= 0.15:  # tag window covers a meaningful share of the volume
+            return tag_wc, tag_ww
+
+    p_lo = float(np.percentile(flat, 1.0))
+    p_hi = float(np.percentile(flat, 99.9))
+    if p_hi - p_lo < 1.0:
+        return (tag_wc, tag_ww if tag_ww > 1.0 else 400.0)
+    return (p_lo + p_hi) / 2.0, p_hi - p_lo
+
+
 def ensure_volume_cached(session_id: str) -> dict:
     """Load the primary DICOM series volume (if not already cached) and return meta.
 
@@ -47,11 +77,12 @@ def ensure_volume_cached(session_id: str) -> dict:
     vol = np.ascontiguousarray(dcm.volume, dtype=np.float32)
     np.save(npy_path, vol)
 
+    wc, ww = _display_window(vol, dcm.window_center, dcm.window_width)
     meta = {
         "shape": [int(x) for x in vol.shape],
         "spacing": [float(s) for s in dcm.spacing],
-        "wc": float(dcm.window_center),
-        "ww": float(dcm.window_width if dcm.window_width > 1 else 400.0),
+        "wc": wc,
+        "ww": ww,
         "modality": dcm.modality,
     }
     meta_path.write_text(json.dumps(meta))

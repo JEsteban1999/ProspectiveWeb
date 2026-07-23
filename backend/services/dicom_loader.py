@@ -69,6 +69,11 @@ def scan_series(dicom_dir: Path) -> list[dict]:
             continue
         try:
             meta = _extract_metadata(Path(file_names[0]), len(file_names))
+            # Prefer the real inter-slice spacing over the single-header estimate
+            # so the upload preview matches the volume that gets segmented.
+            z_real = _z_spacing_from_positions(list(file_names))
+            if z_real is not None:
+                meta["spacing_z"] = z_real
             results.append({"series_uid": sid, "n_files": len(file_names), **meta})
         except Exception as exc:
             logger.warning("Metadata read failed for series %s: %s", sid, exc)
@@ -79,6 +84,9 @@ def scan_series(dicom_dir: Path) -> list[dict]:
         if dcm_files:
             try:
                 meta = _extract_metadata(dcm_files[0], len(dcm_files))
+                z_real = _z_spacing_from_positions([str(p) for p in dcm_files])
+                if z_real is not None:
+                    meta["spacing_z"] = z_real
                 results.append({"series_uid": "unknown", "n_files": len(dcm_files), **meta})
             except Exception as exc:
                 logger.warning("Fallback metadata read failed: %s", exc)
@@ -227,6 +235,57 @@ def _image_to_result(
     )
 
 
+def _z_spacing_from_positions(file_names: "list[str]") -> "float | None":
+    """Real inter-slice spacing, computed the way SimpleITK does when it builds
+    the volume: project every slice's ImagePositionPatient onto the slice normal,
+    sort, and take the *average* spacing (span / (n − 1)).
+
+    Reading SliceThickness from a single header (as the upload preview did) is
+    misleading — for overlapped/gapped acquisitions the slice *thickness* differs
+    from the slice *spacing* — and the first-pair delta is wrong for series whose
+    file order is not spatial (rotational XA) or whose sampling is non-uniform
+    (case 9 reports 0.36 mm thickness, 5.07 mm first-pair delta, 0.85 mm real).
+
+    Reads only two DICOM tags per file (no pixel data). Bounded to keep upload
+    latency low on very large series: above the cap we skip the correction and
+    fall back to the header estimate.
+    """
+    import numpy as np
+    import pydicom
+
+    n = len(file_names)
+    if n < 2 or n > 4000:
+        return None
+
+    positions: list["np.ndarray"] = []
+    normal = None
+    try:
+        for fn in file_names:
+            ds = pydicom.dcmread(
+                fn, stop_before_pixels=True,
+                specific_tags=["ImagePositionPatient", "ImageOrientationPatient"],
+            )
+            ipp = getattr(ds, "ImagePositionPatient", None)
+            if ipp is None:
+                return None
+            positions.append(np.asarray([float(x) for x in ipp], dtype=float))
+            if normal is None:
+                iop = getattr(ds, "ImageOrientationPatient", None)
+                if iop is not None and len(iop) >= 6:
+                    row = np.asarray([float(x) for x in iop[:3]], dtype=float)
+                    col = np.asarray([float(x) for x in iop[3:6]], dtype=float)
+                    normal = np.cross(row, col)
+    except Exception:
+        return None
+
+    if normal is None or float(np.linalg.norm(normal)) < 1e-6:
+        return None
+    normal = normal / float(np.linalg.norm(normal))
+    proj = sorted(float(np.dot(p, normal)) for p in positions)
+    span = proj[-1] - proj[0]
+    return span / (len(proj) - 1) if span > 1e-3 else None
+
+
 def _extract_metadata(dcm_path: Path, n_slices: int) -> dict:
     """Read DICOM tags from *dcm_path* using pydicom.
 
@@ -293,18 +352,34 @@ def _extract_metadata(dcm_path: Path, n_slices: int) -> dict:
         except Exception:
             pass
 
+    # SpacingBetweenSlices is the inter-slice *distance* (what we want for z),
+    # whereas SliceThickness is the slice *thickness* — they differ on overlapped
+    # or gapped acquisitions. Prefer it when present. For multi-file series this
+    # is later overridden by the exact ImagePositionPatient delta in scan_series;
+    # this mainly helps single-file multi-frame studies with no position deltas.
+    raw_sbs = getattr(ds, "SpacingBetweenSlices", None)
+    if raw_sbs is not None:
+        try:
+            sz = float(raw_sbs)
+        except Exception:
+            pass
+
     # Enhanced multi-frame fallback (Enhanced XA, Enhanced CT/MR)
-    if raw_ps is None or raw_st is None:
+    if raw_ps is None or raw_st is None or raw_sbs is None:
         try:
             pms = ds.SharedFunctionalGroupsSequence[0].PixelMeasuresSequence[0]
             if raw_ps is None:
                 ps2 = getattr(pms, "PixelSpacing", None)
                 if ps2 is not None:
                     sy, sx = float(ps2[0]), float(ps2[1])
-            if raw_st is None:
-                st2 = getattr(pms, "SliceThickness", None)
-                if st2 is not None:
-                    sz = float(st2)
+            # Prefer SpacingBetweenSlices, then SliceThickness, from the
+            # per-frame measures for enhanced multi-frame objects.
+            sbs2 = getattr(pms, "SpacingBetweenSlices", None)
+            st2  = getattr(pms, "SliceThickness", None)
+            if sbs2 is not None:
+                sz = float(sbs2)
+            elif raw_st is None and st2 is not None:
+                sz = float(st2)
         except Exception:
             pass
 

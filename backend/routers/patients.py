@@ -84,6 +84,18 @@ async def create_patient(
     db:           Annotated[Session,    Depends(get_db)],
     current_user: Annotated[User | None, Depends(get_current_user)],
 ) -> PatientSummary:
+    # Enforce a unique medical-record number (historia clínica). Enforced at the
+    # application layer rather than a DB constraint so it does not require a
+    # dedup migration of pre-existing rows; empty HC is allowed (unknown).
+    hc = (req.hospital_id or "").strip()
+    if hc:
+        existing = db.query(Patient).filter(Patient.hospital_id == hc).first()
+        if existing is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Ya existe un paciente con la historia clínica '{hc}'.",
+            )
+
     patient = Patient(
         surname                    = req.surname,
         given_name                 = req.given_name,

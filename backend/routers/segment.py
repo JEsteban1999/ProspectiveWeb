@@ -231,6 +231,18 @@ def _run_segmentation_sync(
     )
     dcm = load_series(series_id, dicom_dir)
 
+    # ── Guard: reject non-volumetric series with an actionable message ─────── #
+    # Localizers, scouts and 2D projections have one (or two) slices; marching
+    # cubes yields an empty surface and the old "lower the threshold" hint was
+    # misleading — the real problem is that there is no 3D volume to segment.
+    if dcm.volume.ndim != 3 or min(dcm.volume.shape) < 3:
+        raise ValueError(
+            f"La serie tiene forma {tuple(dcm.volume.shape)}: es un localizador o "
+            "proyección 2D, no un volumen 3D, y no puede segmentarse en una malla "
+            "vascular. Selecciona la serie principal del estudio (la de mayor número "
+            "de cortes)."
+        )
+
     # Re-compute thresholds with the real volume (upgrades WC/WW estimate to p90/p99)
     # then override with what the user explicitly requested via req.lower/upper
     # (the user already saw the auto-thresholds and may have adjusted sliders)

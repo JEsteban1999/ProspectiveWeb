@@ -4,7 +4,9 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException, Request
+from starlette.datastructures import UploadFile as StarletteUploadFile
+from starlette.formparsers import MultiPartException
 
 from models import SeriesInfo, SpacingXYZ, UploadResult
 from services.sessions     import create_session, session_subdir, write_state
@@ -18,6 +20,12 @@ router = APIRouter(prefix="/api", tags=["upload"])
 _MAX_FILE_MB = 500
 _MAX_FILE_BYTES = _MAX_FILE_MB * 1_000_000
 
+# A single fine-slice CTA can exceed Starlette's default 1000-file limit, and a
+# multi-series study more so. Raise the cap to a value that covers any realistic
+# study while still bounding the request. Each file is spooled to disk, so this
+# does not grow in-memory usage linearly with file count.
+_MAX_FILES = 20_000
+
 
 @router.post(
     "/upload",
@@ -29,8 +37,35 @@ _MAX_FILE_BYTES = _MAX_FILE_MB * 1_000_000
         "session_id and the metadata of every DICOM series detected.\n\n"
         "Send as `Content-Type: multipart/form-data` with field name `files`."
     ),
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "multipart/form-data": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "files": {
+                                "type": "array",
+                                "items": {"type": "string", "format": "binary"},
+                            }
+                        },
+                        "required": ["files"],
+                    }
+                }
+            }
+        }
+    },
 )
-async def upload_dicom(files: list[UploadFile] = File(...)) -> UploadResult:
+async def upload_dicom(request: Request) -> UploadResult:
+    # Parse the multipart form ourselves so we can raise the max-files cap above
+    # Starlette's 1000 default (FastAPI's File(...) injection would parse with the
+    # default *before* this function runs, rejecting large studies).
+    try:
+        form = await request.form(max_files=_MAX_FILES, max_fields=_MAX_FILES)
+    except MultiPartException as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+
+    files = [v for v in form.getlist("files") if isinstance(v, StarletteUploadFile)]
     if not files:
         raise HTTPException(status_code=422, detail="No files provided")
 

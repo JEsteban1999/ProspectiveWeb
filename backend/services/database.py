@@ -14,6 +14,7 @@ Usage
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Generator
 
@@ -27,7 +28,10 @@ logger = logging.getLogger(__name__)
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-DATABASE_URL = f"sqlite:///{DATA_DIR / 'prospective.db'}"
+# Override with PROSPECTIVE_DB_URL so the test suite (and alternate deployments)
+# can point at an isolated database instead of the shared dev file. Without this
+# the tests wrote patients/sessions straight into data/prospective.db.
+DATABASE_URL = os.environ.get("PROSPECTIVE_DB_URL") or f"sqlite:///{DATA_DIR / 'prospective.db'}"
 
 engine = create_engine(
     DATABASE_URL,

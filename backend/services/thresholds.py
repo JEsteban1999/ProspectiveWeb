@@ -19,6 +19,13 @@ import numpy as np
 # Modalities treated as X-ray angiography (XA)
 _XA_MODALITIES = {"XA", "RF", "DX", "CR", "DR"}
 
+# DSA lower-threshold percentile. Captures the brightest ~0.4% of voxels (vessel
+# body, not just cores). Was effectively p99.9 (0.1%), which starved the mesh and
+# broke detection on the reference DSA case. Calibrated on a single case — see the
+# CAVEAT in _xa_thresholds. Desktop parity (segmentation_panel.py) intentionally
+# diverges until this is validated on more DSA studies.
+_DSA_LOWER_PCTL = 99.6
+
 
 # ── Public entry point ─────────────────────────────────────────────────────── #
 
@@ -60,8 +67,8 @@ def strategy_hint(strategy: str, lower: float, upper: float, is_dsa: bool) -> st
     hints = {
         "dsa": (
             f"DSA detectada: fondo sustraído ≈ −1024 HU. "
-            f"Umbral inferior = p99.9 ({lower:.0f} HU) — captura sólo vóxeles vasculares. "
-            f"Superior = 95% del máximo ({upper:.0f} HU)."
+            f"Umbral inferior = {lower:.0f} HU (brillo del ~0.4% superior de vóxeles) — "
+            f"captura el árbol vascular con pared. Superior = 95% del máximo ({upper:.0f} HU)."
         ),
         "xa_band_pass": (
             f"3DRA estándar (WW amplio). Banda p90–p99: "
@@ -119,8 +126,16 @@ def _xa_thresholds(
 
         # Branch 1: DSA subtraction (p99 < 0, max >> 0)
         if p99 < 0 and vmax > 500:
-            p999  = float(np.percentile(flat, 99.9))
-            lower = max(p999, 50.0)
+            # The subtracted background sits near −1024, so the contrast-filled
+            # vessels are safely the bright tail. p99.9 (top 0.1%) kept only the
+            # vessel *cores*, starving the surface mesh so the curvature detector
+            # found nothing on the reference DSA study (case 9). Target the
+            # brightest ~0.4% instead: this includes the vessel walls and lands
+            # detection in a stable band.
+            #
+            # CAVEAT: the 0.4% target is calibrated on a single annotated case
+            # (case 9); revisit against more DSA studies with known aneurysms.
+            lower = max(float(np.percentile(flat, _DSA_LOWER_PCTL)), 50.0)
             upper = vmax * 0.95
             return lower, upper, True, "dsa"
 
