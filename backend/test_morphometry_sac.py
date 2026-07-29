@@ -7,10 +7,15 @@ Uses synthetic VTK meshes so it runs without the DICOM corpus:
 """
 from __future__ import annotations
 
+import numpy as np
 import vtk
 
 from services.morphometrics import MorphometricAnalyzer
-from services.sac_isolation import isolate_closed_sac, measure_neck
+from services.sac_isolation import (
+    isolate_closed_sac,
+    isolate_sac_volumetric,
+    measure_neck,
+)
 
 
 def _sphere(radius: float, center=(0.0, 0.0, 0.0), res: int = 40) -> vtk.vtkPolyData:
@@ -117,3 +122,45 @@ def test_measure_neck_matches_cylinder_diameter():
     )
     assert 2.0 < diam < 4.0    # parent-artery Ø ≈ 3 mm
     assert area > 0.0
+
+
+# ── Tier 2 volumetric (robust, production path) ─────────────────────────── #
+
+def _sac_volume() -> np.ndarray:
+    """Synthetic volume: sac (sphere) on a parent artery (cylinder along +Z).
+
+    HU 1000 inside, 0 outside.  World coord = index (spacing 1 mm).
+    """
+    vol = np.zeros((60, 60, 60), dtype=np.float32)
+    zz, yy, xx = np.mgrid[0:60, 0:60, 0:60]
+    sphere = (xx - 30) ** 2 + (yy - 30) ** 2 + (zz - 40) ** 2 <= 16   # r = 4, centre z=40
+    cyl = ((xx - 30) ** 2 + (yy - 30) ** 2 <= 4) & (zz <= 40)         # r = 2, parent
+    vol[sphere | cyl] = 1000.0
+    return vol
+
+
+def test_volumetric_isolation_is_watertight_with_valid_neck():
+    vol = _sac_volume()
+    mesh, neck = isolate_sac_volumetric(
+        vol, spacing=(1.0, 1.0, 1.0),
+        neck_origin=(30.0, 30.0, 35.0),   # in the parent, below the sphere
+        neck_normal=(0.0, 0.0, 1.0),      # toward the dome (+Z)
+        apex=(30.0, 30.0, 43.0),          # inside the sphere near its top
+        lower=500.0, upper=2000.0,
+        max_radius=9.0, half_extent_mm=14.0,
+    )
+    assert mesh.GetNumberOfPoints() > 50
+
+    fe = vtk.vtkFeatureEdges()
+    fe.SetInputData(mesh)
+    fe.BoundaryEdgesOn(); fe.FeatureEdgesOff(); fe.NonManifoldEdgesOff(); fe.ManifoldEdgesOff()
+    fe.Update()
+    assert fe.GetOutput().GetNumberOfCells() == 0     # watertight by construction
+    assert 2.0 < neck < 6.0                            # ≈ parent Ø 4 mm
+
+    mr = MorphometricAnalyzer().analyze(
+        mesh, neck_plane=((30.0, 30.0, 35.0), (0.0, 0.0, 1.0), neck)
+    )
+    assert mr.reliable is True
+    assert mr.volume_mm3 > 0.0
+    assert mr.max_diameter_mm > 6.0                    # ≈ sphere Ø 8 mm

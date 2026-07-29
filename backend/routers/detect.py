@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from pathlib import Path
@@ -21,7 +22,7 @@ from services.sessions import (
 )
 from services.aneurysm_detector import AneurysmDetector, AneurysmCandidate as DetCandidate
 from services.morphometrics import MorphometricAnalyzer
-from services.sac_isolation import isolate_closed_sac
+from services.sac_isolation import isolate_closed_sac, isolate_sac_volumetric
 from services.perforator_risk import neck_origin_from_morpho
 from services.segmentation import read_vtp, write_vtp
 
@@ -311,26 +312,67 @@ def _run_morphometry_sync(
 
     if neck_plane is not None:
         # ── Semi-automatic closed-sac isolation ───────────────────────────── #
-        vessel_path = vtp_path.parent / "vessel_tree.vtp"
-        if not vessel_path.exists():
-            raise ValueError(
-                "vessel_tree.vtp no disponible — se requiere para aislar el saco."
-            )
-        vessel = read_vtp(vessel_path)
         origin = (neck_plane.origin.x, neck_plane.origin.y, neck_plane.origin.z)
-        normal = tuple(neck_plane.normal)
-        seed = None
+        nrm    = np.asarray(neck_plane.normal, dtype=float)
+        nrm    = nrm / (np.linalg.norm(nrm) or 1.0)
+        normal = tuple(float(v) for v in nrm)
         if neck_plane.dome_seed is not None:
             seed = (neck_plane.dome_seed.x, neck_plane.dome_seed.y, neck_plane.dome_seed.z)
-        sac = isolate_closed_sac(vessel, origin, normal, dome_seed=seed)
-        if sac.poly_data.GetNumberOfPoints() < 10:
+        else:
+            seed = tuple(origin[i] + 3.0 * normal[i] for i in range(3))
+
+        # The two user clicks (neck point + dome apex) size the sac: their
+        # distance is roughly the dome height, so bound the isolation to a
+        # sphere of that radius around the apex — keeping parent vessels that
+        # cross the neck plane out of the sac.
+        apex_dist  = float(np.linalg.norm(np.asarray(seed) - np.asarray(origin)))
+        bound_r    = apex_dist * 1.25 + 1.5
+        crop_half  = max(12.0, apex_dist * 1.35 + 6.0)
+
+        sac_mesh: "vtk.vtkPolyData | None" = None
+        neck_diam = 0.0
+        # Primary: build a WATERTIGHT sac in the volume domain from the cached
+        # full-res volume (robust — marching cubes on a bounded mask is always
+        # closed, unlike surface clip + fill-holes on the downsampled tree).
+        try:
+            from services.mpr import ensure_volume_cached, _get_volume
+            meta   = ensure_volume_cached(session_id)
+            volume = _get_volume(session_id)
+            lower  = float(read_state(session_id, "seg.threshold_lower", "") or 0.0)
+            upper  = float(read_state(session_id, "seg.threshold_upper", "") or 0.0)
+            if lower or upper:
+                sac_mesh, neck_diam = isolate_sac_volumetric(
+                    volume, meta["spacing"], origin, normal, seed,
+                    lower, upper, bound_r, half_extent_mm=crop_half,
+                )
+                logger.info("Volumetric sac isolation: %d pts, neck %.2f mm",
+                            sac_mesh.GetNumberOfPoints(), neck_diam)
+        except Exception as exc:
+            logger.warning("Volumetric isolation failed, will try surface clip: %s", exc)
+            sac_mesh = None
+
+        # Fallback: surface clip + cap on the (coarse) vessel tree.
+        if sac_mesh is None or sac_mesh.GetNumberOfPoints() < 50:
+            vessel_path = vtp_path.parent / "vessel_tree.vtp"
+            if not vessel_path.exists():
+                raise ValueError(
+                    "vessel_tree.vtp no disponible — se requiere para aislar el saco."
+                )
+            sac = isolate_closed_sac(read_vtp(vessel_path), origin, normal,
+                                     dome_seed=seed, max_radius=bound_r)
+            sac_mesh, neck_diam = sac.poly_data, sac.neck_diameter_mm
+
+        # Validate: a valid sac needs a real neck and body.  A tiny result means
+        # the apex was placed off the dome — ask the user to re-mark it.
+        if sac_mesh.GetNumberOfPoints() < 50 or neck_diam < 1.0:
             raise ValueError(
-                "El plano de cuello no aísla ningún saco. Recolóquelo sobre el domo."
+                "No se aísla un saco válido con este plano. Verifica que el punto "
+                "de cuello esté sobre el cuello y el ápice sobre la cúpula del domo."
             )
         # Persist the closed sac so the UI can display it.
-        write_vtp(sac.poly_data, vtp_path.parent / "aneurysm_sac.vtp")
-        poly        = sac.poly_data
-        plane_arg   = (sac.neck_origin, sac.neck_normal, sac.neck_diameter_mm)
+        write_vtp(sac_mesh, vtp_path.parent / "aneurysm_sac.vtp")
+        poly        = sac_mesh
+        plane_arg   = (origin, normal, neck_diam)
         neck_source = "manual"
     else:
         poly = read_vtp(vtp_path)
