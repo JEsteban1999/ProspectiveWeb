@@ -18,11 +18,40 @@ const TABS = ["Métricas", "Índices", "PHASES", "Seguimiento"] as const;
 
 export function MorphometryPanel({ onNext }: { onNext: () => void }) {
   const planning = usePlanning();
-  const { sessionId, morphometry } = planning;
+  const {
+    sessionId, morphometry,
+    pickMode, setPickMode, neckOrigin, neckDome, setNeckOrigin, setNeckDome,
+  } = planning;
   const [tab, setTab] = useState<string>("Métricas");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [longi, setLongi] = useState<LongitudinalResult | null>(null);
+  const [neckBusy, setNeckBusy] = useState(false);
+
+  async function recomputeWithNeckPlane() {
+    if (!sessionId || !neckOrigin || !neckDome) return;
+    const normal: [number, number, number] = [
+      neckDome[0] - neckOrigin[0],
+      neckDome[1] - neckOrigin[1],
+      neckDome[2] - neckOrigin[2],
+    ];
+    setNeckBusy(true);
+    setError(null);
+    try {
+      const m = await api.morphometryNeckPlane(sessionId, {
+        origin: { x: neckOrigin[0], y: neckOrigin[1], z: neckOrigin[2] },
+        normal,
+        dome_seed: { x: neckDome[0], y: neckDome[1], z: neckDome[2] },
+      });
+      planning.setMorphometry(m);
+      setNeckOrigin(null);
+      setNeckDome(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al medir con el plano de cuello");
+    } finally {
+      setNeckBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (morphometry || !sessionId) return;
@@ -67,6 +96,49 @@ export function MorphometryPanel({ onNext }: { onNext: () => void }) {
             <div style={{ background: "var(--warning-bg)", border: "1px solid color-mix(in srgb, var(--warning) 40%, transparent)", borderRadius: "var(--radius-lg)", padding: "12px 14px", marginBottom: 12, display: "flex", gap: 10 }}>
               <Icon name="STATUS_WARN" color="var(--warning)" size={18} />
               <div style={{ fontSize: 12, color: "var(--warning)" }}>{m.warning}</div>
+            </div>
+          )}
+
+          {/* Semi-automatic neck plane — shown when the automatic analysis ran on
+              an open detector cap (unreliable), or to refine a manual result. */}
+          {(!m.reliable || m.neck_source === "manual") && (
+            <div style={{ background: "var(--muted, rgba(120,130,140,0.08))", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "12px 14px", marginBottom: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <Icon name="STEP_PLAN" size={15} color="var(--muted-foreground)" />
+                <div style={{ fontSize: 12, fontWeight: 600 }}>
+                  Plano de cuello {m.neck_source === "manual" && <Badge variant="success">manual</Badge>}
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginBottom: 10 }}>
+                {m.reliable
+                  ? "Cuello definido manualmente. Recolócalo si es necesario."
+                  : "La detección automática aísla una superficie abierta y no mide un cuello válido. Marca el cuello y el ápice del domo sobre el modelo 3D para medir sobre un saco cerrado."}
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Button
+                  variant={neckOrigin ? "secondary" : "default"}
+                  onClick={() => setPickMode("neck_origin")}
+                  disabled={pickMode === "neck_origin"}
+                  leadingIcon={<Icon name={neckOrigin ? "STATUS_OK" : "TARGET"} size={14} />}
+                >
+                  {neckOrigin ? "Cuello ✓" : "Marcar cuello"}
+                </Button>
+                <Button
+                  variant={neckDome ? "secondary" : "default"}
+                  onClick={() => setPickMode("neck_dome")}
+                  disabled={pickMode === "neck_dome"}
+                  leadingIcon={<Icon name={neckDome ? "STATUS_OK" : "TARGET"} size={14} />}
+                >
+                  {neckDome ? "Ápice ✓" : "Marcar ápice del domo"}
+                </Button>
+                <Button
+                  onClick={recomputeWithNeckPlane}
+                  disabled={!neckOrigin || !neckDome || neckBusy}
+                >
+                  {neckBusy ? "Midiendo…" : "Medir saco cerrado"}
+                </Button>
+              </div>
+              {neckBusy && <div style={{ marginTop: 8 }}><ProgressBar /></div>}
             </div>
           )}
 

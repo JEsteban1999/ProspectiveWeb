@@ -38,6 +38,8 @@ const SOURCE_COLOR: Vector3 = [0.25, 0.73, 0.31];     // green — picked source
 const TARGET_COLOR: Vector3 = [0.97, 0.32, 0.29];     // red — picked target endpoint
 const MEASURE_COLOR: Vector3 = [0.98, 0.75, 0.18];    // amber — caliper rulers
 const PENDING_COLOR: Vector3 = [0.98, 0.55, 0.10];    // orange — first measurement point
+const NECK_ORIGIN_COLOR: Vector3 = [0.85, 0.35, 0.85]; // magenta — neck-plane point
+const NECK_DOME_COLOR: Vector3 = [0.36, 0.85, 0.86];   // cyan — dome apex
 
 /* Load the volume meta once per session; shared by main view + MPR strip. */
 function useVolumeMeta(sessionId: string | null): VolumeMeta | null {
@@ -69,6 +71,7 @@ export function Viewer({ step }: { step: string }) {
   const {
     sessionId, segmentation, candidates, selectedCandidate, series, deviceMesh,
     centerlineMesh, pickMode, clSource, clTarget, setPickMode, setClSource, setClTarget,
+    neckOrigin, neckDome, setNeckOrigin, setNeckDome,
     measurements, measurePending, setMeasurements, setMeasurePending,
   } = usePlanning();
   // mesh_url carries a generation token (?v=…) from the backend, so it changes
@@ -102,8 +105,10 @@ export function Viewer({ step }: { step: string }) {
     if (clSource) out.push({ pos: clSource, color: SOURCE_COLOR });
     if (clTarget) out.push({ pos: clTarget, color: TARGET_COLOR });
     if (measurePending) out.push({ pos: measurePending, color: PENDING_COLOR });
+    if (neckOrigin) out.push({ pos: neckOrigin, color: NECK_ORIGIN_COLOR });
+    if (neckDome) out.push({ pos: neckDome, color: NECK_DOME_COLOR });
     return out;
-  }, [clSource, clTarget, measurePending]);
+  }, [clSource, clTarget, measurePending, neckOrigin, neckDome]);
 
   const lines = useMemo<MeshLine[]>(
     () => measurements.filter((m) => m.visible).map((m) => ({ a: m.a, b: m.b, color: MEASURE_COLOR })),
@@ -114,6 +119,8 @@ export function Viewer({ step }: { step: string }) {
     (xyz: [number, number, number]) => {
       if (pickMode === "cl_source") { setClSource(xyz); setPickMode(null); }
       else if (pickMode === "cl_target") { setClTarget(xyz); setPickMode(null); }
+      else if (pickMode === "neck_origin") { setNeckOrigin(xyz); setPickMode(null); }
+      else if (pickMode === "neck_dome") { setNeckDome(xyz); setPickMode(null); }
       else if (pickMode === "measure") {
         if (!measurePending) {
           setMeasurePending(xyz);           // first click — wait for the second
@@ -126,7 +133,7 @@ export function Viewer({ step }: { step: string }) {
         }
       }
     },
-    [pickMode, measurePending, measurements, setClSource, setClTarget, setPickMode, setMeasurePending, setMeasurements],
+    [pickMode, measurePending, measurements, setClSource, setClTarget, setNeckOrigin, setNeckDome, setPickMode, setMeasurePending, setMeasurements],
   );
 
   return (
@@ -193,9 +200,11 @@ export function Viewer({ step }: { step: string }) {
 
       {/* Pick-mode banner */}
       {pickMode && meshUrl && (
-        <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", background: pickMode === "cl_source" ? "rgba(63,186,80,0.92)" : pickMode === "cl_target" ? "rgba(248,81,73,0.92)" : "rgba(234,179,8,0.94)", color: pickMode === "measure" ? "#1a1a1a" : "#fff", fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 999, pointerEvents: "none", boxShadow: "0 2px 8px rgba(0,0,0,0.35)" }}>
+        <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", background: pickMode === "cl_source" ? "rgba(63,186,80,0.92)" : pickMode === "cl_target" ? "rgba(248,81,73,0.92)" : pickMode === "neck_origin" ? "rgba(217,89,217,0.92)" : pickMode === "neck_dome" ? "rgba(92,217,219,0.94)" : "rgba(234,179,8,0.94)", color: pickMode === "measure" || pickMode === "neck_dome" ? "#1a1a1a" : "#fff", fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 999, pointerEvents: "none", boxShadow: "0 2px 8px rgba(0,0,0,0.35)" }}>
           {pickMode === "cl_source" && "Clic sobre el vaso para marcar el origen"}
           {pickMode === "cl_target" && "Clic sobre el vaso para marcar el destino"}
+          {pickMode === "neck_origin" && "Clic sobre el cuello del aneurisma"}
+          {pickMode === "neck_dome" && "Clic sobre el ápice del domo"}
           {pickMode === "measure" && (measurePending ? "Clic en el segundo punto" : "Clic en el primer punto")}
         </div>
       )}

@@ -27,10 +27,13 @@ interface PlanningState {
   deviceMesh: string | null;
   /** URL of the extracted vessel centreline tube mesh, shown in the viewer. */
   centerlineMesh: string | null;
-  /** Active 3D-pick mode: centreline endpoints or a measurement (click on the mesh). */
-  pickMode: "cl_source" | "cl_target" | "measure" | null;
+  /** Active 3D-pick mode: centreline endpoints, a measurement, or the neck plane. */
+  pickMode: PickMode;
   clSource: Vec3 | null;
   clTarget: Vec3 | null;
+  /** Semi-automatic neck plane: a point on the neck and the dome apex (click on the mesh). */
+  neckOrigin: Vec3 | null;
+  neckDome: Vec3 | null;
   /** 3D caliper measurements (distance between two picked points). */
   measurements: Measurement[];
   /** First endpoint of an in-progress measurement (waiting for the second click). */
@@ -47,9 +50,11 @@ interface PlanningState {
   setTreatment: (t: TreatmentDecisionResult | null) => void;
   setDeviceMesh: (url: string | null) => void;
   setCenterlineMesh: (url: string | null) => void;
-  setPickMode: (m: "cl_source" | "cl_target" | "measure" | null) => void;
+  setPickMode: (m: PickMode) => void;
   setClSource: (p: Vec3 | null) => void;
   setClTarget: (p: Vec3 | null) => void;
+  setNeckOrigin: (p: Vec3 | null) => void;
+  setNeckDome: (p: Vec3 | null) => void;
   setMeasurements: (m: Measurement[]) => void;
   setMeasurePending: (p: Vec3 | null) => void;
   reset: () => void;
@@ -57,6 +62,8 @@ interface PlanningState {
 }
 
 export type Vec3 = [number, number, number];
+export type PickMode =
+  | "cl_source" | "cl_target" | "measure" | "neck_origin" | "neck_dome" | null;
 
 export interface Measurement {
   id: number;
@@ -81,9 +88,11 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   const [treatment, setTreatment] = useState<TreatmentDecisionResult | null>(null);
   const [deviceMesh, setDeviceMesh] = useState<string | null>(null);
   const [centerlineMesh, setCenterlineMesh] = useState<string | null>(null);
-  const [pickMode, setPickMode] = useState<"cl_source" | "cl_target" | "measure" | null>(null);
+  const [pickMode, setPickMode] = useState<PickMode>(null);
   const [clSource, setClSource] = useState<Vec3 | null>(null);
   const [clTarget, setClTarget] = useState<Vec3 | null>(null);
+  const [neckOrigin, setNeckOrigin] = useState<Vec3 | null>(null);
+  const [neckDome, setNeckDome] = useState<Vec3 | null>(null);
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
   const [measurePending, setMeasurePending] = useState<Vec3 | null>(null);
 
@@ -101,6 +110,8 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
     setPickMode(null);
     setClSource(null);
     setClTarget(null);
+    setNeckOrigin(null);
+    setNeckDome(null);
     setMeasurements([]);
     setMeasurePending(null);
   };
@@ -116,10 +127,12 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
       value={{
         patient, sessionId, series, thresholds, segmentation, candidates,
         selectedCandidate, morphometry, treatment, deviceMesh,
-        centerlineMesh, pickMode, clSource, clTarget, measurements, measurePending,
+        centerlineMesh, pickMode, clSource, clTarget, neckOrigin, neckDome,
+        measurements, measurePending,
         setPatient, setSession, setSeries, setThresholds, setSegmentation,
         setCandidates, setSelectedCandidate, setMorphometry, setTreatment,
         setDeviceMesh, setCenterlineMesh, setPickMode, setClSource, setClTarget,
+        setNeckOrigin, setNeckDome,
         setMeasurements, setMeasurePending,
         reset, resetDownstream,
       }}

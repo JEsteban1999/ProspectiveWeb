@@ -265,10 +265,19 @@ export interface MorphometryResult {
   nsi: number;
   sr: number;
   rupture_risk_label: RiskLabel;
+  reliable: boolean;
+  neck_source: "auto" | "manual";
   neck_valid: boolean;
   warning: string | null;
   centroid: Position3D | null;
   principal_axis: number[] | null;
+}
+
+/** User-defined neck plane for semi-automatic closed-sac morphometry. */
+export interface NeckPlaneRequest {
+  origin: Position3D;
+  normal: number[];          // [x, y, z] toward the dome
+  dome_seed?: Position3D | null;
 }
 
 /* ── perforators ───────────────────────────────────────────────────────── */

@@ -124,6 +124,22 @@ class MorphometryResult(BaseModel):
     )
 
     # ── Validity ──────────────────────────────────────────────────────────── #
+    reliable: bool = Field(
+        True,
+        description=(
+            "True when the analysis ran on a closed, physically plausible sac. "
+            "False when the mesh was an open surface patch (detector cap): "
+            "volume, neck and all derived ratios are then nulled — place a neck "
+            "plane (POST .../neck-plane) to obtain a valid closed-sac measurement."
+        ),
+    )
+    neck_source: Literal["auto", "manual"] = Field(
+        "auto",
+        description=(
+            "'auto' = neck from automatic plane-slicing on the candidate; "
+            "'manual' = neck from a user-defined neck plane (closed-sac isolation)."
+        ),
+    )
     neck_valid: bool = Field(
         ...,
         description=(
@@ -146,4 +162,29 @@ class MorphometryResult(BaseModel):
     )
     principal_axis: list[float] | None = Field(
         None, description="Principal PCA axis as [x, y, z] unit vector"
+    )
+
+
+class NeckPlaneRequest(BaseModel):
+    """User-defined neck plane for semi-automatic closed-sac morphometry.
+
+    The user places a point on the neck and a normal pointing toward the dome.
+    The backend clips the vessel tree at this plane, keeps the dome-side
+    connected component, caps the opening into a closed watertight sac, and
+    measures the neck directly from the plane∩tree contour.
+    """
+
+    origin: Position3D = Field(..., description="A point on the neck plane (mm, patient space)")
+    normal: list[float] = Field(
+        ...,
+        min_length=3,
+        max_length=3,
+        description="Plane normal [x, y, z] pointing toward the dome (need not be unit length)",
+    )
+    dome_seed: Position3D | None = Field(
+        None,
+        description=(
+            "Optional point inside the dome to disambiguate the sac side. "
+            "Defaults to origin + 3·normal."
+        ),
     )

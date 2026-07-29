@@ -21,6 +21,7 @@ import type {
   LoginResponse,
   LongitudinalResult,
   MorphometryResult,
+  NeckPlaneRequest,
   PendingUser,
   PhasesRequest,
   PhasesResult,
@@ -120,6 +121,8 @@ export const api = {
     post<AneurysmDetectionResult>(`/api/detect/${sessionId}`),
   morphometry: (sessionId: string) =>
     get<MorphometryResult>(`/api/morphometry/${sessionId}`),
+  morphometryNeckPlane: (sessionId: string, req: NeckPlaneRequest) =>
+    post<MorphometryResult>(`/api/morphometry/${sessionId}/neck-plane`, req),
   perforators: (sessionId: string) =>
     get<PerforatorsResult>(`/api/perforators/${sessionId}`),
   longitudinal: (sessionId: string) =>

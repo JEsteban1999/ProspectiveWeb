@@ -63,6 +63,15 @@ class MorphometricResult:
     principal_axis: tuple[float, float, float] = field(default=(0.0, 0.0, 1.0))
     centroid: tuple[float, float, float]       = field(default=(0.0, 0.0, 0.0))
 
+    # ── Reliability guard (Tier 1) ────────────────────────────────────── #
+    # A trustworthy analysis needs a *closed* (watertight) sac mesh.  When the
+    # input is an open surface patch (e.g. the detector's curvature cap), the
+    # volume-based metrics and the plane-slice neck degenerate; we flag that
+    # here and null the affected fields instead of emitting absurd numbers.
+    reliable:         bool = True   # False → volume/neck metrics not trustworthy
+    watertight:       bool = True   # mesh had no boundary (open) edges
+    reliability_note: str  = ""     # human-readable reason when reliable is False
+
     # ── Derived labels ────────────────────────────────────────────────── #
     @property
     def rupture_risk_label(self) -> str:
@@ -107,8 +116,23 @@ class MorphometricAnalyzer:
     # Public API                                                           #
     # ------------------------------------------------------------------ #
 
-    def analyze(self, poly_data: vtk.vtkPolyData) -> MorphometricResult:
-        """Run all measurements.  Raises ValueError on empty mesh."""
+    def analyze(
+        self,
+        poly_data: vtk.vtkPolyData,
+        neck_plane: Optional[tuple] = None,
+    ) -> MorphometricResult:
+        """Run all measurements.  Raises ValueError on empty mesh.
+
+        Parameters
+        ----------
+        neck_plane:
+            Optional ``(origin, normal, neck_diam_mm)`` giving a *known* neck
+            plane (semi-automatic Tier 2 flow).  When supplied, the neck is
+            taken as ``neck_diam_mm`` (measured from the clip contour by the
+            caller) instead of being re-searched via plane slicing — which
+            degenerates on the grazing mesh extremity.  ``dome_height`` is then
+            the sac's extent beyond the plane along ``+normal``.
+        """
         if poly_data is None or poly_data.GetNumberOfPoints() == 0:
             raise ValueError("Empty mesh — run aneurysm detection first.")
 
@@ -129,9 +153,23 @@ class MorphometricAnalyzer:
 
         centroid, principal_axis = self._pca_axis(poly_data)
 
-        neck_diam, dome_height, neck_pos = self._find_neck(
-            poly_data, centroid, principal_axis
-        )
+        if neck_plane is not None:
+            # ── Known neck plane (semi-automatic Tier 2) ──────────────────── #
+            n_origin = np.asarray(neck_plane[0], dtype=np.float64)
+            n_normal = np.asarray(neck_plane[1], dtype=np.float64)
+            n_normal = n_normal / (np.linalg.norm(n_normal) or 1.0)
+            neck_diam = float(neck_plane[2])
+            pts = ns.vtk_to_numpy(poly_data.GetPoints().GetData()).astype(np.float64)
+            beyond = (pts - n_origin) @ n_normal          # >0 = dome side
+            dome_height = float(max(0.0, beyond.max()))
+            neck_pos = 0.0                                 # neck at base of clipped sac
+            # The user's plane defines the neck→dome axis; use it downstream.
+            principal_axis = n_normal
+            centroid = n_origin
+        else:
+            neck_diam, dome_height, neck_pos = self._find_neck(
+                poly_data, centroid, principal_axis
+            )
 
         max_diam    = bbox_l
         eq_diam     = (2.0 * (3.0 * volume_mm3 / (4.0 * math.pi)) ** (1.0 / 3.0)
@@ -141,9 +179,56 @@ class MorphometricAnalyzer:
         compactness = self._wadell_sphericity(volume_mm3, surface_area_mm2)
 
         bf  = self._bottleneck_factor(poly_data, centroid, principal_axis, neck_pos, neck_diam)
+        # Physical bound: the widest dome cross-section cannot exceed the max
+        # diameter, so BF ≤ DNR.  The plane-slice perimeter can be inflated when
+        # a slice catches multiple loops (parent stub in the clipped sac); clamp.
+        if dnr > 0.0:
+            bf = min(bf, dnr)
         ui  = self._undulation_index(poly_data, volume_mm3)
         ei  = self._ellipticity_index(volume_mm3, surface_area_mm2)
         nsi = max(0.0, 1.0 - compactness)
+
+        # ── Reliability guard (Tier 1) ─────────────────────────────────── #
+        # Volume-based metrics and the plane-slice neck are only trustworthy on
+        # a closed, physically plausible sac.  Open surface patches (the
+        # detector's curvature cap) give a garbage vtkMassProperties volume and
+        # a degenerate grazing "neck".  We guard the two groups independently so
+        # a closed sac with a merely-degenerate auto-neck keeps its valid volume
+        # while only the neck-derived ratios are nulled (→ prompt a neck plane).
+        n_boundary      = self._boundary_edge_count(poly_data)
+        watertight      = n_boundary == 0
+        bbox_vol        = bbox_l * bbox_w * bbox_h
+        vol_ok          = 0.0 < volume_mm3 <= bbox_vol * 1.05
+        volume_reliable = watertight and vol_ok
+        # A user-supplied neck plane is measured from the clip contour → trusted;
+        # otherwise the auto neck must be on a closed mesh and above the floor.
+        neck_reliable   = (neck_plane is not None) or (watertight and 0.1 <= neck_diam <= max_diam)
+        reliable        = volume_reliable and neck_reliable
+
+        reasons = []
+        if not watertight:
+            reasons.append(f"malla abierta ({n_boundary} aristas de borde)")
+        if watertight and not vol_ok:
+            reasons.append("volumen no plausible")
+        if not neck_reliable and watertight:
+            reasons.append("cuello no medible automáticamente")
+        note = ""
+        if not reliable:
+            note = ("Medición no fiable: " + "; ".join(reasons)
+                    + ". Define un plano de cuello para medir sobre un saco cerrado.")
+            logger.warning("Morphometry unreliable — %s", note)
+        if not volume_reliable:
+            # Volume group depends on a closed, plausible mesh.
+            volume_mm3  = 0.0
+            eq_diam     = 0.0
+            compactness = 0.0
+            ui = ei = nsi = 0.0
+        if not neck_reliable:
+            # Neck group (neck, dome, DNR, AR, BF) needs a valid neck.
+            neck_diam   = 0.0
+            dome_height = 0.0
+            neck_pos    = 0.0
+            dnr = ar = bf = 0.0
 
         result = MorphometricResult(
             volume_mm3         = volume_mm3,
@@ -165,6 +250,9 @@ class MorphometricAnalyzer:
             non_sphericity_idx = nsi,
             principal_axis     = tuple(principal_axis),
             centroid           = tuple(centroid),
+            reliable           = reliable,
+            watertight         = watertight,
+            reliability_note   = note,
         )
 
         logger.info(
@@ -189,6 +277,18 @@ class MorphometricAnalyzer:
         mp.Update()
 
         return abs(float(mp.GetVolume())), float(mp.GetSurfaceArea())
+
+    @staticmethod
+    def _boundary_edge_count(poly_data: vtk.vtkPolyData) -> int:
+        """Number of boundary (open) edges.  0 → watertight closed surface."""
+        fe = vtk.vtkFeatureEdges()
+        fe.SetInputData(poly_data)
+        fe.BoundaryEdgesOn()
+        fe.FeatureEdgesOff()
+        fe.NonManifoldEdgesOff()
+        fe.ManifoldEdgesOff()
+        fe.Update()
+        return int(fe.GetOutput().GetNumberOfCells())
 
     @staticmethod
     def _pca_axis(poly_data: vtk.vtkPolyData) -> tuple[np.ndarray, np.ndarray]:

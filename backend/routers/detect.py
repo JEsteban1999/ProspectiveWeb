@@ -13,6 +13,7 @@ from models import (
     AneurysmCandidate as PydAneurysmCandidate,
     AneurysmDetectionResult,
     MorphometryResult,
+    NeckPlaneRequest,
     Position3D,
 )
 from services.sessions import (
@@ -20,6 +21,7 @@ from services.sessions import (
 )
 from services.aneurysm_detector import AneurysmDetector, AneurysmCandidate as DetCandidate
 from services.morphometrics import MorphometricAnalyzer
+from services.sac_isolation import isolate_closed_sac
 from services.perforator_risk import neck_origin_from_morpho
 from services.segmentation import read_vtp, write_vtp
 
@@ -241,14 +243,99 @@ async def get_morphometry(session_id: str) -> MorphometryResult:
     return result
 
 
+@router.post(
+    "/morphometry/{session_id}/neck-plane",
+    response_model=MorphometryResult,
+    summary="Morphometry from a user-defined neck plane (closed-sac)",
+    description=(
+        "Semi-automatic Tier-2 morphometry. The user supplies a **neck plane** "
+        "(a point on the neck and a normal pointing toward the dome). The "
+        "backend clips the vessel tree at the plane, keeps the dome-side "
+        "connected component, caps it into a **closed watertight sac**, and "
+        "measures the neck directly from the clip contour.\n\n"
+        "Use this when the automatic analysis returns `reliable=false` (the "
+        "detector isolated an open surface cap, on which volume/neck degenerate)."
+    ),
+)
+async def morphometry_neck_plane(
+    session_id: str,
+    request:    NeckPlaneRequest,
+) -> MorphometryResult:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    meshes_dir  = session_subdir(session_id, "meshes")
+    vessel_path = meshes_dir / "vessel_tree.vtp"
+    if not vessel_path.exists():
+        raise HTTPException(
+            status_code=422,
+            detail="vessel_tree.vtp no encontrado. Ejecute la segmentación primero.",
+        )
+
+    loop = asyncio.get_event_loop()
+    try:
+        result = await loop.run_in_executor(
+            _executor,
+            partial(
+                _run_morphometry_sync,
+                session_id=session_id,
+                vtp_path=vessel_path,      # parent dir holds vessel_tree.vtp + sac output
+                neck_plane=request,
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("Neck-plane morphometry failed for %s: %s", session_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Morphometry error: {exc}") from exc
+
+    return result
+
+
 def _run_morphometry_sync(
     session_id: str,
     vtp_path:   Path,
+    neck_plane: NeckPlaneRequest | None = None,
 ) -> MorphometryResult:
-    """Load candidate VTP → run MorphometricAnalyzer → persist state → return result."""
-    poly     = read_vtp(vtp_path)
-    analyzer = MorphometricAnalyzer()
-    mr       = analyzer.analyze(poly)
+    """Load candidate VTP → run MorphometricAnalyzer → persist state → return result.
+
+    When *neck_plane* is given (semi-automatic Tier 2), the vessel tree is
+    clipped at the user's neck plane into a closed watertight sac, the neck is
+    measured from the clip contour, and morphometry runs on that sac — yielding
+    valid volume/DNR/AR/BF instead of the degenerate numbers an open detector
+    cap produces.
+    """
+    analyzer    = MorphometricAnalyzer()
+    neck_source = "auto"
+    plane_arg   = None
+
+    if neck_plane is not None:
+        # ── Semi-automatic closed-sac isolation ───────────────────────────── #
+        vessel_path = vtp_path.parent / "vessel_tree.vtp"
+        if not vessel_path.exists():
+            raise ValueError(
+                "vessel_tree.vtp no disponible — se requiere para aislar el saco."
+            )
+        vessel = read_vtp(vessel_path)
+        origin = (neck_plane.origin.x, neck_plane.origin.y, neck_plane.origin.z)
+        normal = tuple(neck_plane.normal)
+        seed = None
+        if neck_plane.dome_seed is not None:
+            seed = (neck_plane.dome_seed.x, neck_plane.dome_seed.y, neck_plane.dome_seed.z)
+        sac = isolate_closed_sac(vessel, origin, normal, dome_seed=seed)
+        if sac.poly_data.GetNumberOfPoints() < 10:
+            raise ValueError(
+                "El plano de cuello no aísla ningún saco. Recolóquelo sobre el domo."
+            )
+        # Persist the closed sac so the UI can display it.
+        write_vtp(sac.poly_data, vtp_path.parent / "aneurysm_sac.vtp")
+        poly        = sac.poly_data
+        plane_arg   = (sac.neck_origin, sac.neck_normal, sac.neck_diameter_mm)
+        neck_source = "manual"
+    else:
+        poly = read_vtp(vtp_path)
+
+    mr = analyzer.analyze(poly, neck_plane=plane_arg)
 
     # ── Size Ratio: estimate the parent-artery diameter from the full vessel ─ #
     # SR = max_aneurysm_diameter / parent_artery_diameter (Dhar 2008). Requires
@@ -293,10 +380,17 @@ def _run_morphometry_sync(
     write_state(session_id, "morpho.ui",              str(mr.undulation_index))
     write_state(session_id, "morpho.rupture_risk",    mr.rupture_risk_label)
 
+    # ── Reliability guard (Tier 1) ────────────────────────────────────── #
+    # analyze() nulls volume/neck metrics when the mesh is an open patch or the
+    # sac is not physically plausible; surface that reason first so the UI can
+    # flag the whole analysis, not just the neck.
+    warning = None
+    if not mr.reliable and mr.reliability_note:
+        warning = mr.reliability_note
+
     # ── Neck validity check ───────────────────────────────────────────── #
     neck_valid = mr.neck_diameter_mm >= 1.0
-    warning    = None
-    if not neck_valid:
+    if not neck_valid and warning is None:
         warning = (
             "Cuello no detectado (diámetro < 1 mm). "
             "DNR, AR y BF son poco fiables. Ajuste manualmente si es posible."
@@ -341,6 +435,8 @@ def _run_morphometry_sync(
         nsi               = round(_clamp01(mr.non_sphericity_idx), 4),
         sr                = round(max(0.0, mr.size_ratio),         3),
         rupture_risk_label= mr.rupture_risk_label,
+        reliable          = mr.reliable,
+        neck_source       = neck_source,
         neck_valid        = neck_valid,
         warning           = warning,
         centroid          = Position3D(
