@@ -78,6 +78,12 @@ export function Viewer({ step }: { step: string }) {
   // on every re-segmentation and vtk.js refetches instead of serving the cache.
   const meshUrl = segmentation?.mesh_url ?? null;
   const candidate = candidates[selectedCandidate];
+  // Frame + highlight the selected candidate during detection and morphometry,
+  // so it's obvious where the aneurysm is (and where to place the neck plane).
+  const focusUrl =
+    (step === "detect" || step === "morpho") && candidate?.dome_mesh_url
+      ? candidate.dome_mesh_url
+      : undefined;
   const meta = useVolumeMeta(sessionId);
   const [viewMode, setViewMode] = useState<"default" | "volume" | "oblique">("default");
   // Only show a placed device mesh once its URL points at a real session file.
@@ -146,7 +152,7 @@ export function Viewer({ step }: { step: string }) {
         <ObliqueMprView sessionId={sessionId} wc={meta.wc} ww={meta.ww} />
       ) : meshUrl ? (
         <Suspense fallback={<ViewerLoading label="Cargando visor 3D…" />}>
-          <MeshView layers={layers} markers={markers} lines={lines} pickMode={pickMode !== null} onPick={onPick} />
+          <MeshView layers={layers} markers={markers} lines={lines} pickMode={pickMode !== null} onPick={onPick} focusUrl={focusUrl} />
         </Suspense>
       ) : sessionId && meta ? (
         <MprView sessionId={sessionId} meta={meta} plane="axial" showSlider />
@@ -178,6 +184,16 @@ export function Viewer({ step }: { step: string }) {
         {STEP_SCENE[step]} · {viewMode === "volume" ? "volumen" : viewMode === "oblique" ? "oblicuo" : meshUrl ? "vtk.js" : "MPR"}
         {step === "detect" && candidate && <span style={{ marginLeft: 10, color: "#A8B8C6" }}>· {candidate.id}</span>}
       </div>
+
+      {/* Candidate focus chip — the highlighted candidate's id + diameter. */}
+      {viewMode === "default" && meshUrl && focusUrl && candidate && (
+        <div style={{ position: "absolute", top: 38, left: 16, display: "flex", alignItems: "center", gap: 8, background: "rgba(20,24,28,0.72)", border: "1px solid rgba(82,140,180,0.5)", borderRadius: 999, padding: "5px 12px", pointerEvents: "none", boxShadow: "0 2px 10px rgba(0,0,0,0.35)" }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#529CC0", boxShadow: "0 0 8px 1px rgba(82,156,192,0.9)" }} />
+          <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "#DCE6EE" }}>
+            {candidate.id} · Ø {candidate.max_diameter_mm.toFixed(1)} mm
+          </span>
+        </div>
+      )}
 
       {/* View-mode switcher (only when a volume is available) */}
       {sessionId && meta && !pickMode && (
