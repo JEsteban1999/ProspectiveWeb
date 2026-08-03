@@ -71,8 +71,11 @@ frontend/.env.production
 # Muchos DICOM vienen SIN extensión (IM_0001, 1.2.840…), así que las reglas por
 # extensión no bastan: se ignoran las carpetas de estudios enteras.
 Archivos DICOM/
+Archivos DICOM.zip
 DICOM/
 **/DICOMDIR
+# Comprimidos de estudios (pueden contener datos de paciente).
+*.zip
 
 # ── Large binary meshes (use Git LFS or external storage) ────────────────── #
 *.stl

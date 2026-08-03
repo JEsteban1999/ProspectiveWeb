@@ -31,7 +31,12 @@ function strategyLabel(strategy: string): string {
 
 export function SegmentPanel({ onNext }: { onNext: () => void }) {
   const planning = usePlanning();
-  const { sessionId, series, thresholds, segmentation } = planning;
+  const { sessionId, series, thresholds, thresholdsLoading, segmentation } = planning;
+
+  // While the auto-threshold is still loading (slow first volume read), don't
+  // let the clinician segment with the default 200/800 sliders — wait for the
+  // real band. If it failed to load (loading done, still null), allow manual.
+  const waitingThresholds = thresholdsLoading && !thresholds;
 
   const [lower, setLower] = useState(Math.round(thresholds?.lower ?? 200));
   const [upper, setUpper] = useState(Math.round(thresholds?.upper ?? 800));
@@ -80,16 +85,25 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
       <SectionLabel style={{ marginBottom: 10 }}>
         Umbral {thresholds ? `· ${strategyLabel(thresholds.strategy)}` : ""}
       </SectionLabel>
-      {thresholds?.hint && (
-        <div style={{ fontSize: 12, color: "var(--muted-foreground)", marginBottom: 12 }}>{thresholds.hint}</div>
+      {waitingThresholds ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, color: "var(--muted-foreground)", background: "var(--muted, rgba(120,130,140,0.08))", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "12px 14px", marginBottom: 12 }}>
+          <span className="spin" style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--primary)", display: "inline-block", flexShrink: 0 }} />
+          Calculando umbral automático a partir del volumen…
+        </div>
+      ) : (
+        thresholds?.hint && (
+          <div style={{ fontSize: 12, color: "var(--muted-foreground)", marginBottom: 12 }}>{thresholds.hint}</div>
+        )
       )}
-      <Slider label="Umbral inferior" min={-500} max={1500} value={lower} onChange={setLower} unit=" HU" />
-      <div style={{ height: 14 }} />
-      <Slider label="Umbral superior" min={-500} max={3000} value={upper} onChange={setUpper} unit=" HU" />
-      <div style={{ height: 14 }} />
-      <Slider label="Suavizado" min={0} max={10} value={smoothing} onChange={setSmoothing} />
-      <div style={{ height: 14 }} />
-      <Slider label="Limpieza de fragmentos" min={0} max={10} value={cleanup} onChange={setCleanup} />
+      <div style={{ opacity: waitingThresholds ? 0.5 : 1, pointerEvents: waitingThresholds ? "none" : "auto", transition: "opacity var(--dur-fast) var(--ease-out)" }}>
+        <Slider label="Umbral inferior" min={-500} max={1500} value={lower} onChange={setLower} unit=" HU" />
+        <div style={{ height: 14 }} />
+        <Slider label="Umbral superior" min={-500} max={3000} value={upper} onChange={setUpper} unit=" HU" />
+        <div style={{ height: 14 }} />
+        <Slider label="Suavizado" min={0} max={10} value={smoothing} onChange={setSmoothing} />
+        <div style={{ height: 14 }} />
+        <Slider label="Limpieza de fragmentos" min={0} max={10} value={cleanup} onChange={setCleanup} />
+      </div>
 
       {busy && (
         <div style={{ marginTop: 18 }}>
@@ -121,11 +135,11 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
         <Button
           variant={segmentation ? "outline" : "default"}
           onClick={() => void run()}
-          disabled={busy || !sessionId}
+          disabled={busy || !sessionId || waitingThresholds}
           leadingIcon={<Icon name="GROWTH" />}
           style={{ flex: 1 }}
         >
-          {segmentation ? "Re-segmentar" : "Segmentar"}
+          {waitingThresholds ? "Calculando umbral…" : segmentation ? "Re-segmentar" : "Segmentar"}
         </Button>
         {segmentation && (
           <Button onClick={onNext} trailingIcon={<Icon name="STEP_DETECT" />}>

@@ -13,10 +13,15 @@ import { ThemeToggle } from "../components/ThemeToggle";
 
 const MAXW = 1320;
 
+/* Section content reveals with a fade + rise as it scrolls into view. Driven by
+   the CSS `.reveal` class (scroll-driven animation, gated behind @supports) so
+   it is bulletproof: tied directly to scroll position, it never sticks invisible
+   on nav-anchor jumps or reloads, and degrades to always-visible where the CSS
+   feature is unsupported. See `.reveal` in styles/base.css. */
 function Section({ id, children, style }: { id?: string; children: React.ReactNode; style?: React.CSSProperties }) {
   return (
     <section id={id} style={{ padding: "88px 24px", ...style }}>
-      <div style={{ maxWidth: MAXW, margin: "0 auto" }}>{children}</div>
+      <div className="reveal" style={{ maxWidth: MAXW, margin: "0 auto" }}>{children}</div>
     </section>
   );
 }

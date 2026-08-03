@@ -80,10 +80,13 @@ export function UploadPanel({ onNext }: { onNext: () => void }) {
       const primary = res.series[0] ?? null;
       planning.setSeries(primary);
       if (primary) {
+        planning.setThresholdsLoading(true);
         try {
           planning.setThresholds(await api.thresholds(res.session_id));
         } catch {
           planning.setThresholds(null); // thresholds are recomputed at segment time
+        } finally {
+          planning.setThresholdsLoading(false);
         }
       } else {
         setError("No se detectó ninguna serie DICOM en los archivos subidos.");

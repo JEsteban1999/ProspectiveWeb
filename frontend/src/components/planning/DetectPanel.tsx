@@ -56,6 +56,12 @@ export function DetectPanel({ onNext }: { onNext: () => void }) {
         </div>
       )}
 
+      {ran && candidates.length > 1 && (
+        <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginBottom: 10 }}>
+          Ordenados por relevancia. El <b>principal</b> es el más probable; revise con criterio clínico los de <b>baja confianza</b> (posibles falsos positivos).
+        </div>
+      )}
+
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {candidates.map((c, i) => {
           const on = selectedCandidate === i;
@@ -74,6 +80,8 @@ export function DetectPanel({ onNext }: { onNext: () => void }) {
             >
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>{c.id}</span>
+                {i === 0 && <Badge variant="success">Principal</Badge>}
+                {c.confidence < 0.5 && <Badge variant="warning">Baja confianza</Badge>}
                 <div style={{ flex: 1 }} />
                 {on && <Icon name="STATUS_OK" size={15} color="var(--brand-deep)" />}
               </div>
@@ -90,7 +98,7 @@ export function DetectPanel({ onNext }: { onNext: () => void }) {
                 </span>
               </div>
               <div style={{ height: 4, borderRadius: 2, background: "var(--muted)", marginTop: 6, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${c.confidence * 100}%`, background: "var(--primary)" }} />
+                <div style={{ height: "100%", width: `${c.confidence * 100}%`, background: c.confidence < 0.5 ? "var(--warning)" : "var(--primary)" }} />
               </div>
             </div>
           );

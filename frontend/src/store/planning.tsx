@@ -18,6 +18,10 @@ interface PlanningState {
   sessionId: string | null;
   series: SeriesInfo | null;
   thresholds: AutoThresholdResult | null;
+  /** True while the auto-threshold is being fetched after upload (the volume
+   *  load is slow on the first call), so the segmentation step can wait for the
+   *  real band instead of showing the default slider values. */
+  thresholdsLoading: boolean;
   segmentation: SegmentResult | null;
   candidates: AneurysmCandidate[];
   selectedCandidate: number;
@@ -43,6 +47,7 @@ interface PlanningState {
   setSession: (id: string | null) => void;
   setSeries: (s: SeriesInfo | null) => void;
   setThresholds: (t: AutoThresholdResult | null) => void;
+  setThresholdsLoading: (v: boolean) => void;
   setSegmentation: (s: SegmentResult | null) => void;
   setCandidates: (c: AneurysmCandidate[]) => void;
   setSelectedCandidate: (i: number) => void;
@@ -81,6 +86,7 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   const [sessionId, setSession] = useState<string | null>(null);
   const [series, setSeries] = useState<SeriesInfo | null>(null);
   const [thresholds, setThresholds] = useState<AutoThresholdResult | null>(null);
+  const [thresholdsLoading, setThresholdsLoading] = useState(false);
   const [segmentation, setSegmentation] = useState<SegmentResult | null>(null);
   const [candidates, setCandidates] = useState<AneurysmCandidate[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState(0);
@@ -100,6 +106,7 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   // uploaded in the same workspace so stale meshes/metrics don't linger.
   const resetDownstream = () => {
     setThresholds(null);
+    setThresholdsLoading(false);
     setSegmentation(null);
     setCandidates([]);
     setSelectedCandidate(0);
@@ -125,11 +132,11 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   return (
     <PlanningContext.Provider
       value={{
-        patient, sessionId, series, thresholds, segmentation, candidates,
+        patient, sessionId, series, thresholds, thresholdsLoading, segmentation, candidates,
         selectedCandidate, morphometry, treatment, deviceMesh,
         centerlineMesh, pickMode, clSource, clTarget, neckOrigin, neckDome,
         measurements, measurePending,
-        setPatient, setSession, setSeries, setThresholds, setSegmentation,
+        setPatient, setSession, setSeries, setThresholds, setThresholdsLoading, setSegmentation,
         setCandidates, setSelectedCandidate, setMorphometry, setTreatment,
         setDeviceMesh, setCenterlineMesh, setPickMode, setClSource, setClTarget,
         setNeckOrigin, setNeckDome,

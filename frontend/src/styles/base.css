@@ -79,3 +79,26 @@ code, kbd, samp, .mono {
   0%   { left: -35%; }
   100% { left: 100%; }
 }
+
+/* Spinner (loading states) */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 0.7s linear infinite; }
+
+/* Scroll-driven section reveal (fade + rise as it enters the viewport).
+   Progressive enhancement: only applies where scroll-driven animations exist
+   and motion is allowed — elsewhere `.reveal` content is simply always visible,
+   so it can never get stuck hidden. Being tied to scroll position (not a JS
+   observer) it survives nav-anchor jumps and reloads mid-page. */
+@keyframes reveal-in {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: none; }
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      animation: reveal-in linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 55%;
+    }
+  }
+}
