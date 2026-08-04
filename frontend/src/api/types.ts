@@ -197,6 +197,23 @@ export interface CaseCreate {
   mod_pangio?: boolean;
 }
 
+/** Clinical study/case for an existing patient (sections 3-5 of Nuevo Caso). */
+export interface StudyCreate {
+  study_date?: string;
+  sintomas_positivos?: string;
+  dx_principal: string;
+  dx_secundario?: string;
+  tipo_aneurisma?: string;
+  tratamiento_propuesto?: string;
+  region_anatomica?: string;
+  lateralidad?: string;
+  angiographer?: string;
+  mod_tac?: boolean;
+  mod_angio?: boolean;
+  mod_rm?: boolean;
+  mod_pangio?: boolean;
+}
+
 export interface StudySummary {
   id: number;
   patient_id: number;

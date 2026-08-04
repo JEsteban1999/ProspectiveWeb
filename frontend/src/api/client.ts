@@ -32,6 +32,7 @@ import type {
   PatientDetail,
   PatientSessionInfo,
   PatientSummary,
+  StudyCreate,
   StudySummary,
   PerforatorsResult,
   ReportRequest,
@@ -143,6 +144,8 @@ export const api = {
   createPatient: (p: PatientCreate) => post<PatientSummary>("/api/patients", p),
   createCase: (c: CaseCreate) => post<PatientSummary>("/api/patients/case", c),
   patientStudies: (id: number) => get<StudySummary[]>(`/api/patients/${id}/studies`),
+  createStudy: (patientId: number, s: StudyCreate) =>
+    post<StudySummary>(`/api/patients/${patientId}/studies`, s),
   getPatient: (id: number) => get<PatientDetail>(`/api/patients/${id}`),
   updatePatient: (id: number, p: PatientCreate) =>
     request<PatientSummary>(`/api/patients/${id}`, { method: "PUT", body: JSON.stringify(p), headers: { "Content-Type": "application/json" } }),

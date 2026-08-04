@@ -2,10 +2,10 @@
    nuevo_caso_dialog.py: 5 sections. Creates both records via POST /patients/case.
    DICOM is uploaded later in the pipeline (section 5 records which modalities). */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { api } from "../api/client";
-import type { CaseCreate, PatientSummary } from "../api/types";
+import type { CaseCreate, PatientSummary, StudyCreate } from "../api/types";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Select } from "../components/Select";
@@ -55,6 +55,16 @@ function textarea(value: string, onChange: (v: string) => void, ph: string, disa
         opacity: disabled ? 0.6 : 1,
       }}
     />
+  );
+}
+
+function checkRow(label: string, checked: boolean, onToggle: (v: boolean) => void, extra?: React.ReactNode): React.ReactNode {
+  return (
+    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--foreground)", cursor: "pointer" }}>
+      <input type="checkbox" checked={checked} onChange={(e) => onToggle(e.target.checked)} />
+      <span style={{ minWidth: 150 }}>{label}</span>
+      {extra}
+    </label>
   );
 }
 
@@ -124,14 +134,6 @@ export function NuevoCasoSheet({
       setBusy(false);
     }
   };
-
-  const checkRow = (label: string, checked: boolean, onToggle: (v: boolean) => void, extra?: React.ReactNode) => (
-    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--foreground)", cursor: "pointer" }}>
-      <input type="checkbox" checked={checked} onChange={(e) => onToggle(e.target.checked)} />
-      <span style={{ minWidth: 150 }}>{label}</span>
-      {extra}
-    </label>
-  );
 
   return (
     <Sheet open={open} onClose={onClose} title="Nuevo caso" width={560}>
@@ -213,6 +215,107 @@ export function NuevoCasoSheet({
           <Button type="submit" style={{ flex: 1 }} disabled={busy}>
             {busy ? "Creando caso…" : "Crear caso"}
           </Button>
+          <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+        </div>
+      </form>
+    </Sheet>
+  );
+}
+
+/* Nuevo estudio / caso for an EXISTING patient — study sections only (3-5 +
+   fecha del caso). Posts to POST /patients/{id}/studies. */
+export function NuevoEstudioSheet({
+  open, patientId, patientName, onClose, onCreated,
+}: { open: boolean; patientId: number | null; patientName?: string; onClose: () => void; onCreated: () => void }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [f, setF] = useState({
+    study_date: today, sintomas_positivos: "", dx_principal: "", dx_secundario: "",
+    tipo_aneurisma: "", region_anatomica: "", lateralidad: "", angio_marca: "", angio_tipo: "",
+  });
+  const [trat, setTrat] = useState<Record<string, boolean>>(Object.fromEntries(TRATAMIENTOS.map((t) => [t, false])));
+  const [mods, setMods] = useState<Mods>({ tac: false, angio: false, rm: false, pangio: false });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((s) => ({ ...s, [k]: e.target.value }));
+
+  // Reset when (re)opened for a patient.
+  useEffect(() => {
+    if (!open) return;
+    setF({ study_date: today, sintomas_positivos: "", dx_principal: "", dx_secundario: "", tipo_aneurisma: "", region_anatomica: "", lateralidad: "", angio_marca: "", angio_tipo: "" });
+    setTrat(Object.fromEntries(TRATAMIENTOS.map((t) => [t, false])));
+    setMods({ tac: false, angio: false, rm: false, pangio: false });
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, patientId]);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (patientId === null) return;
+    if (!f.dx_principal.trim()) return setError("El diagnóstico principal es obligatorio.");
+    const payload: StudyCreate = {
+      study_date: f.study_date, sintomas_positivos: f.sintomas_positivos.trim(),
+      dx_principal: f.dx_principal.trim(), dx_secundario: f.dx_secundario.trim(),
+      tipo_aneurisma: f.tipo_aneurisma, region_anatomica: f.region_anatomica, lateralidad: f.lateralidad,
+      tratamiento_propuesto: TRATAMIENTOS.filter((t) => trat[t]).join(", "),
+      angiographer: [f.angio_marca.trim(), f.angio_tipo].filter(Boolean).join(" | "),
+      mod_tac: mods.tac, mod_angio: mods.angio, mod_rm: mods.rm, mod_pangio: mods.pangio,
+    };
+    setBusy(true);
+    try {
+      await api.createStudy(patientId, payload);
+      onCreated();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al crear el estudio");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Sheet open={open} onClose={onClose} title="Nuevo caso / estudio" width={520}>
+      {patientName && <div style={{ ...SUBTLE, marginBottom: 12 }}>Paciente: <b style={{ color: "var(--foreground)" }}>{patientName}</b></div>}
+      <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <Input label="Fecha del caso" type="date" value={f.study_date} onChange={set("study_date")} />
+
+        <div style={SECTION}>Datos clínicos</div>
+        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Síntomas positivos</div>
+        {textarea(f.sintomas_positivos, (v) => setF((s) => ({ ...s, sintomas_positivos: v })), "Síntomas actuales, cefalea, déficit neurológico…", false, 3)}
+        <div style={{ height: 12 }} />
+        <Input label="Diagnóstico principal *" value={f.dx_principal} onChange={set("dx_principal")} placeholder="Diagnóstico principal" />
+        <div style={{ height: 12 }} />
+        <Input label="Diagnóstico secundario" value={f.dx_secundario} onChange={set("dx_secundario")} placeholder="Diagnóstico secundario (opcional)" />
+
+        <div style={SECTION}>Caracterización aneurismática</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Select label="Tipo de aneurisma" options={TIPOS.map((t) => t || "— seleccionar —")} value={f.tipo_aneurisma || "— seleccionar —"} onChange={(e) => setF((s) => ({ ...s, tipo_aneurisma: e.target.value === "— seleccionar —" ? "" : e.target.value }))} />
+          <Select label="Lateralidad" options={LATERALIDAD.map((t) => t || "—")} value={f.lateralidad || "—"} onChange={(e) => setF((s) => ({ ...s, lateralidad: e.target.value === "—" ? "" : e.target.value }))} />
+        </div>
+        <div style={{ height: 12 }} />
+        <Select label="Región anatómica" options={REGIONES.map((t) => t || "— seleccionar —")} value={f.region_anatomica || "— seleccionar —"} onChange={(e) => setF((s) => ({ ...s, region_anatomica: e.target.value === "— seleccionar —" ? "" : e.target.value }))} />
+        <div style={{ height: 12 }} />
+        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Tratamiento propuesto</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {TRATAMIENTOS.map((t) => checkRow(t, trat[t], (on) => setTrat((s) => ({ ...s, [t]: on }))))}
+        </div>
+
+        <div style={SECTION}>Imágenes diagnósticas</div>
+        <div style={SUBTLE}>Indique las modalidades del caso. El DICOM se carga en el paso 1 del pipeline al abrir el caso.</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {MODALIDADES.map(([k, label]) => checkRow(label, mods[k], (on) => setMods((s) => ({ ...s, [k]: on }))))}
+        </div>
+        <div style={{ height: 14 }} />
+        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Angiógrafo</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 160px", gap: 12 }}>
+          <Input label="Marca / modelo" value={f.angio_marca} onChange={set("angio_marca")} placeholder="Marca / modelo" />
+          <Select label="Tipo" options={ANGIO_TIPO.map((t) => t || "Tipo")} value={f.angio_tipo || "Tipo"} onChange={(e) => setF((s) => ({ ...s, angio_tipo: e.target.value === "Tipo" ? "" : e.target.value }))} />
+        </div>
+
+        <div style={{ height: 14 }} />
+        <ErrorNote>{error}</ErrorNote>
+        <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+          <Button type="submit" style={{ flex: 1 }} disabled={busy}>{busy ? "Creando…" : "Crear estudio"}</Button>
           <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
         </div>
       </form>

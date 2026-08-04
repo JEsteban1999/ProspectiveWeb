@@ -75,6 +75,24 @@ class StudySummary(BaseModel):
     mod_pangio: bool = False
 
 
+class StudyCreate(BaseModel):
+    """Clinical study/case data — add a Study to an existing patient (sections 3-5)."""
+
+    study_date: str = Field("", description="Fecha del caso YYYY-MM-DD")
+    sintomas_positivos: str = ""
+    dx_principal: str = Field("", description="Diagnóstico principal")
+    dx_secundario: str = ""
+    tipo_aneurisma: str = ""
+    tratamiento_propuesto: str = ""
+    region_anatomica: str = ""
+    lateralidad: str = ""
+    angiographer: str = ""
+    mod_tac: bool = False
+    mod_angio: bool = False
+    mod_rm: bool = False
+    mod_pangio: bool = False
+
+
 class CaseCreate(BaseModel):
     """Full 'Nuevo Caso' payload — creates a Patient + a Study in one call."""
 

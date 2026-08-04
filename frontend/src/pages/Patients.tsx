@@ -14,7 +14,7 @@ import { Sheet } from "../components/Sheet";
 import { Topbar } from "../components/Topbar";
 import { ErrorNote, Card } from "../components/PanelHead";
 import { useAuth } from "../store/auth";
-import { NuevoCasoSheet } from "./NuevoCaso";
+import { NuevoCasoSheet, NuevoEstudioSheet } from "./NuevoCaso";
 
 const STEP_LABELS = ["Carga", "Segmentación", "Detección", "Morfometría", "Decisión", "Dispositivos", "Informe"];
 
@@ -43,6 +43,11 @@ function PatientSheet({
   const [form, setForm] = useState({ ...BLANK });
   const [sessions, setSessions] = useState<PatientSessionInfo[]>([]);
   const [studies, setStudies] = useState<StudySummary[]>([]);
+  const [studyOpen, setStudyOpen] = useState(false);
+
+  const reloadStudies = () => {
+    if (patientId !== null) api.patientStudies(patientId).then(setStudies).catch(() => {});
+  };
 
   // Load the full record + studies + past sessions when opening in edit mode.
   useEffect(() => {
@@ -94,6 +99,7 @@ function PatientSheet({
   };
 
   return (
+    <>
     <Sheet open={open} onClose={onClose} title={editing ? "Editar paciente" : "Nuevo paciente"} width={480}>
       {loading ? (
         <div style={{ fontSize: 13, color: "var(--muted-foreground)", padding: "20px 0" }}>Cargando…</div>
@@ -122,11 +128,25 @@ function PatientSheet({
           <Input label="Farmacológicos" placeholder="—" value={form.antecedentes_farmacologicos} onChange={set("antecedentes_farmacologicos")} />
           <Input label="Notas" placeholder="Notas clínicas libres…" value={form.notes} onChange={set("notes")} />
 
-          {editing && studies.length > 0 && (
+          {editing && (
             <div style={{ marginTop: 4 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted-foreground)", marginBottom: 8 }}>
-                Casos / estudios ({studies.length})
+              <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted-foreground)", flex: 1 }}>
+                  Casos / estudios ({studies.length})
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setStudyOpen(true)}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "transparent", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "4px 10px", fontSize: 12, fontWeight: 600, color: "var(--brand-deep)", cursor: "pointer" }}
+                >
+                  <Icon name="STEP_PLAN" size={12} /> Nuevo estudio
+                </button>
               </div>
+              {studies.length === 0 && (
+                <div style={{ fontSize: 12, color: "var(--muted-foreground)", marginBottom: 4 }}>
+                  Aún no hay casos/estudios. Añade uno con "Nuevo estudio".
+                </div>
+              )}
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {studies.map((st) => {
                   const mods = [st.mod_tac && "TAC", st.mod_angio && "Angio", st.mod_rm && "RM", st.mod_pangio && "Pangio"].filter(Boolean).join(" · ");
@@ -191,6 +211,14 @@ function PatientSheet({
         </form>
       )}
     </Sheet>
+    <NuevoEstudioSheet
+      open={studyOpen}
+      patientId={patientId}
+      patientName={form.surname || form.given_name ? `${form.surname}${form.surname && form.given_name ? ", " : ""}${form.given_name}` : undefined}
+      onClose={() => setStudyOpen(false)}
+      onCreated={reloadStudies}
+    />
+    </>
   );
 }
 

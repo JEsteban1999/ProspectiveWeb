@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from models import CaseCreate, PatientCreate, PatientDetail, PatientSessionInfo, PatientSummary, StudySummary
+from models import CaseCreate, PatientCreate, PatientDetail, PatientSessionInfo, PatientSummary, StudyCreate, StudySummary
 
 # Study clinical-case fields copied from a CaseCreate payload.
 _STUDY_CASE_FIELDS = (
@@ -231,6 +231,43 @@ async def list_studies(
         .all()
     )
     return [_study_to_summary(s) for s in studies]
+
+
+# ── POST /patients/{patient_id}/studies (add a study to an existing patient) ─ #
+
+@router.post(
+    "/{patient_id}/studies",
+    response_model=StudySummary,
+    status_code=201,
+    summary="Add a clinical study/case to an existing patient",
+)
+async def create_study(
+    patient_id:   int,
+    req:          StudyCreate,
+    db:           Annotated[Session,     Depends(get_db)],
+    current_user: Annotated[User | None, Depends(get_current_user)],
+) -> StudySummary:
+    patient = db.get(Patient, patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found")
+    _require_owner_or_admin(patient, current_user)
+    if not req.dx_principal.strip():
+        raise HTTPException(status_code=422, detail="El diagnóstico principal es obligatorio.")
+
+    modality = ("CT" if req.mod_tac else "XA" if req.mod_angio
+                else "MR" if req.mod_rm else "XA" if req.mod_pangio else "")
+    study = Study(
+        patient_id=patient_id,
+        acquired_at=req.study_date,
+        modality=modality,
+        description=req.dx_principal,
+        **{f: getattr(req, f) for f in _STUDY_CASE_FIELDS},
+    )
+    db.add(study)
+    db.commit()
+    db.refresh(study)
+    logger.info("Study added — patient=%d study=%d", patient_id, study.id)
+    return _study_to_summary(study)
 
 
 # ── GET /patients/{patient_id} ─────────────────────────────────────────────── #
