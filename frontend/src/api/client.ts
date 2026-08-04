@@ -28,6 +28,8 @@ import type {
   SignupRequest,
   SignupResponse,
   PatientCreate,
+  PatientDetail,
+  PatientSessionInfo,
   PatientSummary,
   PerforatorsResult,
   ReportRequest,
@@ -84,6 +86,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
     throw new ApiError(res.status, detail);
   }
+  // 204 No Content (e.g. DELETE) has no body to parse.
+  if (res.status === 204 || res.headers.get("content-length") === "0") {
+    return undefined as T;
+  }
   return res.json() as Promise<T>;
 }
 
@@ -107,6 +113,13 @@ export const api = {
   /* patients */
   listPatients: () => get<PatientSummary[]>("/api/patients"),
   createPatient: (p: PatientCreate) => post<PatientSummary>("/api/patients", p),
+  getPatient: (id: number) => get<PatientDetail>(`/api/patients/${id}`),
+  updatePatient: (id: number, p: PatientCreate) =>
+    request<PatientSummary>(`/api/patients/${id}`, { method: "PUT", body: JSON.stringify(p), headers: { "Content-Type": "application/json" } }),
+  deletePatient: (id: number) =>
+    request<void>(`/api/patients/${id}`, { method: "DELETE" }),
+  patientSessions: (id: number) =>
+    get<PatientSessionInfo[]>(`/api/patients/${id}/sessions`),
 
   /* dicom pipeline */
   upload: (files: File[]) => {

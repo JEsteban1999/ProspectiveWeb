@@ -30,6 +30,12 @@ class PatientCreate(BaseModel):
     notes: str = Field("", description="Free-text clinical notes")
 
 
+class PatientDetail(PatientCreate):
+    """Full patient record (all editable fields) for the edit form."""
+
+    id: int
+
+
 class PatientSummary(BaseModel):
     """Compact patient record for list views."""
 
@@ -53,6 +59,18 @@ class StudySummary(BaseModel):
     description: str = Field("", description="Study description from DICOM header")
     acquired_at: str = Field("", description="Acquisition date YYYY-MM-DD")
     session_count: int = Field(0, description="Number of planning sessions for this study")
+
+
+class PatientSessionInfo(BaseModel):
+    """One past planning session done on a patient, for the patient detail view."""
+
+    session_id: str
+    label: str = ""
+    current_step: int = 0
+    max_diameter_mm: float | None = None
+    rupture_risk_label: str | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class PlanningSessionSummary(BaseModel):

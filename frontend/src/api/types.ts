@@ -143,8 +143,15 @@ export interface PatientCreate {
   institution?: string;
   ocupacion?: string;
   antecedentes_patologicos?: string;
+  antecedentes_toxicologicos?: string;
+  antecedentes_quirurgicos?: string;
+  antecedentes_alergicos?: string;
   antecedentes_farmacologicos?: string;
   notes?: string;
+}
+
+export interface PatientDetail extends PatientCreate {
+  id: number;
 }
 
 export interface PatientSummary {
@@ -156,6 +163,16 @@ export interface PatientSummary {
   institution: string;
   study_count: number;
   created_at: string;
+}
+
+export interface PatientSessionInfo {
+  session_id: string;
+  label: string;
+  current_step: number;
+  max_diameter_mm: number | null;
+  rupture_risk_label: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 /* ── dicom / upload ────────────────────────────────────────────────────── */

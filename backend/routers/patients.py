@@ -7,10 +7,24 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from models import PatientCreate, PatientSummary, StudySummary
+from models import PatientCreate, PatientDetail, PatientSessionInfo, PatientSummary, StudySummary
 from services.database import get_db
 from services.auth_service import get_current_user
-from services.db_models import Patient, Study, User
+from services.db_models import Patient, PlanningSession, Study, User
+
+# Patient demographic + history fields copied on create / update.
+_PATIENT_FIELDS = (
+    "surname", "given_name", "hospital_id", "dob", "sex", "institution",
+    "ocupacion", "antecedentes_patologicos", "antecedentes_toxicologicos",
+    "antecedentes_quirurgicos", "antecedentes_alergicos",
+    "antecedentes_farmacologicos", "notes",
+)
+
+
+def _require_owner_or_admin(patient: Patient, user: User | None) -> None:
+    """A non-admin authenticated user may only touch patients they created."""
+    if user is not None and user.role != "admin" and patient.created_by != user.id:
+        raise HTTPException(status_code=403, detail="No autorizado sobre este paciente.")
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/patients", tags=["patients"])
@@ -146,3 +160,122 @@ async def list_studies(
         .all()
     )
     return [_study_to_summary(s) for s in studies]
+
+
+# ── GET /patients/{patient_id} ─────────────────────────────────────────────── #
+
+@router.get(
+    "/{patient_id}",
+    response_model=PatientDetail,
+    summary="Get a patient's full record (for editing)",
+)
+async def get_patient(
+    patient_id: int,
+    db: Annotated[Session, Depends(get_db)],
+) -> PatientDetail:
+    patient = db.get(Patient, patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found")
+    return PatientDetail(id=patient.id, **{f: getattr(patient, f) for f in _PATIENT_FIELDS})
+
+
+# ── PUT /patients/{patient_id} ─────────────────────────────────────────────── #
+
+@router.put(
+    "/{patient_id}",
+    response_model=PatientSummary,
+    summary="Update a patient",
+    description="Updates a patient's demographics and clinical history.",
+)
+async def update_patient(
+    patient_id:   int,
+    req:          PatientCreate,
+    db:           Annotated[Session,     Depends(get_db)],
+    current_user: Annotated[User | None, Depends(get_current_user)],
+) -> PatientSummary:
+    patient = db.get(Patient, patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found")
+    _require_owner_or_admin(patient, current_user)
+
+    # Medical-record number stays unique (excluding this patient).
+    hc = (req.hospital_id or "").strip()
+    if hc:
+        clash = (
+            db.query(Patient)
+            .filter(Patient.hospital_id == hc, Patient.id != patient_id)
+            .first()
+        )
+        if clash is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Ya existe un paciente con la historia clínica '{hc}'.",
+            )
+
+    for field in _PATIENT_FIELDS:
+        setattr(patient, field, getattr(req, field))
+    db.commit()
+    db.refresh(patient)
+    logger.info("Patient updated — id=%d surname=%s", patient.id, patient.surname)
+    return _patient_to_summary(patient)
+
+
+# ── DELETE /patients/{patient_id} ──────────────────────────────────────────── #
+
+@router.delete(
+    "/{patient_id}",
+    status_code=204,
+    summary="Delete a patient",
+    description="Deletes a patient and its studies and planning sessions (cascade).",
+)
+async def delete_patient(
+    patient_id:   int,
+    db:           Annotated[Session,     Depends(get_db)],
+    current_user: Annotated[User | None, Depends(get_current_user)],
+) -> None:
+    patient = db.get(Patient, patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found")
+    _require_owner_or_admin(patient, current_user)
+
+    # Planning sessions carry a patient_id FK without cascade — remove them first
+    # (studies are removed by the ORM cascade on Patient.studies).
+    db.query(PlanningSession).filter(PlanningSession.patient_id == patient_id).delete()
+    db.delete(patient)
+    db.commit()
+    logger.info("Patient deleted — id=%d", patient_id)
+
+
+# ── GET /patients/{patient_id}/sessions ────────────────────────────────────── #
+
+@router.get(
+    "/{patient_id}/sessions",
+    response_model=list[PatientSessionInfo],
+    summary="List planning sessions done on a patient",
+)
+async def list_patient_sessions(
+    patient_id: int,
+    db: Annotated[Session, Depends(get_db)],
+) -> list[PatientSessionInfo]:
+    patient = db.get(Patient, patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found")
+
+    sessions = (
+        db.query(PlanningSession)
+        .filter(PlanningSession.patient_id == patient_id)
+        .order_by(PlanningSession.updated_at.desc())
+        .all()
+    )
+    return [
+        PatientSessionInfo(
+            session_id=s.session_id,
+            label=s.label,
+            current_step=s.current_step,
+            max_diameter_mm=s.max_diameter_mm,
+            rupture_risk_label=s.rupture_risk_label,
+            created_at=s.created_at,
+            updated_at=s.updated_at,
+        )
+        for s in sessions
+    ]
