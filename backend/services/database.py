@@ -97,6 +97,8 @@ def _migrate_user_columns() -> None:
         "hospital":        "VARCHAR(200) NOT NULL DEFAULT ''",
         "position":        "VARCHAR(100) NOT NULL DEFAULT ''",
         "orcid":           "VARCHAR(64) NOT NULL DEFAULT ''",
+        "photo_path":      "VARCHAR(300) NOT NULL DEFAULT ''",
+        "cv_path":         "VARCHAR(300) NOT NULL DEFAULT ''",
     }
     with engine.begin() as conn:
         existing = {row[1] for row in conn.execute(text("PRAGMA table_info(users)"))}

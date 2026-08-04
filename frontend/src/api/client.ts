@@ -93,6 +93,17 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** Authenticated fetch returning the raw Blob (for images / documents that an
+ *  <img src> or download link can't carry the JWT header for). */
+async function getBlob(path: string): Promise<Blob> {
+  const headers = new Headers();
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const res = await fetch(path, { headers });
+  if (!res.ok) throw new ApiError(res.status, `Error ${res.status}`);
+  return res.blob();
+}
+
 const get = <T>(path: string) => request<T>(path);
 const post = <T>(path: string, body?: unknown) =>
   request<T>(path, {
@@ -105,8 +116,23 @@ export const api = {
   login: (username: string, password: string) =>
     post<LoginResponse>("/api/auth/login", { username, password }),
   me: () => get<UserInfo>("/api/auth/me"),
-  signup: (req: SignupRequest) => post<SignupResponse>("/api/auth/signup", req),
+  signup: (req: SignupRequest, photo?: File | null, cv?: File | null) => {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(req)) fd.append(k, v ?? "");
+    if (photo) fd.append("photo", photo, photo.name);
+    if (cv) fd.append("cv", cv, cv.name);
+    return post<SignupResponse>("/api/auth/signup", fd);
+  },
   listPending: () => get<PendingUser[]>("/api/auth/pending"),
+  pendingPhotoObjectUrl: async (id: number) =>
+    URL.createObjectURL(await getBlob(`/api/auth/pending/${id}/photo`)),
+  downloadPendingCv: async (id: number, username: string) => {
+    const url = URL.createObjectURL(await getBlob(`/api/auth/pending/${id}/cv`));
+    const a = document.createElement("a");
+    a.href = url; a.download = `CV_${username}`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  },
   approvePending: (id: number) => post<{ status: string }>(`/api/auth/pending/${id}/approve`),
   rejectPending: (id: number) => post<{ status: string }>(`/api/auth/pending/${id}/reject`),
 

@@ -49,6 +49,8 @@ class User(Base):
     hospital        = Column(String(200), nullable=False, default="")
     position        = Column(String(100), nullable=False, default="")
     orcid           = Column(String(64),  nullable=False, default="")
+    photo_path      = Column(String(300), nullable=False, default="")  # stored profile photo
+    cv_path         = Column(String(300), nullable=False, default="")  # stored CV document
 
     patients = relationship("Patient", back_populates="creator", foreign_keys="Patient.created_by")
 

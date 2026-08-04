@@ -88,4 +88,6 @@ class PendingUser(BaseModel):
     hospital: str = ""
     position: str = ""
     orcid: str = ""
+    has_photo: bool = Field(False, description="A profile photo was uploaded")
+    has_cv: bool = Field(False, description="A CV document was uploaded")
     created_at: str = Field(..., description="ISO-8601 timestamp of the request")

@@ -47,6 +47,8 @@ export interface PendingUser {
   hospital: string;
   position: string;
   orcid: string;
+  has_photo: boolean;
+  has_cv: boolean;
   created_at: string;
 }
 

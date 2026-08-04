@@ -128,6 +128,8 @@ def create_pending_user(db: Session, **fields) -> tuple[User | None, str]:
         hospital        = str(fields.get("hospital", "")).strip(),
         position        = str(fields.get("position", "")).strip(),
         orcid           = str(fields.get("orcid", "")).strip(),
+        photo_path      = str(fields.get("photo_path", "")).strip(),
+        cv_path         = str(fields.get("cv_path", "")).strip(),
     )
     db.add(user)
     db.commit()

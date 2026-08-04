@@ -74,6 +74,8 @@ Archivos DICOM/
 Archivos DICOM.zip
 DICOM/
 **/DICOMDIR
+# Foto de perfil / CV subidos en el registro (datos personales).
+backend/user_files/
 # Comprimidos de estudios (pueden contener datos de paciente).
 *.zip
 

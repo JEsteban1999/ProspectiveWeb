@@ -10,6 +10,27 @@ import { Icon } from "../components/Icon";
 import { Topbar } from "../components/Topbar";
 import { ErrorNote, Card } from "../components/PanelHead";
 
+/** Avatar that loads the pending user's uploaded photo (auth'd blob) or falls
+ *  back to initials. */
+function PendingAvatar({ user }: { user: PendingUser }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!user.has_photo) return;
+    let created: string | null = null;
+    let alive = true;
+    api.pendingPhotoObjectUrl(user.id)
+      .then((u) => { if (alive) { created = u; setUrl(u); } else URL.revokeObjectURL(u); })
+      .catch(() => {});
+    return () => { alive = false; if (created) URL.revokeObjectURL(created); };
+  }, [user.id, user.has_photo]);
+  const initials = (user.full_name || user.username).slice(0, 2).toUpperCase();
+  return (
+    <span style={{ width: 44, height: 44, borderRadius: "50%", flexShrink: 0, overflow: "hidden", background: "var(--brand-subtle)", color: "var(--brand-subtle-foreground)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 15 }}>
+      {url ? <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : initials}
+    </span>
+  );
+}
+
 export function PendingRequests({ onBack }: { onBack: () => void }) {
   const [pending, setPending] = useState<PendingUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,11 +103,7 @@ export function PendingRequests({ onBack }: { onBack: () => void }) {
             {pending.map((u) => (
               <Card key={u.id} style={{ padding: "18px 20px" }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-                  <span
-                    style={{ width: 44, height: 44, borderRadius: "50%", flexShrink: 0, background: "var(--brand-subtle)", color: "var(--brand-subtle-foreground)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 15 }}
-                  >
-                    {(u.full_name || u.username).slice(0, 2).toUpperCase()}
-                  </span>
+                  <PendingAvatar user={u} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <span style={{ fontSize: 15, fontWeight: 700, color: "var(--foreground)" }}>{u.full_name || u.username}</span>
@@ -110,8 +127,19 @@ export function PendingRequests({ onBack }: { onBack: () => void }) {
                           </div>
                         ))}
                     </div>
-                    <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 8, fontFamily: "var(--font-mono)" }}>
-                      Solicitado: {new Date(u.created_at).toLocaleString()}
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
+                      {u.has_cv && (
+                        <button
+                          type="button"
+                          onClick={() => api.downloadPendingCv(u.id, u.username).catch(() => setError("No se pudo descargar el CV."))}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "5px 10px", fontSize: 12, fontWeight: 600, color: "var(--brand-deep)", cursor: "pointer" }}
+                        >
+                          <Icon name="ATTACH" size={13} /> Descargar CV
+                        </button>
+                      )}
+                      <span style={{ fontSize: 11, color: "var(--muted-foreground)", fontFamily: "var(--font-mono)" }}>
+                        Solicitado: {new Date(u.created_at).toLocaleString()}
+                      </span>
                     </div>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>

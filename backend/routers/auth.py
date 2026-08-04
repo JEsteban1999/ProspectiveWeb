@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from models import (
@@ -28,6 +30,25 @@ from services.db_models import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+# Profile photo + CV uploaded at signup. Stored OUTSIDE the public /data mount
+# (these are personal documents) and served only through admin-authenticated
+# endpoints below.
+_USER_FILES = Path("user_files")
+_MAX_UPLOAD_BYTES = 6 * 1024 * 1024   # 6 MB
+
+
+async def _save_user_upload(upload: UploadFile, subdir: str, user_id: int) -> str:
+    """Persist an uploaded profile file; return its stored path. Raises on size."""
+    data = await upload.read()
+    if len(data) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="El archivo supera el máximo de 6 MB.")
+    suffix = Path(upload.filename or "").suffix.lower()[:10]
+    dest_dir = _USER_FILES / subdir
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{user_id}{suffix}"
+    dest.write_bytes(data)
+    return str(dest)
 
 
 def _user_to_info(user: User) -> UserInfo:
@@ -115,12 +136,39 @@ async def me(
     ),
 )
 async def signup(
-    req: SignupRequest,
     db: Annotated[Session, Depends(get_db)],
+    username: str = Form(...),
+    password: str = Form(...),
+    full_name: str = Form(...),
+    national_id: str = Form(""),
+    professional_id: str = Form(""),
+    specialty: str = Form(""),
+    university: str = Form(""),
+    hospital: str = Form(""),
+    position: str = Form(""),
+    orcid: str = Form(""),
+    photo: UploadFile | None = File(None),
+    cv: UploadFile | None = File(None),
 ) -> SignupResponse:
-    user, err = create_pending_user(db, **req.model_dump())
+    user, err = create_pending_user(
+        db, username=username, password=password, full_name=full_name,
+        national_id=national_id, professional_id=professional_id, specialty=specialty,
+        university=university, hospital=hospital, position=position, orcid=orcid,
+    )
     if user is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err)
+
+    # Store the optional profile photo / CV named by the new user's id.
+    changed = False
+    if photo is not None and photo.filename:
+        user.photo_path = await _save_user_upload(photo, "photos", user.id)
+        changed = True
+    if cv is not None and cv.filename:
+        user.cv_path = await _save_user_upload(cv, "cv", user.id)
+        changed = True
+    if changed:
+        db.commit()
+
     return SignupResponse(
         status="pending",
         message=(
@@ -128,6 +176,39 @@ async def signup(
             "iniciar sesión en cuanto sea aprobada."
         ),
     )
+
+
+# ── Admin: serve a pending user's uploaded photo / CV ──────────────────────── #
+
+@router.get(
+    "/pending/{user_id}/photo",
+    summary="Download a pending user's profile photo (admin)",
+)
+async def get_pending_photo(
+    user_id: int,
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> FileResponse:
+    user = db.get(User, user_id)
+    if user is None or not user.photo_path or not Path(user.photo_path).exists():
+        raise HTTPException(status_code=404, detail="Sin foto de perfil.")
+    return FileResponse(user.photo_path)
+
+
+@router.get(
+    "/pending/{user_id}/cv",
+    summary="Download a pending user's CV (admin)",
+)
+async def get_pending_cv(
+    user_id: int,
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> FileResponse:
+    user = db.get(User, user_id)
+    if user is None or not user.cv_path or not Path(user.cv_path).exists():
+        raise HTTPException(status_code=404, detail="Sin CV adjunto.")
+    p = Path(user.cv_path)
+    return FileResponse(p, filename=f"CV_{user.username}{p.suffix}")
 
 
 # ── Admin: pending-account review ──────────────────────────────────────────── #
@@ -144,6 +225,8 @@ def _pending_to_api(u: User) -> PendingUser:
         hospital=u.hospital,
         position=u.position,
         orcid=u.orcid,
+        has_photo=bool(u.photo_path),
+        has_cv=bool(u.cv_path),
         created_at=u.created_at.isoformat() if u.created_at else "",
     )
 
