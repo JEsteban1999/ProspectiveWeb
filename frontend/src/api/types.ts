@@ -167,6 +167,58 @@ export interface PatientSummary {
   created_at: string;
 }
 
+/** Full "Nuevo Caso" payload — creates a Patient + a Study. */
+export interface CaseCreate {
+  surname: string;
+  given_name?: string;
+  hospital_id?: string;
+  dob?: string;
+  sex?: string;
+  institution?: string;
+  ocupacion?: string;
+  antecedentes_patologicos?: string;
+  antecedentes_toxicologicos?: string;
+  antecedentes_quirurgicos?: string;
+  antecedentes_alergicos?: string;
+  antecedentes_farmacologicos?: string;
+  notes?: string;
+  study_date?: string;
+  sintomas_positivos?: string;
+  dx_principal: string;
+  dx_secundario?: string;
+  tipo_aneurisma?: string;
+  tratamiento_propuesto?: string;
+  region_anatomica?: string;
+  lateralidad?: string;
+  angiographer?: string;
+  mod_tac?: boolean;
+  mod_angio?: boolean;
+  mod_rm?: boolean;
+  mod_pangio?: boolean;
+}
+
+export interface StudySummary {
+  id: number;
+  patient_id: number;
+  dicom_path: string;
+  modality: string;
+  description: string;
+  acquired_at: string;
+  session_count: number;
+  sintomas_positivos: string;
+  dx_principal: string;
+  dx_secundario: string;
+  tipo_aneurisma: string;
+  tratamiento_propuesto: string;
+  region_anatomica: string;
+  lateralidad: string;
+  angiographer: string;
+  mod_tac: boolean;
+  mod_angio: boolean;
+  mod_rm: boolean;
+  mod_pangio: boolean;
+}
+
 export interface PatientSessionInfo {
   session_id: string;
   label: string;

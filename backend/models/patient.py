@@ -50,15 +50,63 @@ class PatientSummary(BaseModel):
 
 
 class StudySummary(BaseModel):
-    """One DICOM study linked to a patient."""
+    """One study / clinical case linked to a patient (desktop 'Nuevo Caso')."""
 
     id: int
     patient_id: int
-    dicom_path: str
+    dicom_path: str = ""
     modality: str = Field("", description="DICOM Modality tag")
-    description: str = Field("", description="Study description from DICOM header")
-    acquired_at: str = Field("", description="Acquisition date YYYY-MM-DD")
+    description: str = Field("", description="Study description")
+    acquired_at: str = Field("", description="Fecha del caso YYYY-MM-DD")
     session_count: int = Field(0, description="Number of planning sessions for this study")
+
+    # Clinical case data (sections 3-5 of the Nuevo Caso form)
+    sintomas_positivos: str = ""
+    dx_principal: str = ""
+    dx_secundario: str = ""
+    tipo_aneurisma: str = ""
+    tratamiento_propuesto: str = ""
+    region_anatomica: str = ""
+    lateralidad: str = ""
+    angiographer: str = ""
+    mod_tac: bool = False
+    mod_angio: bool = False
+    mod_rm: bool = False
+    mod_pangio: bool = False
+
+
+class CaseCreate(BaseModel):
+    """Full 'Nuevo Caso' payload — creates a Patient + a Study in one call."""
+
+    # ── Section 1-2: patient demographics + history ───────────────────────── #
+    surname: str = Field("", description="Apellidos")
+    given_name: str = Field("", description="Nombres")
+    hospital_id: str = Field("", description="Cédula / NHC")
+    dob: str = Field("", description="Fecha de nacimiento YYYY-MM-DD")
+    sex: str = Field("", description="M / F / O")
+    institution: str = Field("", description="Hospital")
+    ocupacion: str = ""
+    antecedentes_patologicos: str = ""
+    antecedentes_toxicologicos: str = ""
+    antecedentes_quirurgicos: str = ""
+    antecedentes_alergicos: str = ""
+    antecedentes_farmacologicos: str = ""
+    notes: str = ""
+
+    # ── Study: fecha del caso + sections 3-5 ──────────────────────────────── #
+    study_date: str = Field("", description="Fecha del caso YYYY-MM-DD")
+    sintomas_positivos: str = ""
+    dx_principal: str = Field("", description="Diagnóstico principal")
+    dx_secundario: str = ""
+    tipo_aneurisma: str = ""
+    tratamiento_propuesto: str = Field("", description="Comma-joined treatments")
+    region_anatomica: str = ""
+    lateralidad: str = ""
+    angiographer: str = Field("", description="'marca | TIPO'")
+    mod_tac: bool = False
+    mod_angio: bool = False
+    mod_rm: bool = False
+    mod_pangio: bool = False
 
 
 class PatientSessionInfo(BaseModel):

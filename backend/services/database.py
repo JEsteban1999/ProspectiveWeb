@@ -75,6 +75,7 @@ def init_db() -> None:
     import services.db_models  # noqa: F401
     Base.metadata.create_all(bind=engine)
     _migrate_user_columns()
+    _migrate_study_columns()
     logger.info("Database initialised at %s", DATA_DIR / "prospective.db")
 
 
@@ -106,3 +107,29 @@ def _migrate_user_columns() -> None:
             if col not in existing:
                 conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {ddl}"))
                 logger.info("Migrated users table: added column %s", col)
+
+
+def _migrate_study_columns() -> None:
+    """Add Study clinical-case columns (desktop 'Nuevo Caso' sections 3-5)."""
+    from sqlalchemy import text
+
+    new_cols = {
+        "sintomas_positivos":    "TEXT NOT NULL DEFAULT ''",
+        "dx_principal":          "VARCHAR(500) NOT NULL DEFAULT ''",
+        "dx_secundario":         "VARCHAR(500) NOT NULL DEFAULT ''",
+        "tipo_aneurisma":        "VARCHAR(200) NOT NULL DEFAULT ''",
+        "tratamiento_propuesto": "TEXT NOT NULL DEFAULT ''",
+        "region_anatomica":      "VARCHAR(300) NOT NULL DEFAULT ''",
+        "lateralidad":           "VARCHAR(100) NOT NULL DEFAULT ''",
+        "angiographer":          "VARCHAR(300) NOT NULL DEFAULT ''",
+        "mod_tac":               "BOOLEAN NOT NULL DEFAULT 0",
+        "mod_angio":             "BOOLEAN NOT NULL DEFAULT 0",
+        "mod_rm":                "BOOLEAN NOT NULL DEFAULT 0",
+        "mod_pangio":            "BOOLEAN NOT NULL DEFAULT 0",
+    }
+    with engine.begin() as conn:
+        existing = {row[1] for row in conn.execute(text("PRAGMA table_info(studies)"))}
+        for col, ddl in new_cols.items():
+            if col not in existing:
+                conn.execute(text(f"ALTER TABLE studies ADD COLUMN {col} {ddl}"))
+                logger.info("Migrated studies table: added column %s", col)

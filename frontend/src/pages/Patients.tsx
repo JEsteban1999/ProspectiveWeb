@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { api } from "../api/client";
-import type { PatientSummary, PatientSessionInfo } from "../api/types";
+import type { PatientSummary, PatientSessionInfo, StudySummary } from "../api/types";
 import { Badge, riskVariant } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
@@ -14,6 +14,7 @@ import { Sheet } from "../components/Sheet";
 import { Topbar } from "../components/Topbar";
 import { ErrorNote, Card } from "../components/PanelHead";
 import { useAuth } from "../store/auth";
+import { NuevoCasoSheet } from "./NuevoCaso";
 
 const STEP_LABELS = ["Carga", "Segmentación", "Detección", "Morfometría", "Decisión", "Dispositivos", "Informe"];
 
@@ -41,19 +42,21 @@ function PatientSheet({
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({ ...BLANK });
   const [sessions, setSessions] = useState<PatientSessionInfo[]>([]);
+  const [studies, setStudies] = useState<StudySummary[]>([]);
 
-  // Load the full record + past sessions when opening in edit mode.
+  // Load the full record + studies + past sessions when opening in edit mode.
   useEffect(() => {
     if (!open) return;
     setError(null);
     if (patientId === null) {
       setForm({ ...BLANK });
       setSessions([]);
+      setStudies([]);
       return;
     }
     setLoading(true);
-    Promise.all([api.getPatient(patientId), api.patientSessions(patientId)])
-      .then(([p, s]) => {
+    Promise.all([api.getPatient(patientId), api.patientSessions(patientId), api.patientStudies(patientId)])
+      .then(([p, s, st]) => {
         setForm({
           surname: p.surname ?? "", given_name: p.given_name ?? "", hospital_id: p.hospital_id ?? "",
           sex: p.sex || "F", dob: p.dob ?? "", institution: p.institution ?? "", ocupacion: p.ocupacion ?? "",
@@ -65,6 +68,7 @@ function PatientSheet({
           notes: p.notes ?? "",
         });
         setSessions(s);
+        setStudies(st);
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Error cargando el paciente"))
       .finally(() => setLoading(false));
@@ -118,8 +122,35 @@ function PatientSheet({
           <Input label="Farmacológicos" placeholder="—" value={form.antecedentes_farmacologicos} onChange={set("antecedentes_farmacologicos")} />
           <Input label="Notas" placeholder="Notas clínicas libres…" value={form.notes} onChange={set("notes")} />
 
-          {editing && (
+          {editing && studies.length > 0 && (
             <div style={{ marginTop: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted-foreground)", marginBottom: 8 }}>
+                Casos / estudios ({studies.length})
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {studies.map((st) => {
+                  const mods = [st.mod_tac && "TAC", st.mod_angio && "Angio", st.mod_rm && "RM", st.mod_pangio && "Pangio"].filter(Boolean).join(" · ");
+                  return (
+                    <Card key={st.id} style={{ padding: "10px 12px" }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>{st.dx_principal || "Estudio"}</div>
+                      <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 4, lineHeight: 1.6 }}>
+                        {st.acquired_at && <>Fecha: {st.acquired_at}<br /></>}
+                        {st.tipo_aneurisma && <>Tipo: {st.tipo_aneurisma} · </>}
+                        {st.region_anatomica && <>{st.region_anatomica} </>}
+                        {st.lateralidad && <>({st.lateralidad}) </>}
+                        {st.tratamiento_propuesto && <><br />Tratamiento: {st.tratamiento_propuesto}</>}
+                        {mods && <><br />Imágenes: {mods}</>}
+                        {st.angiographer && <> · Angiógrafo: {st.angiographer}</>}
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {editing && (
+            <div style={{ marginTop: 14 }}>
               <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted-foreground)", marginBottom: 8 }}>
                 Sesiones de estudio ({sessions.length})
               </div>
@@ -214,6 +245,7 @@ export function Patients({
   const [error, setError] = useState<string | null>(null);
   const [sheetPatientId, setSheetPatientId] = useState<number | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [caseSheet, setCaseSheet] = useState(false);
   const [toDelete, setToDelete] = useState<PatientSummary | null>(null);
   const [q, setQ] = useState("");
   const { user } = useAuth();
@@ -303,8 +335,11 @@ export function Patients({
                 )}
               </Button>
             )}
-            <Button leadingIcon={<Icon name="STEP_PATIENT" />} onClick={openCreate}>
+            <Button variant="outline" leadingIcon={<Icon name="STEP_PATIENT" />} onClick={openCreate} style={{ marginRight: 10 }}>
               Nuevo paciente
+            </Button>
+            <Button leadingIcon={<Icon name="STEP_PLAN" />} onClick={() => setCaseSheet(true)}>
+              Nuevo caso
             </Button>
           </div>
 
@@ -400,6 +435,7 @@ export function Patients({
       </div>
 
       <PatientSheet open={sheetOpen} patientId={sheetPatientId} onClose={() => setSheetOpen(false)} onSaved={load} />
+      <NuevoCasoSheet open={caseSheet} onClose={() => setCaseSheet(false)} onCreated={() => load()} />
       {toDelete && <DeleteConfirm patient={toDelete} onCancel={() => setToDelete(null)} onConfirm={confirmDelete} />}
     </div>
   );

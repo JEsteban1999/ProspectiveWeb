@@ -109,10 +109,25 @@ class Study(Base):
     id          = Column(Integer, primary_key=True, index=True)
     patient_id  = Column(Integer, ForeignKey("patients.id"), nullable=False, index=True)
     dicom_path  = Column(Text, nullable=False, default="")
-    modality    = Column(String(16), nullable=False, default="CT")
+    modality    = Column(String(16), nullable=False, default="")
     description = Column(Text, nullable=False, default="")
-    acquired_at = Column(String(10), nullable=False, default="")  # YYYY-MM-DD
+    acquired_at = Column(String(10), nullable=False, default="")  # fecha del caso YYYY-MM-DD
     created_at  = Column(DateTime, nullable=False, default=func.now())
+
+    # ── Clinical case data (desktop "Nuevo Caso" — sections 3-5) ──────────── #
+    sintomas_positivos    = Column(Text,         nullable=False, default="")
+    dx_principal          = Column(String(500),  nullable=False, default="")
+    dx_secundario         = Column(String(500),  nullable=False, default="")
+    tipo_aneurisma        = Column(String(200),  nullable=False, default="")
+    tratamiento_propuesto = Column(Text,         nullable=False, default="")  # comma-joined
+    region_anatomica      = Column(String(300),  nullable=False, default="")
+    lateralidad           = Column(String(100),  nullable=False, default="")
+    angiographer          = Column(String(300),  nullable=False, default="")  # "marca | TIPO"
+    # Which diagnostic-image modalities the case has (DICOM uploaded in the pipeline)
+    mod_tac      = Column(Boolean, nullable=False, default=False)
+    mod_angio    = Column(Boolean, nullable=False, default=False)
+    mod_rm       = Column(Boolean, nullable=False, default=False)
+    mod_pangio   = Column(Boolean, nullable=False, default=False)
 
     patient  = relationship("Patient", back_populates="studies")
     sessions = relationship("PlanningSession", back_populates="study")

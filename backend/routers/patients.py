@@ -7,7 +7,14 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from models import PatientCreate, PatientDetail, PatientSessionInfo, PatientSummary, StudySummary
+from models import CaseCreate, PatientCreate, PatientDetail, PatientSessionInfo, PatientSummary, StudySummary
+
+# Study clinical-case fields copied from a CaseCreate payload.
+_STUDY_CASE_FIELDS = (
+    "sintomas_positivos", "dx_principal", "dx_secundario", "tipo_aneurisma",
+    "tratamiento_propuesto", "region_anatomica", "lateralidad", "angiographer",
+    "mod_tac", "mod_angio", "mod_rm", "mod_pangio",
+)
 from services.database import get_db
 from services.auth_service import get_current_user
 from services.db_models import Patient, PlanningSession, Study, User
@@ -54,6 +61,18 @@ def _study_to_summary(s: Study) -> StudySummary:
         description=s.description,
         acquired_at=s.acquired_at,
         session_count=s.session_count,
+        sintomas_positivos=s.sintomas_positivos,
+        dx_principal=s.dx_principal,
+        dx_secundario=s.dx_secundario,
+        tipo_aneurisma=s.tipo_aneurisma,
+        tratamiento_propuesto=s.tratamiento_propuesto,
+        region_anatomica=s.region_anatomica,
+        lateralidad=s.lateralidad,
+        angiographer=s.angiographer,
+        mod_tac=s.mod_tac,
+        mod_angio=s.mod_angio,
+        mod_rm=s.mod_rm,
+        mod_pangio=s.mod_pangio,
     )
 
 
@@ -135,6 +154,58 @@ async def create_patient(
         patient.id, patient.surname,
         current_user.username if current_user else "anonymous",
     )
+    return _patient_to_summary(patient)
+
+
+# ── POST /patients/case (Nuevo Caso: paciente + estudio) ───────────────────── #
+
+@router.post(
+    "/case",
+    response_model=PatientSummary,
+    status_code=201,
+    summary="Create a full clinical case (patient + study)",
+    description=(
+        "Desktop 'Nuevo Caso' equivalent: creates a Patient (demographics + "
+        "history) and a linked Study (clinical data, aneurysm characterisation, "
+        "imaging modalities) in one call. DICOM is uploaded later in the pipeline."
+    ),
+)
+async def create_case(
+    req:          CaseCreate,
+    db:           Annotated[Session,     Depends(get_db)],
+    current_user: Annotated[User | None, Depends(get_current_user)],
+) -> PatientSummary:
+    # Validation mirrors the desktop dialog.
+    if not (req.surname.strip() or req.given_name.strip()):
+        raise HTTPException(status_code=422, detail="El nombre del paciente es obligatorio.")
+    hc = (req.hospital_id or "").strip()
+    if not hc:
+        raise HTTPException(status_code=422, detail="La cédula / NHC es obligatoria.")
+    if not req.dx_principal.strip():
+        raise HTTPException(status_code=422, detail="El diagnóstico principal es obligatorio.")
+    if db.query(Patient).filter(Patient.hospital_id == hc).first() is not None:
+        raise HTTPException(status_code=409, detail=f"Ya existe un paciente con la historia clínica '{hc}'.")
+
+    patient = Patient(
+        **{f: getattr(req, f) for f in _PATIENT_FIELDS},
+        created_by=current_user.id if current_user else None,
+    )
+    db.add(patient)
+    db.flush()   # assign patient.id before linking the study
+
+    modality = ("CT" if req.mod_tac else "XA" if req.mod_angio
+                else "MR" if req.mod_rm else "XA" if req.mod_pangio else "")
+    study = Study(
+        patient_id=patient.id,
+        acquired_at=req.study_date,
+        modality=modality,
+        description=req.dx_principal,
+        **{f: getattr(req, f) for f in _STUDY_CASE_FIELDS},
+    )
+    db.add(study)
+    db.commit()
+    db.refresh(patient)
+    logger.info("Case created — patient=%d study=%d dx=%s", patient.id, study.id, req.dx_principal)
     return _patient_to_summary(patient)
 
 
