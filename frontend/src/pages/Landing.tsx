@@ -215,12 +215,11 @@ function What() {
 }
 
 /* ── Pipeline video ─────────────────────────────────────────────────────────
-   Se muestran dos versiones del MISMO explicativo, renderizadas con motores
-   distintos (Remotion y HyperFrames), para poder compararlas. */
+   Explicativo del flujo completo, compuesto con HyperFrames (HTML + GSAP). */
 
 /** Reproductor con autoplay garantizado: React solo pone el *atributo* muted,
     así que fijamos la propiedad y llamamos a play() en cuanto puede arrancar. */
-function PipelinePlayer({ src, label, note }: { src: string; label: string; note: string }) {
+function PipelinePlayer({ src, label = "", note = "" }: { src: string; label?: string; note?: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const v = videoRef.current;
@@ -234,12 +233,16 @@ function PipelinePlayer({ src, label, note }: { src: string; label: string; note
 
   return (
     <figure style={{ margin: 0, maxWidth: 980, marginLeft: "auto", marginRight: "auto" }}>
-      <figcaption style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--brand-slate)" }}>
-          {label}
-        </span>
-        <span style={{ fontSize: 13, color: "var(--muted-foreground)" }}>{note}</span>
-      </figcaption>
+      {(label || note) && (
+        <figcaption style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+          {label && (
+            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--brand-slate)" }}>
+              {label}
+            </span>
+          )}
+          {note && <span style={{ fontSize: 13, color: "var(--muted-foreground)" }}>{note}</span>}
+        </figcaption>
+      )}
       <div style={{ position: "relative", borderRadius: "var(--radius-xl)", overflow: "hidden", border: "1px solid var(--border)", boxShadow: "var(--shadow-lg)", background: "#000", aspectRatio: "16 / 9" }}>
         <video
           ref={videoRef}
@@ -270,18 +273,7 @@ function Pipeline() {
         </p>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
-        <PipelinePlayer
-          src="/media/pipeline.mp4"
-          label="Versión A · Remotion"
-          note="Composición en React, renderizada frame a frame."
-        />
-        <PipelinePlayer
-          src="/media/pipeline-hf.mp4"
-          label="Versión B · HyperFrames"
-          note="Mismo contenido, compuesto en HTML + GSAP sobre una línea de tiempo seekable."
-        />
-      </div>
+      <PipelinePlayer src="/media/pipeline-hf.mp4" />
 
       <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 32, flexWrap: "wrap" }}>
         {steps.map((s, i) => (
