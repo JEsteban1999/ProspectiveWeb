@@ -77,6 +77,10 @@ export function Viewer({ step }: { step: string }) {
   // mesh_url carries a generation token (?v=…) from the backend, so it changes
   // on every re-segmentation and vtk.js refetches instead of serving the cache.
   const meshUrl = segmentation?.mesh_url ?? null;
+  // Step 1 (DICOM upload) always shows the volume preview (axial MPR + strip),
+  // even after a mesh has been segmented — so navigating back to it from a later
+  // step shows the study's DICOM views, not the leftover 3D mesh.
+  const meshVisible = !!meshUrl && step !== "upload";
   const candidate = candidates[selectedCandidate];
   // Frame + highlight the selected candidate during detection and morphometry,
   // so it's obvious where the aneurysm is (and where to place the neck plane).
@@ -150,7 +154,7 @@ export function Viewer({ step }: { step: string }) {
         </Suspense>
       ) : viewMode === "oblique" && sessionId && meta ? (
         <ObliqueMprView sessionId={sessionId} wc={meta.wc} ww={meta.ww} />
-      ) : meshUrl ? (
+      ) : meshVisible ? (
         <Suspense fallback={<ViewerLoading label="Cargando visor 3D…" />}>
           <MeshView layers={layers} markers={markers} lines={lines} pickMode={pickMode !== null} onPick={onPick} focusUrl={focusUrl} />
         </Suspense>
@@ -181,12 +185,12 @@ export function Viewer({ step }: { step: string }) {
 
       {/* Scene label */}
       <div style={{ position: "absolute", top: 14, left: 16, fontSize: 11, fontFamily: "var(--font-mono)", color: "rgba(168,184,198,0.75)", pointerEvents: "none" }}>
-        {STEP_SCENE[step]} · {viewMode === "volume" ? "volumen" : viewMode === "oblique" ? "oblicuo" : meshUrl ? "vtk.js" : "MPR"}
+        {STEP_SCENE[step]} · {viewMode === "volume" ? "volumen" : viewMode === "oblique" ? "oblicuo" : meshVisible ? "vtk.js" : "MPR"}
         {step === "detect" && candidate && <span style={{ marginLeft: 10, color: "#A8B8C6" }}>· {candidate.id}</span>}
       </div>
 
       {/* Candidate focus chip — the highlighted candidate's id + diameter. */}
-      {viewMode === "default" && meshUrl && focusUrl && candidate && (
+      {viewMode === "default" && meshVisible && focusUrl && candidate && (
         <div style={{ position: "absolute", top: 38, left: 16, display: "flex", alignItems: "center", gap: 8, background: "rgba(20,24,28,0.72)", border: "1px solid rgba(82,140,180,0.5)", borderRadius: 999, padding: "5px 12px", pointerEvents: "none", boxShadow: "0 2px 10px rgba(0,0,0,0.35)" }}>
           <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#529CC0", boxShadow: "0 0 8px 1px rgba(82,156,192,0.9)" }} />
           <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "#DCE6EE" }}>
@@ -198,7 +202,7 @@ export function Viewer({ step }: { step: string }) {
       {/* View-mode switcher (only when a volume is available) */}
       {sessionId && meta && !pickMode && (
         <div style={{ position: "absolute", top: 12, right: 14, display: "flex", gap: 2, background: "rgba(20,24,28,0.72)", borderRadius: 999, padding: 3 }}>
-          {([["default", meshUrl ? "3D" : "MPR"], ["volume", "Volumen"], ["oblique", "Oblicuo"]] as const).map(([m, lbl]) => (
+          {([["default", meshVisible ? "3D" : "MPR"], ["volume", "Volumen"], ["oblique", "Oblicuo"]] as const).map(([m, lbl]) => (
             <button
               key={m}
               onClick={() => setViewMode(m)}
@@ -290,7 +294,7 @@ export function MprStrip() {
   };
 
   return (
-    <div className="mpr-strip" style={{ height: 132, flexShrink: 0, display: "flex", gap: 1, background: "var(--border)", borderTop: "1px solid var(--border)" }}>
+    <div className="mpr-strip" style={{ height: "clamp(160px, 26vh, 240px)", flexShrink: 0, display: "flex", gap: 1, background: "var(--border)", borderTop: "1px solid var(--border)" }}>
       {(["axial", "coronal", "sagital"] as const).map((plane) => {
         const c = cfg(plane);
         return (

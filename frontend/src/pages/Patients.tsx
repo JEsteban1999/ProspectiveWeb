@@ -28,7 +28,9 @@ function NewPatientSheet({
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
     surname: "", given_name: "", hospital_id: "", sex: "F", dob: "",
-    institution: "", ocupacion: "", antecedentes_patologicos: "", antecedentes_farmacologicos: "",
+    institution: "", ocupacion: "",
+    antecedentes_patologicos: "", antecedentes_toxicologicos: "", antecedentes_quirurgicos: "",
+    antecedentes_alergicos: "", antecedentes_farmacologicos: "", notes: "",
   });
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -68,7 +70,11 @@ function NewPatientSheet({
           Antecedentes
         </div>
         <Input label="Patológicos" placeholder="HTA, tabaquismo…" value={form.antecedentes_patologicos} onChange={set("antecedentes_patologicos")} />
+        <Input label="Toxicológicos" placeholder="Tabaco, alcohol…" value={form.antecedentes_toxicologicos} onChange={set("antecedentes_toxicologicos")} />
+        <Input label="Quirúrgicos" placeholder="—" value={form.antecedentes_quirurgicos} onChange={set("antecedentes_quirurgicos")} />
+        <Input label="Alérgicos" placeholder="—" value={form.antecedentes_alergicos} onChange={set("antecedentes_alergicos")} />
         <Input label="Farmacológicos" placeholder="—" value={form.antecedentes_farmacologicos} onChange={set("antecedentes_farmacologicos")} />
+        <Input label="Notas" placeholder="Notas clínicas libres…" value={form.notes} onChange={set("notes")} />
         <ErrorNote>{error}</ErrorNote>
         <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
           <Button type="submit" style={{ flex: 1 }} disabled={busy || !form.surname}>
