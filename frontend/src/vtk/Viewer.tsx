@@ -72,15 +72,18 @@ export function Viewer({ step }: { step: string }) {
     sessionId, segmentation, candidates, selectedCandidate, series, deviceMesh,
     centerlineMesh, pickMode, clSource, clTarget, setPickMode, setClSource, setClTarget,
     neckOrigin, neckDome, setNeckOrigin, setNeckDome,
-    measurements, measurePending, setMeasurements, setMeasurePending,
+    measurements, measurePending, setMeasurements, setMeasurePending, previewBand,
   } = usePlanning();
   // mesh_url carries a generation token (?v=…) from the backend, so it changes
   // on every re-segmentation and vtk.js refetches instead of serving the cache.
   const meshUrl = segmentation?.mesh_url ?? null;
+  // While a live threshold preview is active on the segmentation step, show the
+  // MPR slices (with the tinted band) instead of the 3D mesh.
+  const previewActive = !!previewBand && step === "segment";
   // Step 1 (DICOM upload) always shows the volume preview (axial MPR + strip),
   // even after a mesh has been segmented — so navigating back to it from a later
   // step shows the study's DICOM views, not the leftover 3D mesh.
-  const meshVisible = !!meshUrl && step !== "upload";
+  const meshVisible = !!meshUrl && step !== "upload" && !previewActive;
   const candidate = candidates[selectedCandidate];
   // Frame + highlight the selected candidate during detection and morphometry,
   // so it's obvious where the aneurysm is (and where to place the neck plane).
@@ -159,7 +162,7 @@ export function Viewer({ step }: { step: string }) {
           <MeshView layers={layers} markers={markers} lines={lines} pickMode={pickMode !== null} onPick={onPick} focusUrl={focusUrl} />
         </Suspense>
       ) : sessionId && meta ? (
-        <MprView sessionId={sessionId} meta={meta} plane="axial" showSlider />
+        <MprView sessionId={sessionId} meta={meta} plane="axial" showSlider band={previewActive ? previewBand : null} />
       ) : (
         <div
           style={{
@@ -188,6 +191,16 @@ export function Viewer({ step }: { step: string }) {
         {STEP_SCENE[step]} · {viewMode === "volume" ? "volumen" : viewMode === "oblique" ? "oblicuo" : meshVisible ? "vtk.js" : "MPR"}
         {step === "detect" && candidate && <span style={{ marginLeft: 10, color: "#A8B8C6" }}>· {candidate.id}</span>}
       </div>
+
+      {/* Live threshold-preview legend. */}
+      {previewActive && previewBand && (
+        <div style={{ position: "absolute", top: 38, left: 16, display: "flex", alignItems: "center", gap: 8, background: "rgba(20,24,28,0.72)", border: "1px solid rgba(54,214,168,0.5)", borderRadius: 999, padding: "5px 12px", pointerEvents: "none", boxShadow: "0 2px 10px rgba(0,0,0,0.35)" }}>
+          <span style={{ width: 9, height: 9, borderRadius: 2, background: "rgb(54,214,168)" }} />
+          <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "#DCE6EE" }}>
+            Vista previa · captura HU [{Math.round(previewBand[0])}, {Math.round(previewBand[1])}]
+          </span>
+        </div>
+      )}
 
       {/* Candidate focus chip — the highlighted candidate's id + diameter. */}
       {viewMode === "default" && meshVisible && focusUrl && candidate && (
@@ -252,7 +265,7 @@ export function Viewer({ step }: { step: string }) {
 /* MprStrip — franja inferior con los tres planos reales, crosshairs
    sincronizados y window/level por arrastre compartido. */
 export function MprStrip() {
-  const { sessionId, series } = usePlanning();
+  const { sessionId, series, previewBand } = usePlanning();
   const meta = useVolumeMeta(sessionId);
 
   // Shared crosshair voxel {x,y,z} and window/level across the three planes.
@@ -303,6 +316,7 @@ export function MprStrip() {
             <MprView
               sessionId={sessionId} meta={meta} plane={plane} compact
               wc={wl?.wc} ww={wl?.ww}
+              band={previewBand}
               index={c.index}
               onIndexChange={c.onIndexChange}
               crosshair={c.crosshair}

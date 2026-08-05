@@ -124,6 +124,8 @@ async def get_slice(
     index: int,
     wc: float | None = Query(None, description="Window center (defaults to volume WC)"),
     ww: float | None = Query(None, description="Window width (defaults to volume WW)"),
+    lower: float | None = Query(None, description="Threshold-preview lower HU (tints in-band voxels)"),
+    upper: float | None = Query(None, description="Threshold-preview upper HU"),
 ) -> Response:
     if not session_exists(session_id):
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
@@ -134,7 +136,7 @@ async def get_slice(
     try:
         png = await loop.run_in_executor(
             _executor,
-            partial(render_slice_png, session_id, plane, index, wc, ww),
+            partial(render_slice_png, session_id, plane, index, wc, ww, lower, upper),
         )
     except Exception as exc:
         logger.error("Slice render failed %s/%s/%s: %s", session_id, plane, index, exc, exc_info=True)

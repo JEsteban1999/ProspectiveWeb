@@ -230,14 +230,27 @@ def render_oblique_png(
     return buf.getvalue()
 
 
+# Highlight colour (RGB) for the live threshold preview overlay — cyan-green,
+# matching the app's "captured vasculature" accent.
+_THRESH_RGB = (54, 214, 168)
+_THRESH_ALPHA = 0.55
+
+
 def render_slice_png(
     session_id: str,
     plane: Plane,
     index: int,
     wc: float | None = None,
     ww: float | None = None,
+    lower: float | None = None,
+    upper: float | None = None,
 ) -> bytes:
-    """Return a PNG (grayscale) of the requested slice with windowing applied."""
+    """Return a PNG of the requested slice with windowing applied.
+
+    When *lower*/*upper* are given, the voxels whose HU falls in the
+    [lower, upper] band (what marching cubes would capture) are tinted, giving a
+    real-time preview of the segmentation threshold before running it.
+    """
     from PIL import Image
 
     if plane not in _PLANES:
@@ -255,5 +268,19 @@ def render_slice_png(
     img8 = _apply_window(slc, wc, ww)
 
     buf = io.BytesIO()
-    Image.fromarray(img8, mode="L").save(buf, format="PNG")
+    if lower is None and upper is None:
+        Image.fromarray(img8, mode="L").save(buf, format="PNG")
+        return buf.getvalue()
+
+    # Threshold-preview overlay: blend a colour where lower <= HU <= upper.
+    lo = -1e9 if lower is None else float(lower)
+    hi = 1e9 if upper is None else float(upper)
+    mask = (slc >= lo) & (slc <= hi)
+    rgb = np.stack([img8, img8, img8], axis=-1).astype(np.float32)
+    if mask.any():
+        a = _THRESH_ALPHA
+        for c in range(3):
+            ch = rgb[:, :, c]
+            ch[mask] = ch[mask] * (1.0 - a) + _THRESH_RGB[c] * a
+    Image.fromarray(rgb.astype(np.uint8), mode="RGB").save(buf, format="PNG")
     return buf.getvalue()

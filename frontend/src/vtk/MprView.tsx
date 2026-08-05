@@ -33,6 +33,7 @@ export function MprView({
   crosshair = null,
   onPlaneClick,
   onWindowLevel,
+  band = null,
 }: {
   sessionId: string;
   meta: VolumeMeta;
@@ -41,6 +42,8 @@ export function MprView({
   ww?: number;
   showSlider?: boolean;
   compact?: boolean;
+  /** Threshold-preview band [lower, upper] HU — tints captured voxels live. */
+  band?: [number, number] | null;
   /** Controlled slice index. If omitted, the view manages its own. */
   index?: number;
   onIndexChange?: (i: number) => void;
@@ -78,7 +81,7 @@ export function MprView({
   const wcv = wc ?? meta.wc;
   const wwv = ww ?? meta.ww;
   const safeLoadIndex = Math.max(0, Math.min(count - 1, loadIndex));
-  const src = api.sliceUrl(sessionId, plane, safeLoadIndex, wcv, wwv);
+  const src = api.sliceUrl(sessionId, plane, safeLoadIndex, wcv, wwv, band);
 
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault();

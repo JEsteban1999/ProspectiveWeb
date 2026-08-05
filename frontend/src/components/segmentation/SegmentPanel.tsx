@@ -31,7 +31,7 @@ function strategyLabel(strategy: string): string {
 
 export function SegmentPanel({ onNext }: { onNext: () => void }) {
   const planning = usePlanning();
-  const { sessionId, series, thresholds, thresholdsLoading, segmentation } = planning;
+  const { sessionId, series, thresholds, thresholdsLoading, segmentation, setPreviewBand } = planning;
 
   // While the auto-threshold is still loading (slow first volume read), don't
   // let the clinician segment with the default 200/800 sliders — wait for the
@@ -53,6 +53,17 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
     }
   }, [thresholds]);
 
+  // Live threshold preview on the MPR views (debounced) — tints the voxels the
+  // current band would capture, so the clinician tunes it before segmenting.
+  useEffect(() => {
+    if (waitingThresholds) return;
+    const t = setTimeout(() => setPreviewBand([lower, upper]), 160);
+    return () => clearTimeout(t);
+  }, [lower, upper, waitingThresholds, setPreviewBand]);
+
+  // Clear the preview when leaving the segmentation step.
+  useEffect(() => () => setPreviewBand(null), [setPreviewBand]);
+
   const run = async () => {
     if (!sessionId || !series) return;
     setBusy(true);
@@ -67,6 +78,7 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
         cleanup,
       });
       planning.setSegmentation(res);
+      setPreviewBand(null);   // mesh now shows; drop the threshold overlay
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error en la segmentación");
     } finally {

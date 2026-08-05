@@ -188,10 +188,11 @@ export const api = {
     if (ww !== undefined) q.set("ww", String(Math.round(ww)));
     return `/api/slice-oblique/${sessionId}?${q.toString()}`;
   },
-  sliceUrl: (sessionId: string, plane: string, index: number, wc?: number, ww?: number) => {
+  sliceUrl: (sessionId: string, plane: string, index: number, wc?: number, ww?: number, band?: [number, number] | null) => {
     const q = new URLSearchParams();
     if (wc !== undefined) q.set("wc", String(Math.round(wc)));
     if (ww !== undefined) q.set("ww", String(Math.round(ww)));
+    if (band) { q.set("lower", String(Math.round(band[0]))); q.set("upper", String(Math.round(band[1]))); }
     const qs = q.toString();
     return `/api/slice/${sessionId}/${plane}/${index}${qs ? `?${qs}` : ""}`;
   },

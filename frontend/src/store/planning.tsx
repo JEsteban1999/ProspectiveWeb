@@ -22,6 +22,9 @@ interface PlanningState {
    *  load is slow on the first call), so the segmentation step can wait for the
    *  real band instead of showing the default slider values. */
   thresholdsLoading: boolean;
+  /** Live threshold-preview band [lower, upper] HU set from the segmentation
+   *  sliders; the MPR views tint the captured voxels in near-real-time. */
+  previewBand: [number, number] | null;
   segmentation: SegmentResult | null;
   candidates: AneurysmCandidate[];
   selectedCandidate: number;
@@ -48,6 +51,7 @@ interface PlanningState {
   setSeries: (s: SeriesInfo | null) => void;
   setThresholds: (t: AutoThresholdResult | null) => void;
   setThresholdsLoading: (v: boolean) => void;
+  setPreviewBand: (b: [number, number] | null) => void;
   setSegmentation: (s: SegmentResult | null) => void;
   setCandidates: (c: AneurysmCandidate[]) => void;
   setSelectedCandidate: (i: number) => void;
@@ -87,6 +91,7 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   const [series, setSeries] = useState<SeriesInfo | null>(null);
   const [thresholds, setThresholds] = useState<AutoThresholdResult | null>(null);
   const [thresholdsLoading, setThresholdsLoading] = useState(false);
+  const [previewBand, setPreviewBand] = useState<[number, number] | null>(null);
   const [segmentation, setSegmentation] = useState<SegmentResult | null>(null);
   const [candidates, setCandidates] = useState<AneurysmCandidate[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState(0);
@@ -107,6 +112,7 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   const resetDownstream = () => {
     setThresholds(null);
     setThresholdsLoading(false);
+    setPreviewBand(null);
     setSegmentation(null);
     setCandidates([]);
     setSelectedCandidate(0);
@@ -132,11 +138,11 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   return (
     <PlanningContext.Provider
       value={{
-        patient, sessionId, series, thresholds, thresholdsLoading, segmentation, candidates,
+        patient, sessionId, series, thresholds, thresholdsLoading, previewBand, segmentation, candidates,
         selectedCandidate, morphometry, treatment, deviceMesh,
         centerlineMesh, pickMode, clSource, clTarget, neckOrigin, neckDome,
         measurements, measurePending,
-        setPatient, setSession, setSeries, setThresholds, setThresholdsLoading, setSegmentation,
+        setPatient, setSession, setSeries, setThresholds, setThresholdsLoading, setPreviewBand, setSegmentation,
         setCandidates, setSelectedCandidate, setMorphometry, setTreatment,
         setDeviceMesh, setCenterlineMesh, setPickMode, setClSource, setClTarget,
         setNeckOrigin, setNeckDome,
