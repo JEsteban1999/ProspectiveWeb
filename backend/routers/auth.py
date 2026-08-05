@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from models import (
     LoginRequest, LoginResponse, UserInfo,
     SignupRequest, SignupResponse, PendingUser,
+    UserAdminInfo, UserUpdate,
 )
 from services.database import get_db
 from services.auth_service import (
@@ -274,3 +275,101 @@ async def reject(
     if not ok:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=err)
     return {"status": "rejected"}
+
+
+# ── Admin: full user management ────────────────────────────────────────────── #
+
+def _user_to_admin(u: User) -> UserAdminInfo:
+    return UserAdminInfo(
+        id=u.id,
+        username=u.username,
+        full_name=u.full_name,
+        role=u.role if u.role in ("admin", "medico", "residente", "viewer") else "viewer",
+        status=u.status,
+        is_active=u.is_active,
+        specialty=u.specialty,
+        hospital=u.hospital,
+        has_photo=bool(u.photo_path),
+        has_cv=bool(u.cv_path),
+        created_at=u.created_at.isoformat() if u.created_at else "",
+    )
+
+
+@router.get(
+    "/users",
+    response_model=list[UserAdminInfo],
+    summary="List all users (admin)",
+)
+async def list_users(
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[UserAdminInfo]:
+    users = db.query(User).order_by(User.created_at.desc()).all()
+    return [_user_to_admin(u) for u in users]
+
+
+@router.put(
+    "/users/{user_id}",
+    response_model=UserAdminInfo,
+    summary="Update a user (admin)",
+)
+async def update_user(
+    user_id: int,
+    req: UserUpdate,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> UserAdminInfo:
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
+
+    # Lockout guards: an admin can't strip their own admin role or deactivate
+    # themselves (would lock them out of the panel they're using).
+    if user.id == admin.id:
+        if req.role is not None and req.role != "admin":
+            raise HTTPException(status_code=400, detail="No puedes quitarte tu propio rol de administrador.")
+        if req.is_active is False:
+            raise HTTPException(status_code=400, detail="No puedes desactivar tu propia cuenta.")
+
+    if req.full_name is not None:
+        user.full_name = req.full_name.strip()
+    if req.role is not None:
+        user.role = req.role
+    if req.is_active is not None:
+        user.is_active = req.is_active
+        user.status = User.STATUS_ACTIVE if req.is_active else User.STATUS_REJECTED
+    db.commit()
+    db.refresh(user)
+    logger.info("User updated by admin — id=%d role=%s active=%s", user.id, user.role, user.is_active)
+    return _user_to_admin(user)
+
+
+@router.delete(
+    "/users/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a user (admin)",
+)
+async def delete_user(
+    user_id: int,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
+    if user.id == admin.id:
+        raise HTTPException(status_code=400, detail="No puedes eliminar tu propia cuenta.")
+    # Don't delete the last active admin.
+    if user.role == "admin":
+        other_admins = db.query(User).filter(
+            User.role == "admin", User.is_active == True, User.id != user_id  # noqa: E712
+        ).count()
+        if other_admins == 0:
+            raise HTTPException(status_code=400, detail="No puedes eliminar al último administrador.")
+    # Patients created by this user are kept (created_by → dangling is tolerated;
+    # the FK is nullable). Detach them to be clean.
+    from services.db_models import Patient
+    db.query(Patient).filter(Patient.created_by == user_id).update({"created_by": None})
+    db.delete(user)
+    db.commit()
+    logger.info("User deleted by admin — id=%d username=%s", user_id, user.username)

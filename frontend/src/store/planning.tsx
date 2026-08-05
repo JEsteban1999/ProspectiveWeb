@@ -45,6 +45,10 @@ interface PlanningState {
   measurements: Measurement[];
   /** First endpoint of an in-progress measurement (waiting for the second click). */
   measurePending: Vec3 | null;
+  /** Seed points placed on the volume for grow-from-seeds segmentation. */
+  growSeeds: Vec3[];
+  /** Picked centre of the mesh-crop ROI (box/sphere). */
+  cropCenter: Vec3 | null;
 
   setPatient: (p: PatientSummary | null) => void;
   setSession: (id: string | null) => void;
@@ -66,13 +70,16 @@ interface PlanningState {
   setNeckDome: (p: Vec3 | null) => void;
   setMeasurements: (m: Measurement[]) => void;
   setMeasurePending: (p: Vec3 | null) => void;
+  setGrowSeeds: (s: Vec3[]) => void;
+  setCropCenter: (p: Vec3 | null) => void;
   reset: () => void;
   resetDownstream: () => void;
 }
 
 export type Vec3 = [number, number, number];
 export type PickMode =
-  | "cl_source" | "cl_target" | "measure" | "neck_origin" | "neck_dome" | null;
+  | "cl_source" | "cl_target" | "measure" | "neck_origin" | "neck_dome"
+  | "grow_seed" | "crop_center" | null;
 
 export interface Measurement {
   id: number;
@@ -106,6 +113,8 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   const [neckDome, setNeckDome] = useState<Vec3 | null>(null);
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
   const [measurePending, setMeasurePending] = useState<Vec3 | null>(null);
+  const [growSeeds, setGrowSeeds] = useState<Vec3[]>([]);
+  const [cropCenter, setCropCenter] = useState<Vec3 | null>(null);
 
   // Clear everything downstream of the DICOM upload — used when a new series is
   // uploaded in the same workspace so stale meshes/metrics don't linger.
@@ -127,6 +136,8 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
     setNeckDome(null);
     setMeasurements([]);
     setMeasurePending(null);
+    setGrowSeeds([]);
+    setCropCenter(null);
   };
 
   const reset = () => {
@@ -141,12 +152,12 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
         patient, sessionId, series, thresholds, thresholdsLoading, previewBand, segmentation, candidates,
         selectedCandidate, morphometry, treatment, deviceMesh,
         centerlineMesh, pickMode, clSource, clTarget, neckOrigin, neckDome,
-        measurements, measurePending,
+        measurements, measurePending, growSeeds, cropCenter,
         setPatient, setSession, setSeries, setThresholds, setThresholdsLoading, setPreviewBand, setSegmentation,
         setCandidates, setSelectedCandidate, setMorphometry, setTreatment,
         setDeviceMesh, setCenterlineMesh, setPickMode, setClSource, setClTarget,
         setNeckOrigin, setNeckDome,
-        setMeasurements, setMeasurePending,
+        setMeasurements, setMeasurePending, setGrowSeeds, setCropCenter,
         reset, resetDownstream,
       }}
     >

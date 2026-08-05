@@ -14,6 +14,7 @@ import { Sheet } from "../components/Sheet";
 import { Topbar } from "../components/Topbar";
 import { ErrorNote, Card } from "../components/PanelHead";
 import { useAuth } from "../store/auth";
+import { useNav } from "../store/nav";
 import { NuevoCasoSheet, NuevoEstudioSheet } from "./NuevoCaso";
 
 const STEP_LABELS = ["Carga", "Segmentación", "Detección", "Morfometría", "Decisión", "Dispositivos", "Informe"];
@@ -44,6 +45,9 @@ function PatientSheet({
   const [sessions, setSessions] = useState<PatientSessionInfo[]>([]);
   const [studies, setStudies] = useState<StudySummary[]>([]);
   const [studyOpen, setStudyOpen] = useState(false);
+  const [editStudy, setEditStudy] = useState<StudySummary | null>(null);
+  const [delStudy, setDelStudy] = useState<StudySummary | null>(null);
+  const [delBusy, setDelBusy] = useState(false);
 
   const reloadStudies = () => {
     if (patientId !== null) api.patientStudies(patientId).then(setStudies).catch(() => {});
@@ -136,7 +140,7 @@ function PatientSheet({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setStudyOpen(true)}
+                  onClick={() => { setEditStudy(null); setStudyOpen(true); }}
                   style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "transparent", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "4px 10px", fontSize: 12, fontWeight: 600, color: "var(--brand-deep)", cursor: "pointer" }}
                 >
                   <Icon name="STEP_PLAN" size={12} /> Nuevo estudio
@@ -152,7 +156,25 @@ function PatientSheet({
                   const mods = [st.mod_tac && "TAC", st.mod_angio && "Angio", st.mod_rm && "RM", st.mod_pangio && "Pangio"].filter(Boolean).join(" · ");
                   return (
                     <Card key={st.id} style={{ padding: "10px 12px" }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>{st.dx_principal || "Estudio"}</div>
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", flex: 1 }}>{st.dx_principal || "Estudio"}</div>
+                        <span style={{ display: "inline-flex", gap: 4, flexShrink: 0 }}>
+                          <button
+                            type="button" title="Editar estudio"
+                            onClick={() => { setEditStudy(st); setStudyOpen(true); }}
+                            style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--card)", cursor: "pointer" }}
+                          >
+                            <Icon name="EDIT" size={13} color="var(--muted-foreground)" />
+                          </button>
+                          <button
+                            type="button" title="Eliminar estudio"
+                            onClick={() => setDelStudy(st)}
+                            style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--card)", cursor: "pointer" }}
+                          >
+                            <span style={{ fontSize: 13, color: "var(--destructive, #ef4444)", lineHeight: 1 }}>✕</span>
+                          </button>
+                        </span>
+                      </div>
                       <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 4, lineHeight: 1.6 }}>
                         {st.acquired_at && <>Fecha: {st.acquired_at}<br /></>}
                         {st.tipo_aneurisma && <>Tipo: {st.tipo_aneurisma} · </>}
@@ -215,9 +237,43 @@ function PatientSheet({
       open={studyOpen}
       patientId={patientId}
       patientName={form.surname || form.given_name ? `${form.surname}${form.surname && form.given_name ? ", " : ""}${form.given_name}` : undefined}
-      onClose={() => setStudyOpen(false)}
+      study={editStudy}
+      onClose={() => { setStudyOpen(false); setEditStudy(null); }}
       onCreated={reloadStudies}
     />
+    {delStudy && (
+      <div
+        onClick={() => setDelStudy(null)}
+        style={{ position: "fixed", inset: 0, zIndex: 320, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{ width: 380, maxWidth: "90%", background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow-lg)", padding: "22px 24px" }}
+        >
+          <div style={{ fontSize: 16, fontWeight: 800, color: "var(--foreground)" }}>Eliminar estudio</div>
+          <div style={{ fontSize: 13, color: "var(--muted-foreground)", marginTop: 8, lineHeight: 1.5 }}>
+            ¿Seguro que quieres eliminar el estudio <b style={{ color: "var(--foreground)" }}>{delStudy.dx_principal || "Estudio"}</b>?
+            {delStudy.session_count > 0 && <> Sus {delStudy.session_count} sesión(es) de planificación se conservarán pero quedarán desvinculadas.</>} Esta acción no se puede deshacer.
+          </div>
+          <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+            <Button variant="outline" onClick={() => setDelStudy(null)} disabled={delBusy}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              disabled={delBusy}
+              onClick={async () => {
+                if (patientId === null) return;
+                setDelBusy(true);
+                try { await api.deleteStudy(patientId, delStudy.id); setDelStudy(null); reloadStudies(); }
+                catch (e) { setError(e instanceof Error ? e.message : "Error al eliminar el estudio"); setDelStudy(null); }
+                finally { setDelBusy(false); }
+              }}
+            >
+              {delBusy ? "Eliminando…" : "Eliminar"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
     </>
   );
 }
@@ -277,6 +333,7 @@ export function Patients({
   const [toDelete, setToDelete] = useState<PatientSummary | null>(null);
   const [q, setQ] = useState("");
   const { user } = useAuth();
+  const nav = useNav();
   const isAdmin = user?.role === "admin";
   const [pendingCount, setPendingCount] = useState(0);
 
@@ -354,14 +411,19 @@ export function Patients({
             </div>
             <div style={{ flex: 1 }} />
             {isAdmin && (
-              <Button variant="outline" leadingIcon={<Icon name="USERS" />} onClick={onOpenPending} style={{ marginRight: 10 }}>
-                Solicitudes
-                {pendingCount > 0 && (
-                  <span style={{ marginLeft: 2 }}>
-                    <Badge variant="destructive">{pendingCount}</Badge>
-                  </span>
-                )}
-              </Button>
+              <>
+                <Button variant="outline" leadingIcon={<Icon name="SETTINGS" />} onClick={() => nav.go("users")} style={{ marginRight: 10 }}>
+                  Usuarios
+                </Button>
+                <Button variant="outline" leadingIcon={<Icon name="USERS" />} onClick={onOpenPending} style={{ marginRight: 10 }}>
+                  Solicitudes
+                  {pendingCount > 0 && (
+                    <span style={{ marginLeft: 2 }}>
+                      <Badge variant="destructive">{pendingCount}</Badge>
+                    </span>
+                  )}
+                </Button>
+              </>
             )}
             <Button variant="outline" leadingIcon={<Icon name="STEP_PATIENT" />} onClick={openCreate} style={{ marginRight: 10 }}>
               Nuevo paciente

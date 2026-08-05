@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { api } from "../api/client";
-import type { CaseCreate, PatientSummary, StudyCreate } from "../api/types";
+import type { CaseCreate, PatientSummary, StudyCreate, StudySummary } from "../api/types";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Select } from "../components/Select";
@@ -225,8 +225,9 @@ export function NuevoCasoSheet({
 /* Nuevo estudio / caso for an EXISTING patient — study sections only (3-5 +
    fecha del caso). Posts to POST /patients/{id}/studies. */
 export function NuevoEstudioSheet({
-  open, patientId, patientName, onClose, onCreated,
-}: { open: boolean; patientId: number | null; patientName?: string; onClose: () => void; onCreated: () => void }) {
+  open, patientId, patientName, study, onClose, onCreated,
+}: { open: boolean; patientId: number | null; patientName?: string; study?: StudySummary | null; onClose: () => void; onCreated: () => void }) {
+  const editing = !!study;
   const today = new Date().toISOString().slice(0, 10);
   const [f, setF] = useState({
     study_date: today, sintomas_positivos: "", dx_principal: "", dx_secundario: "",
@@ -238,15 +239,33 @@ export function NuevoEstudioSheet({
   const [error, setError] = useState<string | null>(null);
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((s) => ({ ...s, [k]: e.target.value }));
 
-  // Reset when (re)opened for a patient.
+  // Reset (or prefill from `study` when editing) each time it opens.
   useEffect(() => {
     if (!open) return;
-    setF({ study_date: today, sintomas_positivos: "", dx_principal: "", dx_secundario: "", tipo_aneurisma: "", region_anatomica: "", lateralidad: "", angio_marca: "", angio_tipo: "" });
-    setTrat(Object.fromEntries(TRATAMIENTOS.map((t) => [t, false])));
-    setMods({ tac: false, angio: false, rm: false, pangio: false });
+    if (study) {
+      const [marca, tipo] = (study.angiographer || "").split(" | ");
+      setF({
+        study_date: study.acquired_at || today,
+        sintomas_positivos: study.sintomas_positivos || "",
+        dx_principal: study.dx_principal || "",
+        dx_secundario: study.dx_secundario || "",
+        tipo_aneurisma: study.tipo_aneurisma || "",
+        region_anatomica: study.region_anatomica || "",
+        lateralidad: study.lateralidad || "",
+        angio_marca: marca || "",
+        angio_tipo: (tipo || "").trim(),
+      });
+      const chosen = (study.tratamiento_propuesto || "").split(",").map((s) => s.trim());
+      setTrat(Object.fromEntries(TRATAMIENTOS.map((t) => [t, chosen.includes(t)])));
+      setMods({ tac: study.mod_tac, angio: study.mod_angio, rm: study.mod_rm, pangio: study.mod_pangio });
+    } else {
+      setF({ study_date: today, sintomas_positivos: "", dx_principal: "", dx_secundario: "", tipo_aneurisma: "", region_anatomica: "", lateralidad: "", angio_marca: "", angio_tipo: "" });
+      setTrat(Object.fromEntries(TRATAMIENTOS.map((t) => [t, false])));
+      setMods({ tac: false, angio: false, rm: false, pangio: false });
+    }
     setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, patientId]);
+  }, [open, patientId, study]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -263,18 +282,19 @@ export function NuevoEstudioSheet({
     };
     setBusy(true);
     try {
-      await api.createStudy(patientId, payload);
+      if (study) await api.updateStudy(patientId, study.id, payload);
+      else await api.createStudy(patientId, payload);
       onCreated();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al crear el estudio");
+      setError(err instanceof Error ? err.message : "Error al guardar el estudio");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Sheet open={open} onClose={onClose} title="Nuevo caso / estudio" width={520}>
+    <Sheet open={open} onClose={onClose} title={editing ? "Editar caso / estudio" : "Nuevo caso / estudio"} width={520}>
       {patientName && <div style={{ ...SUBTLE, marginBottom: 12 }}>Paciente: <b style={{ color: "var(--foreground)" }}>{patientName}</b></div>}
       <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         <Input label="Fecha del caso" type="date" value={f.study_date} onChange={set("study_date")} />
@@ -315,7 +335,7 @@ export function NuevoEstudioSheet({
         <div style={{ height: 14 }} />
         <ErrorNote>{error}</ErrorNote>
         <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-          <Button type="submit" style={{ flex: 1 }} disabled={busy}>{busy ? "Creando…" : "Crear estudio"}</Button>
+          <Button type="submit" style={{ flex: 1 }} disabled={busy}>{busy ? "Guardando…" : editing ? "Guardar cambios" : "Crear estudio"}</Button>
           <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
         </div>
       </form>

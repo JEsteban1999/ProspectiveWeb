@@ -7,9 +7,11 @@ from .auth import (
     PendingUser,
     SignupRequest,
     SignupResponse,
+    UserAdminInfo,
     UserCreateRequest,
     UserInfo,
     UserRole,
+    UserUpdate,
 )
 from .clips import (
     ClipLibraryItem,
@@ -57,7 +59,7 @@ from .treatment import (
 __all__ = [
     # auth
     "ChangePasswordRequest", "LoginRequest", "LoginResponse",
-    "UserCreateRequest", "UserInfo", "UserRole",
+    "UserCreateRequest", "UserInfo", "UserRole", "UserAdminInfo", "UserUpdate",
     "SignupRequest", "SignupResponse", "PendingUser",
     # clips
     "ClipLibraryItem", "ClipPlacement", "ClipPlanRequest",

@@ -52,6 +52,26 @@ export interface PendingUser {
   created_at: string;
 }
 
+export interface UserAdminInfo {
+  id: number;
+  username: string;
+  full_name: string;
+  role: string;
+  status: string;
+  is_active: boolean;
+  specialty: string;
+  hospital: string;
+  has_photo: boolean;
+  has_cv: boolean;
+  created_at: string;
+}
+
+export interface UserUpdate {
+  full_name?: string;
+  role?: string;
+  is_active?: boolean;
+}
+
 /* ── PHASES score ──────────────────────────────────────────────────────── */
 export type PhasesPopulation = "other" | "japan" | "finland";
 export type PhasesSite = "ica" | "mca" | "aca_pcom_posterior";
@@ -310,6 +330,39 @@ export interface SegmentResult {
   is_dsa: boolean;
   vertices: number;
   faces: number;
+}
+
+/* ── interactive mesh editing: ROI crop + grow-from-seeds ───────────────── */
+export interface MeshCropRequest {
+  mode: "box" | "sphere";
+  center: Position3D;
+  radius?: number;
+  half_size?: Position3D | null;
+  invert?: boolean;
+}
+
+export interface MeshCropResult {
+  mesh_url: string;
+  vertices: number;
+  faces: number;
+  removed_vertices: number;
+}
+
+export interface GrowRequest {
+  seeds: Position3D[];
+  lower?: number;
+  upper?: number;
+  smoothing?: number;
+  cleanup?: number;
+}
+
+export interface GrowResult {
+  mesh_url: string;
+  vertices: number;
+  faces: number;
+  n_voxels: number;
+  fragments_removed: number;
+  seeds: number;
 }
 
 /* ── detection / morphometry ───────────────────────────────────────────── */

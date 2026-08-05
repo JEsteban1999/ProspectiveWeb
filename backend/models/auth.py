@@ -91,3 +91,27 @@ class PendingUser(BaseModel):
     has_photo: bool = Field(False, description="A profile photo was uploaded")
     has_cv: bool = Field(False, description="A CV document was uploaded")
     created_at: str = Field(..., description="ISO-8601 timestamp of the request")
+
+
+class UserAdminInfo(BaseModel):
+    """Full user record for the admin user-management panel."""
+
+    id: int
+    username: str
+    full_name: str
+    role: UserRole
+    status: str = Field("", description="active | pending | rejected")
+    is_active: bool = True
+    specialty: str = ""
+    hospital: str = ""
+    has_photo: bool = False
+    has_cv: bool = False
+    created_at: str = ""
+
+
+class UserUpdate(BaseModel):
+    """Admin edit of a user account."""
+
+    full_name: str | None = None
+    role: UserRole | None = None
+    is_active: bool | None = None

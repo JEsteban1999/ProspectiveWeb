@@ -270,6 +270,68 @@ async def create_study(
     return _study_to_summary(study)
 
 
+def _get_owned_study(db: Session, patient_id: int, study_id: int, user: User | None) -> Study:
+    patient = db.get(Patient, patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found")
+    _require_owner_or_admin(patient, user)
+    study = db.get(Study, study_id)
+    if study is None or study.patient_id != patient_id:
+        raise HTTPException(status_code=404, detail=f"Study {study_id} not found for patient {patient_id}")
+    return study
+
+
+# ── PUT /patients/{patient_id}/studies/{study_id} ──────────────────────────── #
+
+@router.put(
+    "/{patient_id}/studies/{study_id}",
+    response_model=StudySummary,
+    summary="Update a patient's study/case",
+)
+async def update_study(
+    patient_id:   int,
+    study_id:     int,
+    req:          StudyCreate,
+    db:           Annotated[Session,     Depends(get_db)],
+    current_user: Annotated[User | None, Depends(get_current_user)],
+) -> StudySummary:
+    study = _get_owned_study(db, patient_id, study_id, current_user)
+    if not req.dx_principal.strip():
+        raise HTTPException(status_code=422, detail="El diagnóstico principal es obligatorio.")
+    for field in _STUDY_CASE_FIELDS:
+        setattr(study, field, getattr(req, field))
+    study.acquired_at = req.study_date
+    study.description = req.dx_principal
+    study.modality = ("CT" if req.mod_tac else "XA" if req.mod_angio
+                      else "MR" if req.mod_rm else "XA" if req.mod_pangio else "")
+    db.commit()
+    db.refresh(study)
+    logger.info("Study updated — patient=%d study=%d", patient_id, study_id)
+    return _study_to_summary(study)
+
+
+# ── DELETE /patients/{patient_id}/studies/{study_id} ───────────────────────── #
+
+@router.delete(
+    "/{patient_id}/studies/{study_id}",
+    status_code=204,
+    summary="Delete a patient's study/case",
+)
+async def delete_study(
+    patient_id:   int,
+    study_id:     int,
+    db:           Annotated[Session,     Depends(get_db)],
+    current_user: Annotated[User | None, Depends(get_current_user)],
+) -> None:
+    study = _get_owned_study(db, patient_id, study_id, current_user)
+    # Its planning sessions have a study_id FK without cascade — detach them so
+    # the saved planning work survives under the patient.
+    db.query(PlanningSession).filter(PlanningSession.study_id == study_id).update({"study_id": None})
+    db.delete(study)
+    db.commit()
+    logger.info("Study deleted — patient=%d study=%d", patient_id, study_id)
+
+
 # ── GET /patients/{patient_id} ─────────────────────────────────────────────── #
 
 @router.get(

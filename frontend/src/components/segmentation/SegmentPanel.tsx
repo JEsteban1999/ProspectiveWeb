@@ -9,6 +9,7 @@ import { Metric } from "../Metric";
 import { PanelHead, SectionLabel, ErrorNote, Card } from "../PanelHead";
 import { ProgressBar } from "../ProgressBar";
 import { Slider } from "../Slider";
+import { MeshEditTools } from "./MeshEditTools";
 import { usePlanning } from "../../store/planning";
 
 /* El backend identifica la estrategia de umbral con un código interno; aquí se
@@ -142,6 +143,8 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
           )}
         </Card>
       )}
+
+      <MeshEditTools />
 
       <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
         <Button

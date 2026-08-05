@@ -18,8 +18,12 @@ import type {
   CoilPlacement,
   CoilPlanResult,
   ExportRequest,
+  GrowRequest,
+  GrowResult,
   LoginResponse,
   LongitudinalResult,
+  MeshCropRequest,
+  MeshCropResult,
   MorphometryResult,
   NeckPlaneRequest,
   PendingUser,
@@ -47,7 +51,9 @@ import type {
   TreatmentDecisionRequest,
   TreatmentDecisionResult,
   UploadResult,
+  UserAdminInfo,
   UserInfo,
+  UserUpdate,
   VolumeMeta,
 } from "./types";
 
@@ -138,6 +144,11 @@ export const api = {
   },
   approvePending: (id: number) => post<{ status: string }>(`/api/auth/pending/${id}/approve`),
   rejectPending: (id: number) => post<{ status: string }>(`/api/auth/pending/${id}/reject`),
+  listUsers: () => get<UserAdminInfo[]>("/api/auth/users"),
+  updateUser: (id: number, u: UserUpdate) =>
+    request<UserAdminInfo>(`/api/auth/users/${id}`, { method: "PUT", body: JSON.stringify(u), headers: { "Content-Type": "application/json" } }),
+  deleteUser: (id: number) =>
+    request<void>(`/api/auth/users/${id}`, { method: "DELETE" }),
 
   /* patients */
   listPatients: () => get<PatientSummary[]>("/api/patients"),
@@ -146,6 +157,10 @@ export const api = {
   patientStudies: (id: number) => get<StudySummary[]>(`/api/patients/${id}/studies`),
   createStudy: (patientId: number, s: StudyCreate) =>
     post<StudySummary>(`/api/patients/${patientId}/studies`, s),
+  updateStudy: (patientId: number, studyId: number, s: StudyCreate) =>
+    request<StudySummary>(`/api/patients/${patientId}/studies/${studyId}`, { method: "PUT", body: JSON.stringify(s), headers: { "Content-Type": "application/json" } }),
+  deleteStudy: (patientId: number, studyId: number) =>
+    request<void>(`/api/patients/${patientId}/studies/${studyId}`, { method: "DELETE" }),
   getPatient: (id: number) => get<PatientDetail>(`/api/patients/${id}`),
   updatePatient: (id: number, p: PatientCreate) =>
     request<PatientSummary>(`/api/patients/${id}`, { method: "PUT", body: JSON.stringify(p), headers: { "Content-Type": "application/json" } }),
@@ -163,6 +178,10 @@ export const api = {
   thresholds: (sessionId: string) =>
     get<AutoThresholdResult>(`/api/thresholds/${sessionId}`),
   segment: (req: SegmentRequest) => post<SegmentResult>("/api/segment", req),
+  segmentGrow: (sessionId: string, req: GrowRequest) =>
+    post<GrowResult>(`/api/segment/grow/${sessionId}`, req),
+  meshCrop: (sessionId: string, req: MeshCropRequest) =>
+    post<MeshCropResult>(`/api/mesh-crop/${sessionId}`, req),
   detect: (sessionId: string) =>
     post<AneurysmDetectionResult>(`/api/detect/${sessionId}`),
   morphometry: (sessionId: string) =>
