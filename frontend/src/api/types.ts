@@ -365,6 +365,26 @@ export interface GrowResult {
   seeds: number;
 }
 
+/* ── centreline-guided stent (cl_stent) ────────────────────────────────── */
+export interface ClStentRequest {
+  session_id: string;
+  stent_diameter_mm: number;
+  start_arc_mm?: number | null;
+  end_arc_mm?: number | null;
+  braid?: boolean;
+  braid_count?: number;
+}
+
+export interface ClStentResult {
+  stent_mesh_url: string;
+  length_mm: number;
+  nominal_diameter_mm: number;
+  mean_vessel_diameter_mm: number;
+  coverage_ratio: number;
+  total_arc_mm: number;
+  warning: string | null;
+}
+
 /* ── detection / morphometry ───────────────────────────────────────────── */
 export interface Position3D {
   x: number;

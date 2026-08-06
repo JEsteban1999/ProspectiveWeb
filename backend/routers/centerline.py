@@ -10,9 +10,11 @@ from fastapi import APIRouter, HTTPException
 
 from models.centerline import (
     CenterlineRequest, CenterlineResult, CrossSectionRequest, CrossSectionResult,
+    ClStentRequest, ClStentResult,
 )
 from services.centerline import extract_centerline
 from services.cross_section import compute_cross_sections
+from services.stent_deployment import deploy_stent_on_centerline
 from services.segmentation import read_vtp, write_vtp
 from services.sessions import mesh_url, session_exists, session_subdir
 
@@ -155,5 +157,68 @@ async def compute_cross_section(session_id: str, req: CrossSectionRequest) -> Cr
         stenosis_ratio=round(result.stenosis_ratio, 3),
         stenosis_pct=round(pct, 1),
         stenosis_label=label,
+        warning=warning,
+    )
+
+
+def _run_cl_stent(points_path, req: ClStentRequest, out_path):
+    data = np.load(points_path)
+    result = deploy_stent_on_centerline(
+        data["points"], data["radii"],
+        stent_diameter_mm=req.stent_diameter_mm,
+        start_arc_mm=req.start_arc_mm,
+        end_arc_mm=req.end_arc_mm,
+        braid=req.braid,
+        braid_count=req.braid_count,
+    )
+    write_vtp(result.stent_poly_data, out_path)
+    return result
+
+
+@router.post(
+    "/cl-stent/{session_id}",
+    response_model=ClStentResult,
+    summary="Deploy a stent along the vessel centreline",
+    description=(
+        "Sweeps a stent tube along the previously-extracted centreline between two "
+        "arc-length positions (parallel-transport frames + optional helical braids), "
+        "following the true vessel curvature — unlike the straight neck stent. "
+        "Requires that the centreline was extracted first "
+        "(POST /api/centerline/{session_id})."
+    ),
+)
+async def deploy_cl_stent(session_id: str, req: ClStentRequest) -> ClStentResult:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    meshes_dir = session_subdir(session_id, "meshes")
+    points_path = meshes_dir / "centerline_points.npz"
+    if not points_path.exists():
+        raise HTTPException(status_code=409, detail="Extrae la línea central primero.")
+
+    out_path = meshes_dir / "cl_stent.vtp"
+    try:
+        result = await asyncio.to_thread(_run_cl_stent, points_path, req, out_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Centreline stent deployment failed")
+        raise HTTPException(status_code=500, detail=f"Error desplegando el stent: {exc}")
+
+    cov = result.coverage_ratio
+    warning = None
+    if cov < 0.9:
+        warning = f"Stent infradimensionado (cobertura {cov:.2f}) — considera un diámetro mayor."
+    elif cov > 1.15:
+        warning = f"Stent sobredimensionado (cobertura {cov:.2f}) — riesgo de sobreexpansión."
+
+    url = f"{mesh_url(session_id, 'cl_stent.vtp')}?v={int(time.time() * 1000)}"
+    return ClStentResult(
+        stent_mesh_url=url,
+        length_mm=round(result.length_mm, 1),
+        nominal_diameter_mm=round(result.nominal_diameter_mm, 2),
+        mean_vessel_diameter_mm=round(result.mean_vessel_diameter_mm, 2),
+        coverage_ratio=round(result.coverage_ratio, 2),
+        total_arc_mm=round(result.total_arc_mm, 1),
         warning=warning,
     )

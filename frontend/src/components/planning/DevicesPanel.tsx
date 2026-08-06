@@ -8,6 +8,7 @@ import { api } from "../../api/client";
 import type {
   ClipPlanResult,
   ClipRecommendation,
+  ClStentResult,
   CoilLibraryItem,
   CoilPlanResult,
   MorphometryResult,
@@ -24,7 +25,7 @@ import { Slider } from "../Slider";
 import { Tabs } from "../Tabs";
 import { usePlanning } from "../../store/planning";
 
-const TABS = ["Clips", "Coils", "Stents"] as const;
+const TABS = ["Clips", "Coils", "Stents", "Stent CL"] as const;
 const ORIGIN: Position3D = { x: 0, y: 0, z: 0 };
 
 /** Approximate neck placement from morphometry: neck ≈ centroid − axis·(dome/2),
@@ -340,6 +341,97 @@ function StentsTab() {
   );
 }
 
+/* ── Stent guiado por centerline ───────────────────────────────────────── */
+function ClStentTab() {
+  const { sessionId, centerlineMesh, centerlineArcMm, setDeviceMesh } = usePlanning();
+  const [diameter, setDiameter] = useState(4);
+  const [startArc, setStartArc] = useState(0);
+  const [endArc, setEndArc] = useState(0);
+  const [braid, setBraid] = useState(true);
+  const [plan, setPlan] = useState<ClStentResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const total = centerlineArcMm ?? 0;
+  const hasCenterline = !!centerlineMesh && total > 0;
+
+  // Default the range to the full centreline once it's known.
+  useEffect(() => {
+    if (total > 0) { setStartArc(0); setEndArc(Math.round(total)); }
+  }, [total]);
+
+  const run = async () => {
+    if (!sessionId || !hasCenterline) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.deployClStent(sessionId, {
+        session_id: sessionId,
+        stent_diameter_mm: diameter,
+        start_arc_mm: startArc,
+        end_arc_mm: endArc,
+        braid,
+        braid_count: 6,
+      });
+      setPlan(res);
+      setDeviceMesh(res.stent_mesh_url || null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error desplegando el stent");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!hasCenterline) {
+    return (
+      <div style={{ marginTop: 12, fontSize: 12, color: "var(--muted-foreground)", lineHeight: 1.6 }}>
+        Extrae primero la <b style={{ color: "var(--foreground)" }}>línea central</b> del vaso
+        (paso Morfometría → Línea central). El stent se desplegará siguiendo su curvatura,
+        a diferencia del stent recto de la pestaña «Stents».
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <SectionLabel>Segmento de la línea central</SectionLabel>
+      <div style={{ fontSize: 12, color: "var(--muted-foreground)", margin: "6px 0 12px" }}>
+        Arco total: <b style={{ color: "var(--foreground)", fontFamily: "var(--font-mono)" }}>{total.toFixed(1)} mm</b>.
+        Ajusta el tramo a cubrir.
+      </div>
+      <Slider label="Inicio del tramo" min={0} max={Math.round(total)} value={startArc} onChange={(v) => setStartArc(Math.min(v, endArc - 1))} unit=" mm" />
+      <div style={{ height: 14 }} />
+      <Slider label="Fin del tramo" min={0} max={Math.round(total)} value={endArc} onChange={(v) => setEndArc(Math.max(v, startArc + 1))} unit=" mm" />
+      <div style={{ height: 14 }} />
+      <Slider label="Diámetro nominal" min={1.5} max={6} step={0.25} value={diameter} onChange={setDiameter} unit=" mm" />
+      <div style={{ height: 12 }} />
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--foreground)", cursor: "pointer" }}>
+        <input type="checkbox" checked={braid} onChange={(e) => setBraid(e.target.checked)} />
+        Trenzado helicoidal (aspecto de desviador de flujo)
+      </label>
+
+      {plan && (
+        <Card style={{ marginTop: 14 }}>
+          <Metric label="Longitud desplegada" value={plan.length_mm.toFixed(1)} unit=" mm" />
+          <Metric label="Ø stent" value={plan.nominal_diameter_mm.toFixed(2)} unit=" mm" />
+          <Metric label="Ø vaso medio" value={plan.mean_vessel_diameter_mm.toFixed(2)} unit=" mm" />
+          <Metric
+            label="Cobertura (stent/vaso)"
+            value={plan.coverage_ratio.toFixed(2)}
+            badge={plan.coverage_ratio >= 0.9 && plan.coverage_ratio <= 1.15 ? ["Buen ajuste", "success"] : ["Revisar", "warning"]}
+          />
+          {plan.warning && <div style={{ marginTop: 8, fontSize: 12, color: "var(--warning)" }}>{plan.warning}</div>}
+        </Card>
+      )}
+      <ErrorNote>{error}</ErrorNote>
+
+      <Button style={{ marginTop: 14, width: "100%" }} onClick={() => void run()} disabled={busy} leadingIcon={<Icon name="STENT" />}>
+        {busy ? "Desplegando…" : "Desplegar sobre la línea central"}
+      </Button>
+    </div>
+  );
+}
+
 /* ── Panel ─────────────────────────────────────────────────────────────── */
 export function DevicesPanel({ onNext }: { onNext: () => void }) {
   const [tab, setTab] = useState<string>("Clips");
@@ -350,6 +442,7 @@ export function DevicesPanel({ onNext }: { onNext: () => void }) {
       {tab === "Clips" && <ClipsTab />}
       {tab === "Coils" && <CoilsTab />}
       {tab === "Stents" && <StentsTab />}
+      {tab === "Stent CL" && <ClStentTab />}
       <Button variant="outline" style={{ marginTop: 18, width: "100%" }} onClick={onNext} trailingIcon={<Icon name="STEP_EXPORT" />}>
         Continuar al informe
       </Button>

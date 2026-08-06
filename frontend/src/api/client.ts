@@ -10,6 +10,8 @@ import type {
   CenterlineResult,
   CrossSectionRequest,
   CrossSectionResult,
+  ClStentRequest,
+  ClStentResult,
   ClipLibraryItem,
   ClipPlanRequest,
   ClipPlanResult,
@@ -197,6 +199,8 @@ export const api = {
     post<CenterlineResult>(`/api/centerline/${sessionId}`, req),
   crossSection: (sessionId: string, req: CrossSectionRequest) =>
     post<CrossSectionResult>(`/api/cross-section/${sessionId}`, req),
+  deployClStent: (sessionId: string, req: ClStentRequest) =>
+    post<ClStentResult>(`/api/cl-stent/${sessionId}`, req),
 
   /* MPR / DICOM slice preview */
   volumeMeta: (sessionId: string) => get<VolumeMeta>(`/api/volume/${sessionId}/meta`),

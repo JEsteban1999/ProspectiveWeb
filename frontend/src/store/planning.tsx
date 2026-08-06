@@ -34,6 +34,8 @@ interface PlanningState {
   deviceMesh: string | null;
   /** URL of the extracted vessel centreline tube mesh, shown in the viewer. */
   centerlineMesh: string | null;
+  /** Total arc length (mm) of the extracted centreline — feeds the cl-stent range sliders. */
+  centerlineArcMm: number | null;
   /** Active 3D-pick mode: centreline endpoints, a measurement, or the neck plane. */
   pickMode: PickMode;
   clSource: Vec3 | null;
@@ -63,6 +65,7 @@ interface PlanningState {
   setTreatment: (t: TreatmentDecisionResult | null) => void;
   setDeviceMesh: (url: string | null) => void;
   setCenterlineMesh: (url: string | null) => void;
+  setCenterlineArcMm: (v: number | null) => void;
   setPickMode: (m: PickMode) => void;
   setClSource: (p: Vec3 | null) => void;
   setClTarget: (p: Vec3 | null) => void;
@@ -106,6 +109,7 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   const [treatment, setTreatment] = useState<TreatmentDecisionResult | null>(null);
   const [deviceMesh, setDeviceMesh] = useState<string | null>(null);
   const [centerlineMesh, setCenterlineMesh] = useState<string | null>(null);
+  const [centerlineArcMm, setCenterlineArcMm] = useState<number | null>(null);
   const [pickMode, setPickMode] = useState<PickMode>(null);
   const [clSource, setClSource] = useState<Vec3 | null>(null);
   const [clTarget, setClTarget] = useState<Vec3 | null>(null);
@@ -129,6 +133,7 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
     setTreatment(null);
     setDeviceMesh(null);
     setCenterlineMesh(null);
+    setCenterlineArcMm(null);
     setPickMode(null);
     setClSource(null);
     setClTarget(null);
@@ -151,11 +156,11 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
       value={{
         patient, sessionId, series, thresholds, thresholdsLoading, previewBand, segmentation, candidates,
         selectedCandidate, morphometry, treatment, deviceMesh,
-        centerlineMesh, pickMode, clSource, clTarget, neckOrigin, neckDome,
+        centerlineMesh, centerlineArcMm, pickMode, clSource, clTarget, neckOrigin, neckDome,
         measurements, measurePending, growSeeds, cropCenter,
         setPatient, setSession, setSeries, setThresholds, setThresholdsLoading, setPreviewBand, setSegmentation,
         setCandidates, setSelectedCandidate, setMorphometry, setTreatment,
-        setDeviceMesh, setCenterlineMesh, setPickMode, setClSource, setClTarget,
+        setDeviceMesh, setCenterlineMesh, setCenterlineArcMm, setPickMode, setClSource, setClTarget,
         setNeckOrigin, setNeckDome,
         setMeasurements, setMeasurePending, setGrowSeeds, setCropCenter,
         reset, resetDownstream,

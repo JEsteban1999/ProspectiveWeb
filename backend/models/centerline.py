@@ -51,6 +51,35 @@ class CrossSectionRequest(BaseModel):
     )
 
 
+class ClStentRequest(BaseModel):
+    """Deploy a virtual stent along the extracted centreline."""
+
+    session_id: str
+    stent_diameter_mm: float = Field(
+        4.0, ge=1.0, le=10.0, description="Nominal stent outer diameter (mm)"
+    )
+    start_arc_mm: float | None = Field(
+        None, ge=0.0, description="Arc-length start (mm). Omit for the centreline start."
+    )
+    end_arc_mm: float | None = Field(
+        None, ge=0.0, description="Arc-length end (mm). Omit for the centreline end."
+    )
+    braid: bool = Field(True, description="Add helical braid wires for a flow-diverter look")
+    braid_count: int = Field(6, ge=0, le=16, description="Braid wires per wind direction")
+
+
+class ClStentResult(BaseModel):
+    """Deployed centreline-guided stent mesh + fit metrics."""
+
+    stent_mesh_url: str = Field(..., description="URL of the deployed stent tube mesh (.vtp)")
+    length_mm: float = Field(..., description="Arc length of the deployed segment")
+    nominal_diameter_mm: float = Field(..., description="Requested stent diameter")
+    mean_vessel_diameter_mm: float = Field(..., description="Mean vessel Ø over the segment")
+    coverage_ratio: float = Field(..., description="stent_r / vessel_r (1.0 = perfect fit; <1 undersized)")
+    total_arc_mm: float = Field(..., description="Total centreline arc length (for range sliders)")
+    warning: str | None = Field(None, description="Fit warning (over/undersized)")
+
+
 class CrossSectionResult(BaseModel):
     """Cross-sectional diameter profile along the vessel + stenosis estimate."""
 

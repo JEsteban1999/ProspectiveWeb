@@ -33,7 +33,7 @@ function tortuosityBadge(t: number): [string, "success" | "warning" | "destructi
 export function CenterlinePanel() {
   const {
     sessionId, segmentation, pickMode, clSource, clTarget,
-    setPickMode, setClSource, setClTarget, setCenterlineMesh,
+    setPickMode, setClSource, setClTarget, setCenterlineMesh, setCenterlineArcMm,
   } = usePlanning();
 
   const [voxel, setVoxel] = useState("0.8");
@@ -62,6 +62,7 @@ export function CenterlinePanel() {
       setResult(res);
       setXs(null);
       setCenterlineMesh(res.centerline_mesh_url);
+      setCenterlineArcMm(res.arc_length_mm);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error extrayendo la línea central");
     } finally {
@@ -91,6 +92,7 @@ export function CenterlinePanel() {
     setClTarget(null);
     setPickMode(null);
     setCenterlineMesh(null);
+    setCenterlineArcMm(null);
   };
 
   const stenosisVariant = (label: string): "success" | "warning" | "destructive" =>
