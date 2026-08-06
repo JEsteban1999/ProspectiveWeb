@@ -199,6 +199,15 @@ async def deploy_cl_stent(session_id: str, req: ClStentRequest) -> ClStentResult
     out_path = meshes_dir / "cl_stent.vtp"
     try:
         result = await asyncio.to_thread(_run_cl_stent, points_path, req, out_path)
+        from services.device_state import save_stent
+        save_stent(session_id, {
+            "name": "Stent guiado por centerline",
+            "manufacturer": "",
+            "diameter_mm": req.stent_diameter_mm,
+            "length_mm": round(result.length_mm, 1),
+            "coverage_pct": round(result.coverage_ratio * 100, 1),
+            "kind": "centerline",
+        })
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:  # noqa: BLE001

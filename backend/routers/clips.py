@@ -12,8 +12,9 @@ from services.sessions import read_state, session_exists, session_subdir, mesh_u
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["clips"])
 
-# clip_id → blade length (mm), built once from the catalogue
+# clip_id → blade length (mm) / display name, built once from the catalogue
 _CLIP_LENGTH = {item["id"]: item["length_mm"] for item in catalogue_to_api()}
+_CLIP_NAME = {item["id"]: item["name"] for item in catalogue_to_api()}
 
 
 def _load_float(session_id: str, key: str, default: float) -> float:
@@ -154,6 +155,19 @@ async def plan_clips(req: ClipPlanRequest) -> ClipPlanResult:
     clips_name = "clips_placed.vtp"
     write_vtp(clips_world, meshes_dir / clips_name)
     clips_url = f"{mesh_url(req.session_id, clips_name)}?v={int(time.time() * 1000)}"
+
+    # ── Persist placed clips for the report / session restore ────────────── #
+    from services.device_state import save_clips
+    save_clips(req.session_id, [
+        {
+            "index": i,
+            "name": _CLIP_NAME.get(pl.clip_id, pl.clip_id),
+            "position": [pl.position.x, pl.position.y, pl.position.z],
+            "orientation": [0.0, 0.0, float(pl.rotation_deg)],
+            "is_custom": False,
+        }
+        for i, pl in enumerate(req.placements)
+    ])
 
     warning = None
     if collision:

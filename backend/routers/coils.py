@@ -102,6 +102,24 @@ async def plan_coils(req: CoilPlanRequest) -> CoilPlanResult:
     except Exception as exc:
         logger.warning("Coil mesh generation skipped: %s", exc)
 
+    # ── Persist placed coils for the report / session restore ────────────── #
+    # Use the API catalogue (JSON-safe: coil_type already a plain string) keyed
+    # by its id, which equals the slug the frontend sends as coil_id.
+    _id_to_api = {item["id"]: item for item in catalogue_to_api()}
+    from services.device_state import save_coils
+    save_coils(req.session_id, [
+        {
+            "index": i + 1,
+            "name": _id_to_api.get(pl.coil_id, {}).get("name", pl.coil_id),
+            "position": [pl.position.x, pl.position.y, pl.position.z],
+            "coil_type": _id_to_api.get(pl.coil_id, {}).get("coil_type", ""),
+            "diameter_mm": _id_to_api.get(pl.coil_id, {}).get("diameter_mm", 0.0),
+            "length_cm": _id_to_api.get(pl.coil_id, {}).get("length_cm", 0.0),
+            "manufacturer": _id_to_api.get(pl.coil_id, {}).get("manufacturer", ""),
+        }
+        for i, pl in enumerate(req.placements)
+    ])
+
     return CoilPlanResult(
         coils_mesh_url=coils_url,
         total_packing_density=round(packing, 3),

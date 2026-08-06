@@ -195,11 +195,41 @@ def build_report_data_from_session(
     # ── 5. Surgical approach trajectory (persisted in session state) ──── #
     trajectory = read_trajectory_state(session_id)
 
+    # ── 6. Placed devices (persisted by the clip/coil/stent planners) ─── #
+    from services.device_state import read_clips, read_coils
+
+    def _pos(v, n=3):
+        v = list(v or [])
+        return tuple((v + [0.0] * n)[:n])
+
+    clips = [
+        ClipEntry(
+            index=int(c.get("index", i)),
+            name=str(c.get("name", "Clip")),
+            position_mm=_pos(c.get("position")),
+            orientation_deg=_pos(c.get("orientation")),
+            is_custom=bool(c.get("is_custom", False)),
+        )
+        for i, c in enumerate(read_clips(session_id))
+    ]
+    coils = [
+        CoilEntry(
+            index=int(c.get("index", i + 1)),
+            name=str(c.get("name", "Coil")),
+            position_mm=_pos(c.get("position")),
+            coil_type=str(c.get("coil_type", "")),
+            diameter_mm=float(c.get("diameter_mm", 0.0) or 0.0),
+            length_cm=float(c.get("length_cm", 0.0) or 0.0),
+            manufacturer=str(c.get("manufacturer", "")),
+        )
+        for i, c in enumerate(read_coils(session_id))
+    ]
+
     return ReportData(
         patient      = patient,
         morphometrics= morpho,
-        clips        = [],      # clip placement not yet persisted in web backend
-        coils        = [],      # coil placement not yet persisted in web backend
+        clips        = clips,
+        coils        = coils,
         trajectory   = trajectory,
         screenshot_png = screenshot_bytes,
         risk_label   = risk_label,

@@ -151,6 +151,17 @@ async def compute_plan(req: PlanRequest) -> PlanResult:
     if neck_mm <= 0:
         warnings.append("Ejecuta la morfometría para una cobertura precisa del cuello.")
 
+    # ── Persist the deployed stent for the report / session restore ──────── #
+    from services.device_state import save_stent
+    save_stent(req.session_id, {
+        "name": getattr(device, "name", p.stent_id),
+        "manufacturer": getattr(device, "manufacturer", ""),
+        "diameter_mm": p.diameter_mm,
+        "length_mm": p.length_mm,
+        "coverage_pct": coverage,
+        "kind": "straight",
+    })
+
     return PlanResult(
         stent_mesh_url=stent_url,
         coverage_pct=coverage,
