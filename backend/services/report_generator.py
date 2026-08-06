@@ -192,16 +192,63 @@ def build_report_data_from_session(
         except Exception:
             logger.warning("Could not decode screenshot_png_b64 — skipping image")
 
+    # ── 5. Surgical approach trajectory (persisted in session state) ──── #
+    trajectory = read_trajectory_state(session_id)
+
     return ReportData(
         patient      = patient,
         morphometrics= morpho,
         clips        = [],      # clip placement not yet persisted in web backend
         coils        = [],      # coil placement not yet persisted in web backend
-        trajectory   = {},
+        trajectory   = trajectory,
         screenshot_png = screenshot_bytes,
         risk_label   = risk_label,
         treatment    = treatment,
     )
+
+
+def read_trajectory_state(session_id: str) -> dict:
+    """Read the surgical approach trajectory from session state.
+
+    Returns {} when no trajectory was defined, else a dict with entry/target
+    (mm), the approach depth (distance) and the incidence angle vs the aneurysm
+    principal axis (falls back to the SI/z axis when no axis is stored).
+    """
+    import math
+    from services.sessions import read_state
+
+    def _f(key: str) -> float | None:
+        raw = read_state(session_id, key, "")
+        try:
+            return float(raw) if raw != "" else None
+        except ValueError:
+            return None
+
+    ex, ey, ez = _f("trajectory.entry_x"), _f("trajectory.entry_y"), _f("trajectory.entry_z")
+    tx, ty, tz = _f("trajectory.target_x"), _f("trajectory.target_y"), _f("trajectory.target_z")
+    if None in (ex, ey, ez, tx, ty, tz):
+        return {}
+
+    entry = [ex, ey, ez]
+    target = [tx, ty, tz]
+    vx, vy, vz = tx - ex, ty - ey, tz - ez
+    depth = math.sqrt(vx * vx + vy * vy + vz * vz)
+
+    # Incidence angle vs the aneurysm principal axis (if stored), else z-axis.
+    ax = _f("morpho.axis_x")
+    ay = _f("morpho.axis_y")
+    az = _f("morpho.axis_z")
+    if None in (ax, ay, az) or (ax == 0 and ay == 0 and az == 0):
+        ax, ay, az = 0.0, 0.0, 1.0
+    an = math.sqrt(ax * ax + ay * ay + az * az) or 1.0
+    if depth > 1e-6:
+        dot = (vx * ax + vy * ay + vz * az) / (depth * an)
+        dot = max(-1.0, min(1.0, dot))
+        angle = math.degrees(math.acos(abs(dot)))  # 0..90, direction-agnostic
+    else:
+        angle = 0.0
+
+    return {"entry": entry, "target": target, "depth_mm": round(depth, 1), "angle_deg": round(angle, 1)}
 
 
 # ──────────────────────────────────────────────────────────────────────────── #

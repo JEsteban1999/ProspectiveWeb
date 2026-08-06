@@ -42,6 +42,9 @@ const NECK_ORIGIN_COLOR: Vector3 = [0.85, 0.35, 0.85]; // magenta — neck-plane
 const NECK_DOME_COLOR: Vector3 = [0.36, 0.85, 0.86];   // cyan — dome apex
 const GROW_SEED_COLOR: Vector3 = [0.55, 0.95, 0.35];   // lime — grow-from-seeds seeds
 const CROP_CENTER_COLOR: Vector3 = [0.98, 0.60, 0.20]; // orange — crop ROI centre
+const TRAJ_ENTRY_COLOR: Vector3 = [0.40, 0.80, 1.00];  // sky blue — approach entry
+const TRAJ_TARGET_COLOR: Vector3 = [0.97, 0.32, 0.29]; // red — approach target
+const TRAJ_LINE_COLOR: Vector3 = [0.55, 0.85, 1.00];   // light blue — approach corridor
 
 /* Load the volume meta once per session; shared by main view + MPR strip. */
 function useVolumeMeta(sessionId: string | null): VolumeMeta | null {
@@ -76,6 +79,7 @@ export function Viewer({ step }: { step: string }) {
     neckOrigin, neckDome, setNeckOrigin, setNeckDome,
     measurements, measurePending, setMeasurements, setMeasurePending, previewBand,
     growSeeds, setGrowSeeds, cropCenter, setCropCenter,
+    trajEntry, trajTarget, setTrajEntry, setTrajTarget,
   } = usePlanning();
   // mesh_url carries a generation token (?v=…) from the backend, so it changes
   // on every re-segmentation and vtk.js refetches instead of serving the cache.
@@ -126,13 +130,18 @@ export function Viewer({ step }: { step: string }) {
     if (neckDome) out.push({ pos: neckDome, color: NECK_DOME_COLOR });
     for (const s of growSeeds) out.push({ pos: s, color: GROW_SEED_COLOR });
     if (cropCenter) out.push({ pos: cropCenter, color: CROP_CENTER_COLOR });
+    if (trajEntry) out.push({ pos: trajEntry, color: TRAJ_ENTRY_COLOR });
+    if (trajTarget) out.push({ pos: trajTarget, color: TRAJ_TARGET_COLOR });
     return out;
-  }, [clSource, clTarget, measurePending, neckOrigin, neckDome, growSeeds, cropCenter]);
+  }, [clSource, clTarget, measurePending, neckOrigin, neckDome, growSeeds, cropCenter, trajEntry, trajTarget]);
 
-  const lines = useMemo<MeshLine[]>(
-    () => measurements.filter((m) => m.visible).map((m) => ({ a: m.a, b: m.b, color: MEASURE_COLOR })),
-    [measurements],
-  );
+  const lines = useMemo<MeshLine[]>(() => {
+    const out: MeshLine[] = measurements
+      .filter((m) => m.visible)
+      .map((m) => ({ a: m.a, b: m.b, color: MEASURE_COLOR }));
+    if (trajEntry && trajTarget) out.push({ a: trajEntry, b: trajTarget, color: TRAJ_LINE_COLOR });
+    return out;
+  }, [measurements, trajEntry, trajTarget]);
 
   const onPick = useCallback(
     (xyz: [number, number, number]) => {
@@ -141,6 +150,8 @@ export function Viewer({ step }: { step: string }) {
       else if (pickMode === "neck_origin") { setNeckOrigin(xyz); setPickMode(null); }
       else if (pickMode === "neck_dome") { setNeckDome(xyz); setPickMode(null); }
       else if (pickMode === "crop_center") { setCropCenter(xyz); setPickMode(null); }
+      else if (pickMode === "traj_entry") { setTrajEntry(xyz); setPickMode(null); }
+      else if (pickMode === "traj_target") { setTrajTarget(xyz); setPickMode(null); }
       else if (pickMode === "grow_seed") { setGrowSeeds([...growSeeds, xyz]); }  // stay armed for multiple seeds
       else if (pickMode === "measure") {
         if (!measurePending) {
@@ -154,7 +165,7 @@ export function Viewer({ step }: { step: string }) {
         }
       }
     },
-    [pickMode, measurePending, measurements, growSeeds, setClSource, setClTarget, setNeckOrigin, setNeckDome, setCropCenter, setGrowSeeds, setPickMode, setMeasurePending, setMeasurements],
+    [pickMode, measurePending, measurements, growSeeds, setClSource, setClTarget, setNeckOrigin, setNeckDome, setCropCenter, setGrowSeeds, setTrajEntry, setTrajTarget, setPickMode, setMeasurePending, setMeasurements],
   );
 
   return (
@@ -241,13 +252,15 @@ export function Viewer({ step }: { step: string }) {
 
       {/* Pick-mode banner */}
       {pickMode && meshUrl && (
-        <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", background: pickMode === "cl_source" ? "rgba(63,186,80,0.92)" : pickMode === "cl_target" ? "rgba(248,81,73,0.92)" : pickMode === "neck_origin" ? "rgba(217,89,217,0.92)" : pickMode === "neck_dome" ? "rgba(92,217,219,0.94)" : pickMode === "grow_seed" ? "rgba(140,224,90,0.94)" : pickMode === "crop_center" ? "rgba(240,150,50,0.94)" : "rgba(234,179,8,0.94)", color: pickMode === "measure" || pickMode === "neck_dome" || pickMode === "grow_seed" ? "#1a1a1a" : "#fff", fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 999, pointerEvents: "none", boxShadow: "0 2px 8px rgba(0,0,0,0.35)" }}>
+        <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", background: pickMode === "cl_source" ? "rgba(63,186,80,0.92)" : pickMode === "cl_target" ? "rgba(248,81,73,0.92)" : pickMode === "neck_origin" ? "rgba(217,89,217,0.92)" : pickMode === "neck_dome" ? "rgba(92,217,219,0.94)" : pickMode === "grow_seed" ? "rgba(140,224,90,0.94)" : pickMode === "crop_center" ? "rgba(240,150,50,0.94)" : pickMode === "traj_entry" ? "rgba(102,204,255,0.94)" : pickMode === "traj_target" ? "rgba(248,81,73,0.92)" : "rgba(234,179,8,0.94)", color: pickMode === "measure" || pickMode === "neck_dome" || pickMode === "grow_seed" || pickMode === "traj_entry" ? "#1a1a1a" : "#fff", fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 999, pointerEvents: "none", boxShadow: "0 2px 8px rgba(0,0,0,0.35)" }}>
           {pickMode === "cl_source" && "Clic sobre el vaso para marcar el origen"}
           {pickMode === "cl_target" && "Clic sobre el vaso para marcar el destino"}
           {pickMode === "neck_origin" && "Clic sobre el cuello del aneurisma"}
           {pickMode === "neck_dome" && "Clic sobre el ápice del domo"}
           {pickMode === "grow_seed" && `Clic sobre el vaso para añadir semilla (${growSeeds.length})`}
           {pickMode === "crop_center" && "Clic sobre la malla para el centro del recorte"}
+          {pickMode === "traj_entry" && "Clic para el punto de entrada del abordaje"}
+          {pickMode === "traj_target" && "Clic sobre el aneurisma (punto diana)"}
           {pickMode === "measure" && (measurePending ? "Clic en el segundo punto" : "Clic en el primer punto")}
         </div>
       )}

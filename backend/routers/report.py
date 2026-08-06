@@ -16,12 +16,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from models import ReportRequest, ReportResult, ExportRequest
+from models.trajectory import TrajectoryRequest, TrajectoryResult
 from services.database import get_db
 from services.sessions import (
-    session_exists, session_subdir, read_state,
+    session_exists, session_subdir, read_state, write_state,
 )
 from services.report_generator import (
-    ReportGenerator, build_report_data_from_session,
+    ReportGenerator, build_report_data_from_session, read_trajectory_state,
 )
 from services.dicom_sr import DicomSRGenerator
 from services.mesh_exporter import export_stl, merge_poly_datas, apply_scale
@@ -174,6 +175,7 @@ async def generate_dicom_sr(
             series_meta   = series_meta,
             morphometrics = data.morphometrics,
             risk_label    = data.risk_label,
+            trajectory    = data.trajectory or None,
         )
         out_dir = session_subdir(req.session_id, "reports")
         return gen.generate(out_dir / f"{req.session_id}_sr.dcm")
@@ -297,3 +299,43 @@ async def export_stl_endpoint(
         generated_at = datetime.now(timezone.utc).isoformat(),
         page_count   = None,
     )
+
+
+# ── Surgical approach trajectory ────────────────────────────────────────────── #
+
+@router.post(
+    "/trajectory/{session_id}",
+    response_model=TrajectoryResult,
+    summary="Save the surgical approach trajectory",
+    description=(
+        "Persists the entry → target approach corridor in session state so it is "
+        "included in the PDF report and the DICOM SR. Returns the stored points "
+        "plus the approach depth and incidence angle."
+    ),
+)
+async def set_trajectory(session_id: str, req: TrajectoryRequest) -> TrajectoryResult:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    write_state(session_id, "trajectory.entry_x", str(req.entry.x))
+    write_state(session_id, "trajectory.entry_y", str(req.entry.y))
+    write_state(session_id, "trajectory.entry_z", str(req.entry.z))
+    write_state(session_id, "trajectory.target_x", str(req.target.x))
+    write_state(session_id, "trajectory.target_y", str(req.target.y))
+    write_state(session_id, "trajectory.target_z", str(req.target.z))
+    tr = read_trajectory_state(session_id)
+    return TrajectoryResult(
+        entry=tr["entry"], target=tr["target"],
+        depth_mm=tr["depth_mm"], angle_deg=tr["angle_deg"],
+    )
+
+
+@router.delete(
+    "/trajectory/{session_id}",
+    status_code=204,
+    summary="Clear the surgical approach trajectory",
+)
+async def clear_trajectory(session_id: str) -> None:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    for k in ("entry_x", "entry_y", "entry_z", "target_x", "target_y", "target_z"):
+        write_state(session_id, f"trajectory.{k}", "")

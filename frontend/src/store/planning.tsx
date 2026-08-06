@@ -51,6 +51,9 @@ interface PlanningState {
   growSeeds: Vec3[];
   /** Picked centre of the mesh-crop ROI (box/sphere). */
   cropCenter: Vec3 | null;
+  /** Surgical approach trajectory: entry point and aneurysm target (mm). */
+  trajEntry: Vec3 | null;
+  trajTarget: Vec3 | null;
 
   setPatient: (p: PatientSummary | null) => void;
   setSession: (id: string | null) => void;
@@ -75,6 +78,8 @@ interface PlanningState {
   setMeasurePending: (p: Vec3 | null) => void;
   setGrowSeeds: (s: Vec3[]) => void;
   setCropCenter: (p: Vec3 | null) => void;
+  setTrajEntry: (p: Vec3 | null) => void;
+  setTrajTarget: (p: Vec3 | null) => void;
   reset: () => void;
   resetDownstream: () => void;
 }
@@ -82,7 +87,7 @@ interface PlanningState {
 export type Vec3 = [number, number, number];
 export type PickMode =
   | "cl_source" | "cl_target" | "measure" | "neck_origin" | "neck_dome"
-  | "grow_seed" | "crop_center" | null;
+  | "grow_seed" | "crop_center" | "traj_entry" | "traj_target" | null;
 
 export interface Measurement {
   id: number;
@@ -119,6 +124,8 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   const [measurePending, setMeasurePending] = useState<Vec3 | null>(null);
   const [growSeeds, setGrowSeeds] = useState<Vec3[]>([]);
   const [cropCenter, setCropCenter] = useState<Vec3 | null>(null);
+  const [trajEntry, setTrajEntry] = useState<Vec3 | null>(null);
+  const [trajTarget, setTrajTarget] = useState<Vec3 | null>(null);
 
   // Clear everything downstream of the DICOM upload — used when a new series is
   // uploaded in the same workspace so stale meshes/metrics don't linger.
@@ -143,6 +150,8 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
     setMeasurePending(null);
     setGrowSeeds([]);
     setCropCenter(null);
+    setTrajEntry(null);
+    setTrajTarget(null);
   };
 
   const reset = () => {
@@ -157,12 +166,12 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
         patient, sessionId, series, thresholds, thresholdsLoading, previewBand, segmentation, candidates,
         selectedCandidate, morphometry, treatment, deviceMesh,
         centerlineMesh, centerlineArcMm, pickMode, clSource, clTarget, neckOrigin, neckDome,
-        measurements, measurePending, growSeeds, cropCenter,
+        measurements, measurePending, growSeeds, cropCenter, trajEntry, trajTarget,
         setPatient, setSession, setSeries, setThresholds, setThresholdsLoading, setPreviewBand, setSegmentation,
         setCandidates, setSelectedCandidate, setMorphometry, setTreatment,
         setDeviceMesh, setCenterlineMesh, setCenterlineArcMm, setPickMode, setClSource, setClTarget,
         setNeckOrigin, setNeckDome,
-        setMeasurements, setMeasurePending, setGrowSeeds, setCropCenter,
+        setMeasurements, setMeasurePending, setGrowSeeds, setCropCenter, setTrajEntry, setTrajTarget,
         reset, resetDownstream,
       }}
     >

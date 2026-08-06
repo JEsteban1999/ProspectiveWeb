@@ -365,6 +365,19 @@ export interface GrowResult {
   seeds: number;
 }
 
+/* ── surgical approach trajectory ──────────────────────────────────────── */
+export interface TrajectoryRequest {
+  entry: Position3D;
+  target: Position3D;
+}
+
+export interface TrajectoryResult {
+  entry: number[];
+  target: number[];
+  depth_mm: number;
+  angle_deg: number;
+}
+
 /* ── 3D-print preparation ──────────────────────────────────────────────── */
 export interface PrintBed {
   name: string;

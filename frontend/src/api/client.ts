@@ -53,6 +53,8 @@ import type {
   StentLibraryItem,
   StentParams,
   StentPlanResult,
+  TrajectoryRequest,
+  TrajectoryResult,
   TreatmentDecisionRequest,
   TreatmentDecisionResult,
   UploadResult,
@@ -204,6 +206,10 @@ export const api = {
     post<CrossSectionResult>(`/api/cross-section/${sessionId}`, req),
   deployClStent: (sessionId: string, req: ClStentRequest) =>
     post<ClStentResult>(`/api/cl-stent/${sessionId}`, req),
+  setTrajectory: (sessionId: string, req: TrajectoryRequest) =>
+    post<TrajectoryResult>(`/api/trajectory/${sessionId}`, req),
+  clearTrajectory: (sessionId: string) =>
+    request<void>(`/api/trajectory/${sessionId}`, { method: "DELETE" }),
   printBeds: () => get<PrintBed[]>("/api/print-prep/beds"),
   printPrep: (sessionId: string, req: PrintPrepRequest) =>
     post<PrintPrepResult>(`/api/print-prep/${sessionId}`, req),

@@ -432,12 +432,102 @@ function ClStentTab() {
   );
 }
 
+/* ── Trayectoria de abordaje quirúrgico ────────────────────────────────── */
+function TrajectoryTool() {
+  const {
+    sessionId, segmentation, pickMode, setPickMode,
+    trajEntry, trajTarget, setTrajEntry, setTrajTarget,
+  } = usePlanning();
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState<{ depth: number; angle: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const hasMesh = !!segmentation?.mesh_url;
+  const depth = trajEntry && trajTarget
+    ? Math.hypot(trajTarget[0] - trajEntry[0], trajTarget[1] - trajEntry[1], trajTarget[2] - trajEntry[2])
+    : null;
+
+  const save = async () => {
+    if (!sessionId || !trajEntry || !trajTarget) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.setTrajectory(sessionId, {
+        entry: { x: trajEntry[0], y: trajEntry[1], z: trajEntry[2] },
+        target: { x: trajTarget[0], y: trajTarget[1], z: trajTarget[2] },
+      });
+      setSaved({ depth: res.depth_mm, angle: res.angle_deg });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al guardar la trayectoria");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clear = async () => {
+    setTrajEntry(null);
+    setTrajTarget(null);
+    setSaved(null);
+    setPickMode(null);
+    if (sessionId) { try { await api.clearTrajectory(sessionId); } catch { /* ignore */ } }
+  };
+
+  const pickBtn = (which: "traj_entry" | "traj_target", label: string, done: boolean) => {
+    const active = pickMode === which;
+    return (
+      <Button
+        variant={active ? "default" : "outline"} size="sm" style={{ flex: 1 }}
+        disabled={!hasMesh}
+        onClick={() => setPickMode(active ? null : which)}
+        leadingIcon={<Icon name={done ? "STATUS_OK" : "TRAJECTORY"} size={14} />}
+      >
+        {active ? "Clic en el visor…" : label}
+      </Button>
+    );
+  };
+
+  return (
+    <Card style={{ marginBottom: 16, padding: "14px 16px" }}>
+      <SectionLabel>Trayectoria de abordaje</SectionLabel>
+      <div style={{ fontSize: 12, color: "var(--muted-foreground)", margin: "6px 0 10px" }}>
+        Marca el punto de entrada y el aneurisma; el corredor se muestra en el visor y se
+        incluye en el informe.
+      </div>
+      {!hasMesh && (
+        <div style={{ fontSize: 12, color: "var(--muted-foreground)", marginBottom: 8 }}>
+          Segmenta el vaso primero para marcar puntos sobre él.
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        {pickBtn("traj_entry", "Entrada", !!trajEntry)}
+        {pickBtn("traj_target", "Diana", !!trajTarget)}
+      </div>
+      {depth !== null && (
+        <div style={{ fontSize: 12, color: "var(--foreground)", marginBottom: 10 }}>
+          Profundidad de abordaje: <b style={{ fontFamily: "var(--font-mono)" }}>{depth.toFixed(1)} mm</b>
+          {saved && <> · Ángulo: <b style={{ fontFamily: "var(--font-mono)" }}>{saved.angle.toFixed(1)}°</b></>}
+        </div>
+      )}
+      <ErrorNote>{error}</ErrorNote>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Button size="sm" style={{ flex: 1 }} disabled={busy || !trajEntry || !trajTarget} onClick={() => void save()} leadingIcon={<Icon name="SAVE" size={14} />}>
+          {busy ? "Guardando…" : saved ? "Guardada ✓" : "Guardar trayectoria"}
+        </Button>
+        <Button size="sm" variant="outline" disabled={!trajEntry && !trajTarget} onClick={() => void clear()}>
+          Limpiar
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 /* ── Panel ─────────────────────────────────────────────────────────────── */
 export function DevicesPanel({ onNext }: { onNext: () => void }) {
   const [tab, setTab] = useState<string>("Clips");
   return (
     <div className="fade-rise">
       <PanelHead title="Planificación de dispositivos" desc="Elige clip, coils o stent del catálogo y verifica su colocación." />
+      <TrajectoryTool />
       <Tabs tabs={TABS} value={tab} onChange={setTab} />
       {tab === "Clips" && <ClipsTab />}
       {tab === "Coils" && <CoilsTab />}
