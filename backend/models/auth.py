@@ -34,6 +34,7 @@ class UserInfo(BaseModel):
     avatar_initials: str = Field(
         ..., description="Two-letter initials for the avatar widget (e.g. 'JN')"
     )
+    has_photo: bool = Field(False, description="A profile photo is available at /api/auth/me/photo")
 
 
 class UserCreateRequest(BaseModel):

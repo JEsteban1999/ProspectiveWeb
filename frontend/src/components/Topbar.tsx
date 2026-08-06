@@ -19,13 +19,34 @@ const ROLE_LABEL: Record<string, string> = {
   viewer: "Observador",
 };
 
+/** Circular avatar: the user's uploaded photo (auth'd blob) or their initials. */
+function Avatar({ url, initials, size, fontSize }: { url: string | null; initials: string; size: number; fontSize: number }) {
+  return (
+    <span style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, overflow: "hidden", background: "var(--brand-subtle)", color: "var(--brand-subtle-foreground)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize }}>
+      {url ? <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : initials}
+    </span>
+  );
+}
+
 function UserMenu() {
   const { user, logout } = useAuth();
   const nav = useNav();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(0);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const isAdmin = user?.role === "admin";
+
+  // Load the logged-in user's own profile photo (auth'd blob → object URL).
+  useEffect(() => {
+    if (!user?.has_photo) { setPhotoUrl(null); return; }
+    let created: string | null = null;
+    let alive = true;
+    api.myPhotoObjectUrl()
+      .then((u) => { if (alive) { created = u; setPhotoUrl(u); } else URL.revokeObjectURL(u); })
+      .catch(() => {});
+    return () => { alive = false; if (created) URL.revokeObjectURL(created); };
+  }, [user?.has_photo]);
 
   // Close on outside click / Escape.
   useEffect(() => {
@@ -76,11 +97,7 @@ function UserMenu() {
           transition: "background var(--dur-fast) var(--ease-out)",
         }}
       >
-        <span
-          style={{ width: 30, height: 30, borderRadius: "50%", background: "var(--brand-subtle)", color: "var(--brand-subtle-foreground)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12 }}
-        >
-          {user.avatar_initials}
-        </span>
+        <Avatar url={photoUrl} initials={user.avatar_initials} size={30} fontSize={12} />
         <span style={{ fontWeight: 600, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {user.username}
         </span>
@@ -106,11 +123,7 @@ function UserMenu() {
         >
           {/* Profile header */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px 12px" }}>
-            <span
-              style={{ width: 38, height: 38, borderRadius: "50%", flexShrink: 0, background: "var(--brand-subtle)", color: "var(--brand-subtle-foreground)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14 }}
-            >
-              {user.avatar_initials}
-            </span>
+            <Avatar url={photoUrl} initials={user.avatar_initials} size={38} fontSize={14} />
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {user.full_name || user.username}

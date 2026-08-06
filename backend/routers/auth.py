@@ -67,6 +67,7 @@ def _user_to_info(user: User) -> UserInfo:
         role=user.role,
         institution=user.institution,
         avatar_initials=initials,
+        has_photo=bool(user.photo_path and Path(user.photo_path).exists()),
     )
 
 
@@ -122,6 +123,19 @@ async def me(
     current_user: Annotated[User, Depends(require_user)],
 ) -> UserInfo:
     return _user_to_info(current_user)
+
+
+@router.get(
+    "/me/photo",
+    summary="Download the current user's profile photo",
+    description="Serves the authenticated user's own profile photo (404 if none).",
+)
+async def get_my_photo(
+    current_user: Annotated[User, Depends(require_user)],
+) -> FileResponse:
+    if not current_user.photo_path or not Path(current_user.photo_path).exists():
+        raise HTTPException(status_code=404, detail="Sin foto de perfil.")
+    return FileResponse(current_user.photo_path)
 
 
 # ── Self-registration (public) ─────────────────────────────────────────────── #
