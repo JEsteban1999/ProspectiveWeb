@@ -32,6 +32,8 @@ import type {
   PendingUser,
   PhasesRequest,
   PhasesResult,
+  PreprocessRequest,
+  PreprocessResult,
   PrintBed,
   PrintPrepRequest,
   PrintPrepResult,
@@ -133,6 +135,8 @@ export const api = {
   login: (username: string, password: string) =>
     post<LoginResponse>("/api/auth/login", { username, password }),
   me: () => get<UserInfo>("/api/auth/me"),
+  myPhotoObjectUrl: async () =>
+    URL.createObjectURL(await getBlob("/api/auth/me/photo")),
   signup: (req: SignupRequest, photo?: File | null, cv?: File | null) => {
     const fd = new FormData();
     for (const [k, v] of Object.entries(req)) fd.append(k, v ?? "");
@@ -211,6 +215,8 @@ export const api = {
     post<TrajectoryResult>(`/api/trajectory/${sessionId}`, req),
   clearTrajectory: (sessionId: string) =>
     request<void>(`/api/trajectory/${sessionId}`, { method: "DELETE" }),
+  preprocess: (sessionId: string, req: PreprocessRequest) =>
+    post<PreprocessResult>(`/api/preprocess/${sessionId}`, req),
   printBeds: () => get<PrintBed[]>("/api/print-prep/beds"),
   printPrep: (sessionId: string, req: PrintPrepRequest) =>
     post<PrintPrepResult>(`/api/print-prep/${sessionId}`, req),

@@ -10,6 +10,7 @@ import { PanelHead, SectionLabel, ErrorNote, Card } from "../PanelHead";
 import { ProgressBar } from "../ProgressBar";
 import { Slider } from "../Slider";
 import { MeshEditTools } from "./MeshEditTools";
+import { PreprocessSection } from "./PreprocessSection";
 import { usePlanning } from "../../store/planning";
 
 /* El backend identifica la estrategia de umbral con un código interno; aquí se
@@ -117,6 +118,8 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
         <div style={{ height: 14 }} />
         <Slider label="Limpieza de fragmentos" min={0} max={10} value={cleanup} onChange={setCleanup} />
       </div>
+
+      <PreprocessSection />
 
       {busy && (
         <div style={{ marginTop: 18 }}>

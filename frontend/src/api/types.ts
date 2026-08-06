@@ -9,6 +9,7 @@ export interface UserInfo {
   role: string;
   institution: string;
   avatar_initials: string;
+  has_photo?: boolean;
 }
 
 export interface LoginResponse {
@@ -376,6 +377,23 @@ export interface TrajectoryResult {
   target: number[];
   depth_mm: number;
   angle_deg: number;
+}
+
+/* ── DICOM volume preprocessing ────────────────────────────────────────── */
+export interface PreprocessRequest {
+  clip_hu?: boolean;
+  resample_isotropic?: boolean;
+  target_spacing_mm?: number;
+  smooth?: boolean;
+  smooth_sigma?: number;
+}
+
+export interface PreprocessResult {
+  shape_before: number[];
+  shape_after: number[];
+  spacing_before: number[];
+  spacing_after: number[];
+  note: string;
 }
 
 /* ── 3D-print preparation ──────────────────────────────────────────────── */

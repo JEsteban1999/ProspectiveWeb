@@ -23,7 +23,7 @@ from routers import (
     upload, segment, detect, perforators, plan, progress,
     auth, patients, treatment, clips, coils, longitudinal,
     report, session_state, mpr, phases, centerline, audit,
-    mesh_edit, print_prep,
+    mesh_edit, print_prep, preprocess,
 )
 
 logger = logging.getLogger(__name__)
@@ -146,6 +146,7 @@ app.include_router(centerline.router)
 app.include_router(audit.router)
 app.include_router(mesh_edit.router)
 app.include_router(print_prep.router)
+app.include_router(preprocess.router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────── #
