@@ -63,6 +63,20 @@ function perpBasis(axis: V3): [V3, V3] {
   return [u, v];
 }
 
+/* Standard CT window/level presets (port of utils/window_presets.py):
+   name → [window_center, window_width] in HU. */
+const WL_PRESETS: { name: string; wc: number; ww: number }[] = [
+  { name: "Cerebro", wc: 40, ww: 80 },
+  { name: "Hemorragia", wc: 55, ww: 100 },
+  { name: "Subdural", wc: 75, ww: 215 },
+  { name: "CTA", wc: 170, ww: 600 },
+  { name: "Hueso", wc: 400, ww: 1000 },
+  { name: "Pulmón", wc: -600, ww: 1500 },
+  { name: "Mediastino", wc: 50, ww: 350 },
+  { name: "Abdomen", wc: 40, ww: 350 },
+  { name: "Hígado", wc: 70, ww: 170 },
+];
+
 /* Load the volume meta once per session; shared by main view + MPR strip. */
 function useVolumeMeta(sessionId: string | null): VolumeMeta | null {
   const [meta, setMeta] = useState<VolumeMeta | null>(null);
@@ -396,7 +410,24 @@ export function MprStrip() {
   };
 
   return (
-    <div className="mpr-strip" style={{ height: "clamp(160px, 26vh, 240px)", flexShrink: 0, display: "flex", gap: 1, background: "var(--border)", borderTop: "1px solid var(--border)" }}>
+    <div className="mpr-strip" style={{ height: "clamp(160px, 26vh, 240px)", flexShrink: 0, display: "flex", gap: 1, background: "var(--border)", borderTop: "1px solid var(--border)", position: "relative" }}>
+      {/* Window/Level preset selector — sets the shared W/L for the three planes. */}
+      {sessionId && meta && (
+        <select
+          title="Preajuste de ventana/nivel"
+          value=""
+          onChange={(e) => {
+            const p = WL_PRESETS.find((x) => x.name === e.target.value);
+            if (p) setWl({ wc: p.wc, ww: p.ww });
+          }}
+          style={{ position: "absolute", top: 6, left: 8, zIndex: 6, fontSize: 10, fontFamily: "var(--font-mono)", padding: "3px 6px", borderRadius: 6, border: "1px solid rgba(120,140,160,0.4)", background: "rgba(20,24,28,0.82)", color: "#DCE6EE", cursor: "pointer" }}
+        >
+          <option value="" disabled>Ventana…{wl ? ` (${Math.round(wl.wc)}/${Math.round(wl.ww)})` : ""}</option>
+          {WL_PRESETS.map((p) => (
+            <option key={p.name} value={p.name}>{p.name} · {p.wc}/{p.ww}</option>
+          ))}
+        </select>
+      )}
       {(["axial", "coronal", "sagital"] as const).map((plane) => {
         const c = cfg(plane);
         return (
