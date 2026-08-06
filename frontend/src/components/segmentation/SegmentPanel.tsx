@@ -1,4 +1,9 @@
-/* Paso 2 — Segmentación vascular. GET /api/thresholds · POST /api/segment. */
+/* Paso 2 — Segmentación vascular. POST /api/segment.
+
+   Umbral FIJO para todos los casos: en vez de calcular un preset por caso (que
+   variaba por modalidad y no era reutilizable), se arranca siempre desde la
+   misma banda vascular con contraste y el clínico la afina con la vista previa
+   de HU en tiempo real sobre los cortes MPR. */
 
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
@@ -13,55 +18,28 @@ import { MeshEditTools } from "./MeshEditTools";
 import { PreprocessSection } from "./PreprocessSection";
 import { usePlanning } from "../../store/planning";
 
-/* El backend identifica la estrategia de umbral con un código interno; aquí se
-   traduce a algo que un clínico pueda leer. */
-const STRATEGY_LABEL: Record<string, string> = {
-  dsa: "angiografía sustraída (DSA)",
-  xa_band_pass: "3DRA, ventana ancha",
-  xa_wc_ww: "3DRA, ventana del estudio",
-  xa_window_mismatch: "3DRA, calculado de la imagen",
-  xa_raw16: "3DRA sin calibrar",
-  ct_stats: "TC con contraste",
-  ct_wc_ww: "TC, ventana del estudio",
-  mr_percentile: "resonancia magnética",
-  wc_ww: "ventana del estudio",
-};
-
-function strategyLabel(strategy: string): string {
-  return STRATEGY_LABEL[strategy] ?? "automático";
-}
+/* Banda vascular con contraste, la misma para cualquier estudio. Por debajo de
+   ~150 es fondo/tejido blando; por encima de ~500 entra hueso denso/calcio. */
+export const SEG_LOWER_DEFAULT = 150;
+export const SEG_UPPER_DEFAULT = 500;
 
 export function SegmentPanel({ onNext }: { onNext: () => void }) {
   const planning = usePlanning();
-  const { sessionId, series, thresholds, thresholdsLoading, segmentation, setPreviewBand } = planning;
+  const { sessionId, series, segmentation, setPreviewBand } = planning;
 
-  // While the auto-threshold is still loading (slow first volume read), don't
-  // let the clinician segment with the default 200/800 sliders — wait for the
-  // real band. If it failed to load (loading done, still null), allow manual.
-  const waitingThresholds = thresholdsLoading && !thresholds;
-
-  const [lower, setLower] = useState(Math.round(thresholds?.lower ?? 200));
-  const [upper, setUpper] = useState(Math.round(thresholds?.upper ?? 800));
+  const [lower, setLower] = useState(SEG_LOWER_DEFAULT);
+  const [upper, setUpper] = useState(SEG_UPPER_DEFAULT);
   const [smoothing, setSmoothing] = useState(3);
   const [cleanup, setCleanup] = useState(3);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Seed sliders once the auto-thresholds arrive.
-  useEffect(() => {
-    if (thresholds) {
-      setLower(Math.round(thresholds.lower));
-      setUpper(Math.round(thresholds.upper));
-    }
-  }, [thresholds]);
-
   // Live threshold preview on the MPR views (debounced) — tints the voxels the
   // current band would capture, so the clinician tunes it before segmenting.
   useEffect(() => {
-    if (waitingThresholds) return;
     const t = setTimeout(() => setPreviewBand([lower, upper]), 160);
     return () => clearTimeout(t);
-  }, [lower, upper, waitingThresholds, setPreviewBand]);
+  }, [lower, upper, setPreviewBand]);
 
   // Clear the preview when leaving the segmentation step.
   useEffect(() => () => setPreviewBand(null), [setPreviewBand]);
@@ -96,20 +74,12 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
         right={segmentation && <Badge variant="success">Malla lista</Badge>}
       />
 
-      <SectionLabel style={{ marginBottom: 10 }}>
-        Umbral {thresholds ? `· ${strategyLabel(thresholds.strategy)}` : ""}
-      </SectionLabel>
-      {waitingThresholds ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, color: "var(--muted-foreground)", background: "var(--muted, rgba(120,130,140,0.08))", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "12px 14px", marginBottom: 12 }}>
-          <span className="spin" style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--primary)", display: "inline-block", flexShrink: 0 }} />
-          Calculando umbral automático a partir del volumen…
-        </div>
-      ) : (
-        thresholds?.hint && (
-          <div style={{ fontSize: 12, color: "var(--muted-foreground)", marginBottom: 12 }}>{thresholds.hint}</div>
-        )
-      )}
-      <div style={{ opacity: waitingThresholds ? 0.5 : 1, pointerEvents: waitingThresholds ? "none" : "auto", transition: "opacity var(--dur-fast) var(--ease-out)" }}>
+      <SectionLabel style={{ marginBottom: 10 }}>Umbral de intensidad</SectionLabel>
+      <div style={{ fontSize: 12, color: "var(--muted-foreground)", marginBottom: 12 }}>
+        Banda vascular por defecto para cualquier estudio. Ajústala viendo en los cortes MPR
+        qué se captura (resaltado en verde) antes de segmentar.
+      </div>
+      <div>
         <Slider label="Umbral inferior" min={-500} max={1500} value={lower} onChange={setLower} unit=" HU" />
         <div style={{ height: 14 }} />
         <Slider label="Umbral superior" min={-500} max={3000} value={upper} onChange={setUpper} unit=" HU" />
@@ -117,6 +87,14 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
         <Slider label="Suavizado" min={0} max={10} value={smoothing} onChange={setSmoothing} />
         <div style={{ height: 14 }} />
         <Slider label="Limpieza de fragmentos" min={0} max={10} value={cleanup} onChange={setCleanup} />
+      </div>
+      <div style={{ marginTop: 6, textAlign: "right" }}>
+        <button
+          onClick={() => { setLower(SEG_LOWER_DEFAULT); setUpper(SEG_UPPER_DEFAULT); }}
+          style={{ background: "transparent", border: "none", color: "var(--brand-deep)", fontSize: 11, cursor: "pointer", padding: 0 }}
+        >
+          Restablecer umbral por defecto ({SEG_LOWER_DEFAULT}–{SEG_UPPER_DEFAULT} HU)
+        </button>
       </div>
 
       <PreprocessSection />
@@ -153,11 +131,11 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
         <Button
           variant={segmentation ? "outline" : "default"}
           onClick={() => void run()}
-          disabled={busy || !sessionId || waitingThresholds}
+          disabled={busy || !sessionId}
           leadingIcon={<Icon name="GROWTH" />}
           style={{ flex: 1 }}
         >
-          {waitingThresholds ? "Calculando umbral…" : segmentation ? "Re-segmentar" : "Segmentar"}
+          {segmentation ? "Re-segmentar" : "Segmentar"}
         </Button>
         {segmentation && (
           <Button onClick={onNext} trailingIcon={<Icon name="STEP_DETECT" />}>

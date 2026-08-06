@@ -5,7 +5,6 @@ import type {
   AneurysmDetectionResult,
   AuditBlock,
   AuditVerifyResult,
-  AutoThresholdResult,
   CenterlineRequest,
   CenterlineResult,
   CrossSectionRequest,
@@ -187,8 +186,6 @@ export const api = {
     for (const f of files) form.append("files", f, f.name);
     return post<UploadResult>("/api/upload", form);
   },
-  thresholds: (sessionId: string) =>
-    get<AutoThresholdResult>(`/api/thresholds/${sessionId}`),
   segment: (req: SegmentRequest) => post<SegmentResult>("/api/segment", req),
   segmentGrow: (sessionId: string, req: GrowRequest) =>
     post<GrowResult>(`/api/segment/grow/${sessionId}`, req),

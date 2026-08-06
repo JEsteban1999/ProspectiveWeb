@@ -9,19 +9,20 @@ import { Button } from "../Button";
 import { Icon } from "../Icon";
 import { SectionLabel, ErrorNote, Card } from "../PanelHead";
 import { Slider } from "../Slider";
+import { SEG_LOWER_DEFAULT, SEG_UPPER_DEFAULT } from "./SegmentPanel";
 import { usePlanning } from "../../store/planning";
 
 export function MeshEditTools() {
   const {
-    sessionId, segmentation, thresholds,
+    sessionId, segmentation,
     pickMode, setPickMode,
     growSeeds, setGrowSeeds, cropCenter, setCropCenter,
     setSegmentation, setCandidates, setSelectedCandidate,
     setMorphometry, setTreatment, setCenterlineMesh,
   } = usePlanning();
 
-  const [lower, setLower] = useState(Math.round(thresholds?.lower ?? 80));
-  const [upper, setUpper] = useState(Math.round(thresholds?.upper ?? 600));
+  const [lower, setLower] = useState(SEG_LOWER_DEFAULT);
+  const [upper, setUpper] = useState(SEG_UPPER_DEFAULT);
   const [shape, setShape] = useState<"sphere" | "box">("sphere");
   const [radius, setRadius] = useState(10);
   const [invert, setInvert] = useState(false);

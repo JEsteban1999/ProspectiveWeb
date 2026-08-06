@@ -306,15 +306,6 @@ export interface VolumeMeta {
 }
 
 /* ── segmentation ──────────────────────────────────────────────────────── */
-export interface AutoThresholdResult {
-  lower: number;
-  upper: number;
-  strategy: string;
-  is_dsa: boolean;
-  hint: string;
-  voxel_fraction: number | null;
-}
-
 export interface SegmentRequest {
   session_id: string;
   series_id: string;

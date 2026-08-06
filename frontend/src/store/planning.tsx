@@ -5,7 +5,6 @@ import { createContext, useContext, useState } from "react";
 import type { ReactNode } from "react";
 import type {
   AneurysmCandidate,
-  AutoThresholdResult,
   MorphometryResult,
   PatientSummary,
   SegmentResult,
@@ -17,11 +16,6 @@ interface PlanningState {
   patient: PatientSummary | null;
   sessionId: string | null;
   series: SeriesInfo | null;
-  thresholds: AutoThresholdResult | null;
-  /** True while the auto-threshold is being fetched after upload (the volume
-   *  load is slow on the first call), so the segmentation step can wait for the
-   *  real band instead of showing the default slider values. */
-  thresholdsLoading: boolean;
   /** Live threshold-preview band [lower, upper] HU set from the segmentation
    *  sliders; the MPR views tint the captured voxels in near-real-time. */
   previewBand: [number, number] | null;
@@ -62,8 +56,6 @@ interface PlanningState {
   setPatient: (p: PatientSummary | null) => void;
   setSession: (id: string | null) => void;
   setSeries: (s: SeriesInfo | null) => void;
-  setThresholds: (t: AutoThresholdResult | null) => void;
-  setThresholdsLoading: (v: boolean) => void;
   setPreviewBand: (b: [number, number] | null) => void;
   setSegmentation: (s: SegmentResult | null) => void;
   setCandidates: (c: AneurysmCandidate[]) => void;
@@ -110,8 +102,6 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   const [patient, setPatient] = useState<PatientSummary | null>(null);
   const [sessionId, setSession] = useState<string | null>(null);
   const [series, setSeries] = useState<SeriesInfo | null>(null);
-  const [thresholds, setThresholds] = useState<AutoThresholdResult | null>(null);
-  const [thresholdsLoading, setThresholdsLoading] = useState(false);
   const [previewBand, setPreviewBand] = useState<[number, number] | null>(null);
   const [segmentation, setSegmentation] = useState<SegmentResult | null>(null);
   const [candidates, setCandidates] = useState<AneurysmCandidate[]>([]);
@@ -138,8 +128,6 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   // Clear everything downstream of the DICOM upload — used when a new series is
   // uploaded in the same workspace so stale meshes/metrics don't linger.
   const resetDownstream = () => {
-    setThresholds(null);
-    setThresholdsLoading(false);
     setPreviewBand(null);
     setSegmentation(null);
     setCandidates([]);
@@ -172,11 +160,11 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   return (
     <PlanningContext.Provider
       value={{
-        patient, sessionId, series, thresholds, thresholdsLoading, previewBand, segmentation, candidates,
+        patient, sessionId, series, previewBand, segmentation, candidates,
         selectedCandidate, morphometry, treatment, deviceMesh,
         centerlineMesh, centerlineArcMm, pickMode, clSource, clTarget, neckOrigin, neckDome,
         measurements, measurePending, growSeeds, cropCenter, trajEntry, trajTarget, morphoOverlay, captureViewport,
-        setPatient, setSession, setSeries, setThresholds, setThresholdsLoading, setPreviewBand, setSegmentation,
+        setPatient, setSession, setSeries, setPreviewBand, setSegmentation,
         setCandidates, setSelectedCandidate, setMorphometry, setTreatment,
         setDeviceMesh, setCenterlineMesh, setCenterlineArcMm, setPickMode, setClSource, setClTarget,
         setNeckOrigin, setNeckDome,

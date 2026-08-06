@@ -1,4 +1,4 @@
-/* Paso 1 — Carga DICOM. POST /api/upload + GET /api/thresholds/{sid}.
+/* Paso 1 — Carga DICOM. POST /api/upload.
    Soporta archivos sueltos y carpetas completas (selector + drag & drop),
    igual que la carga por directorio de la app de escritorio. */
 
@@ -79,16 +79,7 @@ export function UploadPanel({ onNext }: { onNext: () => void }) {
       planning.setSession(res.session_id);
       const primary = res.series[0] ?? null;
       planning.setSeries(primary);
-      if (primary) {
-        planning.setThresholdsLoading(true);
-        try {
-          planning.setThresholds(await api.thresholds(res.session_id));
-        } catch {
-          planning.setThresholds(null); // thresholds are recomputed at segment time
-        } finally {
-          planning.setThresholdsLoading(false);
-        }
-      } else {
+      if (!primary) {
         setError("No se detectó ninguna serie DICOM en los archivos subidos.");
       }
     } catch (err) {
