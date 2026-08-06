@@ -31,6 +31,9 @@ import type {
   PendingUser,
   PhasesRequest,
   PhasesResult,
+  PrintBed,
+  PrintPrepRequest,
+  PrintPrepResult,
   SignupRequest,
   SignupResponse,
   CaseCreate,
@@ -201,6 +204,9 @@ export const api = {
     post<CrossSectionResult>(`/api/cross-section/${sessionId}`, req),
   deployClStent: (sessionId: string, req: ClStentRequest) =>
     post<ClStentResult>(`/api/cl-stent/${sessionId}`, req),
+  printBeds: () => get<PrintBed[]>("/api/print-prep/beds"),
+  printPrep: (sessionId: string, req: PrintPrepRequest) =>
+    post<PrintPrepResult>(`/api/print-prep/${sessionId}`, req),
 
   /* MPR / DICOM slice preview */
   volumeMeta: (sessionId: string) => get<VolumeMeta>(`/api/volume/${sessionId}/meta`),

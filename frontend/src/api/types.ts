@@ -365,6 +365,38 @@ export interface GrowResult {
   seeds: number;
 }
 
+/* ── 3D-print preparation ──────────────────────────────────────────────── */
+export interface PrintBed {
+  name: string;
+  x_mm: number;
+  y_mm: number;
+  z_mm: number;
+}
+
+export interface PrintPrepRequest {
+  target_size_mm?: number;
+  smooth_iterations?: number;
+  smooth_relaxation?: number;
+  fill_holes?: boolean;
+  hole_size?: number;
+  subdivide?: boolean;
+  bed_x_mm?: number;
+  bed_y_mm?: number;
+  bed_z_mm?: number;
+}
+
+export interface PrintPrepResult {
+  stl_url: string;
+  scale_factor: number;
+  dimensions_mm: number[];
+  volume_cm3: number;
+  surface_area_cm2: number;
+  is_watertight: boolean;
+  open_edge_count: number;
+  fits_in_bed: boolean;
+  warnings: string[];
+}
+
 /* ── centreline-guided stent (cl_stent) ────────────────────────────────── */
 export interface ClStentRequest {
   session_id: string;

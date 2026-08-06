@@ -10,6 +10,7 @@ import { Input } from "../Input";
 import { Metric } from "../Metric";
 import { PanelHead, SectionLabel, ErrorNote, Card } from "../PanelHead";
 import { Separator } from "../Separator";
+import { PrintPrepPanel } from "./PrintPrepPanel";
 import { useAuth } from "../../store/auth";
 import { usePlanning } from "../../store/planning";
 
@@ -165,6 +166,10 @@ export function ReportPanel({ onFinish }: { onFinish: () => void }) {
       </div>
 
       <ErrorNote>{error}</ErrorNote>
+
+      <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+        <PrintPrepPanel />
+      </div>
 
       <div style={{ marginTop: 14, textAlign: "center", fontSize: 11, color: "var(--muted-foreground)" }}>
         La sesión se vincula al paciente y estudio en la base de datos.
