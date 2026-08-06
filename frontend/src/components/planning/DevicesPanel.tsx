@@ -3,7 +3,7 @@
    Coils: GET /api/coils · POST /api/coils/plan
    Stents: GET /api/stents · POST /api/plan */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client";
 import type {
   ClipPlanResult,
@@ -45,39 +45,99 @@ function neckPlacement(m: MorphometryResult | null): { position: Position3D; nor
 }
 
 /* ── Clips ─────────────────────────────────────────────────────────────── */
+interface PlacedClip {
+  key: number;
+  clip_id: string;
+  name: string;
+  position: Position3D;
+  rotation_deg: number;
+}
+
+/** Compact numeric field for live clip repositioning. */
+function NumField({ label, value, onChange, step = 1 }: { label: string; value: number; onChange: (v: number) => void; step?: number }) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 0 }}>
+      <span style={{ fontSize: 10, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: ".04em" }}>{label}</span>
+      <input
+        type="number" value={Number.isFinite(value) ? value : 0} step={step}
+        onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+        style={{ width: "100%", fontSize: 12, fontFamily: "var(--font-mono)", padding: "4px 6px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)", background: "var(--card)", color: "var(--foreground)" }}
+      />
+    </label>
+  );
+}
+
 function ClipsTab() {
   const { sessionId, morphometry, setDeviceMesh } = usePlanning();
   const [recs, setRecs] = useState<ClipRecommendation[]>([]);
-  const [sel, setSel] = useState<string | null>(null);
+  const [customs, setCustoms] = useState<{ clip_id: string; name: string }[]>([]);
+  const [sel, setSel] = useState<string>("");
+  const [placed, setPlaced] = useState<PlacedClip[]>([]);
   const [plan, setPlan] = useState<ClipPlanResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const nextKey = useRef(1);
 
   useEffect(() => {
     if (!sessionId) return;
-    api
-      .clipRecommendations(sessionId)
-      .then((r) => {
-        setRecs(r);
-        if (r.length > 0) setSel(r[0].clip_id);
-      })
+    api.clipRecommendations(sessionId)
+      .then((r) => { setRecs(r); if (r.length > 0 && !sel) setSel(r[0].clip_id); })
       .catch((e) => setError(e instanceof Error ? e.message : "Error cargando recomendaciones"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
+  const options = useMemo(() => [
+    ...recs.map((r) => ({ value: r.clip_id, label: `${r.clip_name} · ${(r.score * 100).toFixed(0)}` })),
+    ...customs.map((c) => ({ value: c.clip_id, label: `★ ${c.name} (personalizado)` })),
+  ], [recs, customs]);
+
+  const nameFor = (clipId: string) =>
+    recs.find((r) => r.clip_id === clipId)?.clip_name
+    ?? customs.find((c) => c.clip_id === clipId)?.name
+    ?? clipId;
+
+  const addClip = () => {
+    if (!sel) return;
+    const { position } = neckPlacement(morphometry);
+    setPlaced((p) => [...p, { key: nextKey.current++, clip_id: sel, name: nameFor(sel), position: { ...position }, rotation_deg: 0 }]);
+  };
+
+  const updateClip = (key: number, patch: Partial<PlacedClip>) =>
+    setPlaced((p) => p.map((c) => (c.key === key ? { ...c, ...patch } : c)));
+  const removeClip = (key: number) => setPlaced((p) => p.filter((c) => c.key !== key));
+
+  const importClip = async (file: File) => {
+    if (!sessionId) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const info = await api.uploadCustomClip(sessionId, file);
+      setCustoms((c) => [...c, info]);
+      setSel(info.clip_id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error importando el clip");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
   const place = async () => {
-    if (!sessionId || !sel) return;
+    if (!sessionId || placed.length === 0) return;
     setBusy(true);
     setError(null);
     try {
-      const { position, normal } = neckPlacement(morphometry);
+      const { normal } = neckPlacement(morphometry);
       const res = await api.planClips({
         session_id: sessionId,
-        placements: [{ clip_id: sel, position, normal, rotation_deg: 0 }],
+        placements: placed.map((c) => ({ clip_id: c.clip_id, position: c.position, normal, rotation_deg: c.rotation_deg })),
       });
       setPlan(res);
       setDeviceMesh(res.clips_mesh_url || null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al colocar el clip");
+      setError(err instanceof Error ? err.message : "Error al colocar los clips");
     } finally {
       setBusy(false);
     }
@@ -85,68 +145,59 @@ function ClipsTab() {
 
   return (
     <div style={{ marginTop: 12 }}>
-      <SectionLabel>Recomendaciones (ranking del catálogo)</SectionLabel>
-      {recs.length === 0 && !error && (
-        <div style={{ fontSize: 12, color: "var(--muted-foreground)", padding: "10px 0" }}>
-          Sin recomendaciones — ejecuta primero la morfometría (cuello y AR).
+      <SectionLabel>Modelo de clip</SectionLabel>
+      {recs.length === 0 && customs.length === 0 && (
+        <div style={{ fontSize: 12, color: "var(--muted-foreground)", padding: "8px 0" }}>
+          Sin recomendaciones — ejecuta la morfometría (cuello y AR) o importa un clip.
         </div>
       )}
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {recs.map((c) => {
-          const on = sel === c.clip_id;
-          return (
-            <div
-              key={c.clip_id}
-              onClick={() => setSel(c.clip_id)}
-              style={{
-                cursor: "pointer",
-                border: `1px solid ${on ? "var(--primary)" : "var(--border)"}`,
-                background: on ? "var(--brand-subtle)" : "var(--card)",
-                borderRadius: "var(--radius-lg)",
-                padding: "11px 13px",
-                transition: "all var(--dur-fast) var(--ease-out)",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontWeight: 700, color: "var(--foreground)", fontSize: 13 }}>{c.clip_name}</span>
-                <div style={{ flex: 1 }} />
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--brand-deep)", fontWeight: 700 }}>
-                  {(c.score * 100).toFixed(0)}
-                </span>
-              </div>
-              <div style={{ fontSize: 12, color: "var(--foreground)", marginTop: 4, fontStyle: "italic" }}>{c.reason}</div>
-            </div>
-          );
-        })}
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Select label={`Catálogo + personalizados (${options.length})`} options={options} value={sel} onChange={(e) => setSel(e.target.value)} />
+        </div>
+        <Button size="sm" onClick={addClip} disabled={!sel} leadingIcon={<Icon name="CLIP_PLACE" size={14} />}>Añadir</Button>
       </div>
+      <input ref={fileRef} type="file" accept=".stl,.obj" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) void importClip(f); }} />
+      <button
+        onClick={() => fileRef.current?.click()} disabled={uploading}
+        style={{ width: "100%", padding: "7px 10px", fontSize: 12, fontWeight: 600, cursor: uploading ? "wait" : "pointer", borderRadius: "var(--radius-md)", border: "1px dashed var(--border)", background: "transparent", color: "var(--brand-deep)", marginBottom: 12 }}
+      >
+        {uploading ? "Importando…" : "＋ Importar clip personalizado (STL/OBJ)"}
+      </button>
+
+      {placed.length > 0 && (
+        <>
+          <SectionLabel>Clips colocados ({placed.length})</SectionLabel>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
+            {placed.map((c, i) => (
+              <Card key={c.key} style={{ padding: "10px 12px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "var(--foreground)", flex: 1 }}>#{i + 1} · {c.name}</span>
+                  <button onClick={() => removeClip(c.key)} title="Quitar" style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--destructive, #ef4444)", fontSize: 14 }}>✕</button>
+                </div>
+                <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                  <NumField label="X" value={c.position.x} onChange={(v) => updateClip(c.key, { position: { ...c.position, x: v } })} />
+                  <NumField label="Y" value={c.position.y} onChange={(v) => updateClip(c.key, { position: { ...c.position, y: v } })} />
+                  <NumField label="Z" value={c.position.z} onChange={(v) => updateClip(c.key, { position: { ...c.position, z: v } })} />
+                  <NumField label="Rot°" value={c.rotation_deg} onChange={(v) => updateClip(c.key, { rotation_deg: v })} step={5} />
+                </div>
+              </Card>
+            ))}
+          </div>
+        </>
+      )}
 
       {plan && (
         <Card style={{ marginTop: 14 }}>
-          <Metric
-            label="Cobertura de cuello"
-            value={plan.neck_coverage_pct.toFixed(1)}
-            unit=" %"
-            badge={plan.neck_coverage_pct >= 95 ? ["Óptimo", "success"] : ["Parcial", "warning"]}
-          />
-          <Metric
-            label="Colisión clip–vaso"
-            value={plan.collision_detected ? "Sí" : "No"}
-            badge={plan.collision_detected ? ["Colisión", "destructive"] : ["OK", "success"]}
-          />
-          {plan.warning && (
-            <div style={{ marginTop: 8, fontSize: 12, color: "var(--warning)" }}>{plan.warning}</div>
-          )}
+          <Metric label="Cobertura de cuello" value={plan.neck_coverage_pct.toFixed(1)} unit=" %" badge={plan.neck_coverage_pct >= 95 ? ["Óptimo", "success"] : ["Parcial", "warning"]} />
+          <Metric label="Colisión clip–vaso" value={plan.collision_detected ? "Sí" : "No"} badge={plan.collision_detected ? ["Colisión", "destructive"] : ["OK", "success"]} />
+          {plan.warning && <div style={{ marginTop: 8, fontSize: 12, color: "var(--warning)" }}>{plan.warning}</div>}
         </Card>
       )}
       <ErrorNote>{error}</ErrorNote>
 
-      <Button
-        style={{ marginTop: 14, width: "100%" }}
-        onClick={() => void place()}
-        disabled={busy || !sel}
-        leadingIcon={<Icon name="CLIP_PLACE" />}
-      >
-        {busy ? "Verificando…" : "Colocar y verificar"}
+      <Button style={{ marginTop: 14, width: "100%" }} onClick={() => void place()} disabled={busy || placed.length === 0} leadingIcon={<Icon name="CLIP_PLACE" />}>
+        {busy ? "Verificando…" : `Colocar ${placed.length || ""} y verificar`}
       </Button>
     </div>
   );

@@ -574,6 +574,11 @@ export interface ClipRecommendation {
   suggested_placement: ClipPlacement | null;
 }
 
+export interface CustomClipInfo {
+  clip_id: string;
+  name: string;
+}
+
 export interface ClipPlanRequest {
   session_id: string;
   placements: ClipPlacement[];

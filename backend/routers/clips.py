@@ -1,13 +1,15 @@
 """Surgical clip library and planning router."""
 from __future__ import annotations
 
+import json
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
+from pydantic import BaseModel
 
 from models import ClipLibraryItem, ClipPlanRequest, ClipPlanResult, ClipRecommendation
 from services.clips   import catalogue_to_api, recommend_clips, recommendations_to_api
-from services.sessions import read_state, session_exists, session_subdir, mesh_url
+from services.sessions import read_state, session_exists, session_subdir, mesh_url, write_state
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["clips"])
@@ -16,6 +18,15 @@ router = APIRouter(prefix="/api", tags=["clips"])
 _CLIP_LENGTH = {item["id"]: item["length_mm"] for item in catalogue_to_api()}
 _CLIP_NAME = {item["id"]: item["name"] for item in catalogue_to_api()}
 
+# Custom clip uploads: cap size and remember display names per session.
+_MAX_CLIP_BYTES = 8 * 1024 * 1024
+_CUSTOM_REGISTRY_KEY = "clips.custom_registry"
+
+
+class CustomClipInfo(BaseModel):
+    clip_id: str
+    name: str
+
 
 def _load_float(session_id: str, key: str, default: float) -> float:
     try:
@@ -23,6 +34,21 @@ def _load_float(session_id: str, key: str, default: float) -> float:
         return float(raw) if raw else default
     except (ValueError, Exception):
         return default
+
+
+def _custom_registry(session_id: str) -> dict:
+    raw = read_state(session_id, _CUSTOM_REGISTRY_KEY, "")
+    if not raw:
+        return {}
+    try:
+        v = json.loads(raw)
+        return v if isinstance(v, dict) else {}
+    except (ValueError, TypeError):
+        return {}
+
+
+def _custom_clip_name(session_id: str, clip_id: str) -> str:
+    return _custom_registry(session_id).get(clip_id, "Clip personalizado")
 
 
 @router.get(
@@ -72,6 +98,78 @@ async def get_clip_recommendations(session_id: str) -> list[ClipRecommendation]:
 
 
 @router.post(
+    "/clips/custom/{session_id}",
+    response_model=CustomClipInfo,
+    summary="Upload a custom clip mesh (STL/OBJ)",
+    description=(
+        "Imports a user-supplied clip geometry (STL or OBJ), centres it at the "
+        "origin and stores it for placement. Returns a `custom:*` clip_id usable "
+        "in the clip plan alongside catalogue clips."
+    ),
+)
+async def upload_custom_clip(
+    session_id: str,
+    file: UploadFile = File(...),
+) -> CustomClipInfo:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    name = file.filename or "clip"
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if ext not in ("stl", "obj"):
+        raise HTTPException(status_code=422, detail="Formato no soportado. Usa STL u OBJ.")
+    raw = await file.read()
+    if len(raw) > _MAX_CLIP_BYTES:
+        raise HTTPException(status_code=413, detail="El archivo supera el límite de 8 MB.")
+
+    meshes_dir = session_subdir(session_id, "meshes")
+    custom_dir = meshes_dir / "custom_clips"
+    custom_dir.mkdir(parents=True, exist_ok=True)
+
+    registry = _custom_registry(session_id)
+    idx = len(registry)
+    clip_id = f"custom:{idx}"
+
+    import tempfile
+    from pathlib import Path as _Path
+    import vtk
+    from services.segmentation import write_vtp
+
+    tmp = custom_dir / f"_upload_{idx}.{ext}"
+    tmp.write_bytes(raw)
+    try:
+        reader = vtk.vtkSTLReader() if ext == "stl" else vtk.vtkOBJReader()
+        reader.SetFileName(str(tmp))
+        reader.Update()
+        poly = reader.GetOutput()
+        if poly is None or poly.GetNumberOfPoints() == 0:
+            raise ValueError("La malla del clip está vacía o no se pudo leer.")
+        # Centre at the origin so pose_transform places it at the neck.
+        b = [0.0] * 6
+        poly.GetBounds(b)
+        cx, cy, cz = (b[0] + b[1]) / 2, (b[2] + b[3]) / 2, (b[4] + b[5]) / 2
+        tf = vtk.vtkTransform()
+        tf.Translate(-cx, -cy, -cz)
+        f = vtk.vtkTransformPolyDataFilter()
+        f.SetInputData(poly)
+        f.SetTransform(tf)
+        f.Update()
+        write_vtp(f.GetOutput(), meshes_dir / f"custom_clip_{idx}.vtp")
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=422, detail=f"No se pudo importar el clip: {exc}")
+    finally:
+        try:
+            _Path(tmp).unlink()
+        except OSError:
+            pass
+
+    registry[clip_id] = name
+    write_state(session_id, _CUSTOM_REGISTRY_KEY, json.dumps(registry))
+    logger.info("Custom clip imported — session=%s id=%s name=%s", session_id, clip_id, name)
+    return CustomClipInfo(clip_id=clip_id, name=name)
+
+
+@router.post(
     "/clips/plan",
     response_model=ClipPlanResult,
     summary="Compute clip placement plan",
@@ -104,10 +202,19 @@ async def plan_clips(req: ClipPlanRequest) -> ClipPlanResult:
     vessel_path = meshes_dir / "vessel_tree.vtp"
 
     # ── Build a real mesh for every placed clip at its pose ─────────────── #
+    def _clip_local(clip_id: str):
+        """Local clip geometry — a stored custom mesh or a synthetic catalogue clip."""
+        if clip_id.startswith("custom:"):
+            idx = clip_id.split(":", 1)[1]
+            path = meshes_dir / f"custom_clip_{idx}.vtp"
+            if path.exists():
+                return read_vtp(path)
+            logger.warning("Custom clip %s not found; falling back to synthetic", clip_id)
+        return devices.make_clip(_CLIP_LENGTH.get(clip_id, 9.0))
+
     clip_polys = []
     for pl in req.placements:
-        length = _CLIP_LENGTH.get(pl.clip_id, 9.0)
-        local = devices.make_clip(length)
+        local = _clip_local(pl.clip_id)
         t = devices.pose_transform(
             (pl.position.x, pl.position.y, pl.position.z),
             tuple(pl.normal) if pl.normal else (0.0, 0.0, 1.0),
@@ -161,10 +268,12 @@ async def plan_clips(req: ClipPlanRequest) -> ClipPlanResult:
     save_clips(req.session_id, [
         {
             "index": i,
-            "name": _CLIP_NAME.get(pl.clip_id, pl.clip_id),
+            "name": (_custom_clip_name(req.session_id, pl.clip_id)
+                     if pl.clip_id.startswith("custom:")
+                     else _CLIP_NAME.get(pl.clip_id, pl.clip_id)),
             "position": [pl.position.x, pl.position.y, pl.position.z],
             "orientation": [0.0, 0.0, float(pl.rotation_deg)],
-            "is_custom": False,
+            "is_custom": pl.clip_id.startswith("custom:"),
         }
         for i, pl in enumerate(req.placements)
     ])

@@ -16,6 +16,7 @@ import type {
   ClipPlanRequest,
   ClipPlanResult,
   ClipRecommendation,
+  CustomClipInfo,
   CoilLibraryItem,
   CoilPlacement,
   CoilPlanResult,
@@ -239,6 +240,11 @@ export const api = {
   clipRecommendations: (sessionId: string) =>
     get<ClipRecommendation[]>(`/api/clips/recommendations/${sessionId}`),
   planClips: (req: ClipPlanRequest) => post<ClipPlanResult>("/api/clips/plan", req),
+  uploadCustomClip: (sessionId: string, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file, file.name);
+    return post<CustomClipInfo>(`/api/clips/custom/${sessionId}`, fd);
+  },
   listCoils: () => get<CoilLibraryItem[]>("/api/coils"),
   planCoils: (sessionId: string, placements: CoilPlacement[]) =>
     post<CoilPlanResult>("/api/coils/plan", { session_id: sessionId, placements }),
