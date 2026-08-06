@@ -16,7 +16,8 @@ import { usePlanning } from "../../store/planning";
 
 export function ReportPanel({ onFinish }: { onFinish: () => void }) {
   const { user } = useAuth();
-  const { sessionId, patient, morphometry, treatment } = usePlanning();
+  const { sessionId, patient, morphometry, treatment, captureViewport } = usePlanning();
+  const [includeShot, setIncludeShot] = useState(true);
   const [surgeon, setSurgeon] = useState(user?.full_name ?? "");
   const [notes, setNotes] = useState("");
   const [report, setReport] = useState<ReportResult | null>(null);
@@ -30,6 +31,14 @@ export function ReportPanel({ onFinish }: { onFinish: () => void }) {
     setBusy("pdf");
     setError(null);
     try {
+      // Capture the live 3D scene (data URL → base64 payload) when available.
+      let shotB64: string | null = null;
+      if (includeShot && captureViewport) {
+        try {
+          const dataUrl = await captureViewport();
+          if (dataUrl && dataUrl.startsWith("data:image")) shotB64 = dataUrl.split(",")[1] ?? null;
+        } catch { /* screenshot is best-effort */ }
+      }
       setReport(
         await api.report({
           session_id: sessionId,
@@ -40,7 +49,8 @@ export function ReportPanel({ onFinish }: { onFinish: () => void }) {
           surgeon_name: surgeon,
           institution: patient?.institution ?? user?.institution ?? "",
           clinical_notes: notes,
-          include_3d_screenshot: false,
+          include_3d_screenshot: !!shotB64,
+          screenshot_png_b64: shotB64 ?? undefined,
         })
       );
     } catch (err) {
@@ -135,6 +145,10 @@ export function ReportPanel({ onFinish }: { onFinish: () => void }) {
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--foreground)", cursor: "pointer" }}>
+          <input type="checkbox" checked={includeShot} onChange={(e) => setIncludeShot(e.target.checked)} />
+          Incluir captura 3D de la escena en el PDF
+        </label>
         <Button leadingIcon={<Icon name="DOC" />} onClick={() => void genPdf()} disabled={busy !== null}>
           {busy === "pdf" ? "Generando…" : "Generar informe PDF"}
         </Button>

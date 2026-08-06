@@ -97,7 +97,7 @@ export function Viewer({ step }: { step: string }) {
     measurements, measurePending, setMeasurements, setMeasurePending, previewBand,
     growSeeds, setGrowSeeds, cropCenter, setCropCenter,
     trajEntry, trajTarget, setTrajEntry, setTrajTarget,
-    morphometry, morphoOverlay,
+    morphometry, morphoOverlay, setCaptureViewport,
   } = usePlanning();
 
   // 3D morphometric overlay: neck ring + dome-height & max-diameter spans + apex.
@@ -234,7 +234,7 @@ export function Viewer({ step }: { step: string }) {
         <ObliqueMprView sessionId={sessionId} wc={meta.wc} ww={meta.ww} />
       ) : meshVisible ? (
         <Suspense fallback={<ViewerLoading label="Cargando visor 3D…" />}>
-          <MeshView layers={layers} markers={markers} lines={lines} pickMode={pickMode !== null} onPick={onPick} focusUrl={focusUrl} />
+          <MeshView layers={layers} markers={markers} lines={lines} pickMode={pickMode !== null} onPick={onPick} focusUrl={focusUrl} registerCapture={setCaptureViewport} />
         </Suspense>
       ) : sessionId && meta ? (
         <MprView sessionId={sessionId} meta={meta} plane="axial" showSlider band={previewActive ? previewBand : null} />

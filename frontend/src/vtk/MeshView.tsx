@@ -49,6 +49,7 @@ export function MeshView({
   pickMode = false,
   onPick,
   focusUrl,
+  registerCapture,
 }: {
   layers: MeshLayer[];
   markers?: MeshMarker[];
@@ -60,10 +61,15 @@ export function MeshView({
    *  aneurysm candidate). The view zooms to its region — with local context —
    *  and the layer is lit to stand out. */
   focusUrl?: string;
+  /** Registers a function that captures the live viewport as a PNG data URL
+   *  (used to embed the 3D scene in the PDF report). Called with null on unmount. */
+  registerCapture?: (fn: (() => Promise<string | null>) | null) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const handles = useRef<Handles | null>(null);
   const markerActors = useRef<vtkActor[]>([]);
+  const registerCaptureRef = useRef(registerCapture);
+  registerCaptureRef.current = registerCapture;
 
   // Latest pick config, read inside the vtk interactor callback without
   // forcing the scene to rebuild when the pick mode toggles.
@@ -176,9 +182,27 @@ export function MeshView({
       renderWindow.render();
     })();
 
+    // Expose a viewport-capture function (PNG data URL) for the PDF report.
+    const capture = async (): Promise<string | null> => {
+      const h = handles.current;
+      if (!h) return null;
+      try {
+        const glrw = (h.fsrw as unknown as { getApiSpecificRenderWindow?: () => { captureNextImage: (fmt: string) => Promise<string> } }).getApiSpecificRenderWindow?.();
+        if (!glrw) return null;
+        const promise = glrw.captureNextImage("image/png");
+        h.renderWindow.render();
+        return await promise;
+      } catch (err) {
+        console.warn("MeshView capture failed", err);
+        return null;
+      }
+    };
+    registerCaptureRef.current?.(capture);
+
     return () => {
       cancelled = true;
       pickSub.unsubscribe();
+      registerCaptureRef.current?.(null);
       markerActors.current = [];
       const h = handles.current;
       if (h) {

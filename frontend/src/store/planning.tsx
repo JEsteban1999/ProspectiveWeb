@@ -56,6 +56,8 @@ interface PlanningState {
   trajTarget: Vec3 | null;
   /** Show the 3D morphometric overlay (neck disc, dome/max-diameter lines, labels). */
   morphoOverlay: boolean;
+  /** Capture the live 3D viewport as a PNG data URL (set by MeshView while mounted). */
+  captureViewport: (() => Promise<string | null>) | null;
 
   setPatient: (p: PatientSummary | null) => void;
   setSession: (id: string | null) => void;
@@ -83,6 +85,7 @@ interface PlanningState {
   setTrajEntry: (p: Vec3 | null) => void;
   setTrajTarget: (p: Vec3 | null) => void;
   setMorphoOverlay: (v: boolean) => void;
+  setCaptureViewport: (fn: (() => Promise<string | null>) | null) => void;
   reset: () => void;
   resetDownstream: () => void;
 }
@@ -130,6 +133,7 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   const [trajEntry, setTrajEntry] = useState<Vec3 | null>(null);
   const [trajTarget, setTrajTarget] = useState<Vec3 | null>(null);
   const [morphoOverlay, setMorphoOverlay] = useState(false);
+  const [captureViewport, setCaptureViewport] = useState<(() => Promise<string | null>) | null>(null);
 
   // Clear everything downstream of the DICOM upload — used when a new series is
   // uploaded in the same workspace so stale meshes/metrics don't linger.
@@ -171,12 +175,13 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
         patient, sessionId, series, thresholds, thresholdsLoading, previewBand, segmentation, candidates,
         selectedCandidate, morphometry, treatment, deviceMesh,
         centerlineMesh, centerlineArcMm, pickMode, clSource, clTarget, neckOrigin, neckDome,
-        measurements, measurePending, growSeeds, cropCenter, trajEntry, trajTarget, morphoOverlay,
+        measurements, measurePending, growSeeds, cropCenter, trajEntry, trajTarget, morphoOverlay, captureViewport,
         setPatient, setSession, setSeries, setThresholds, setThresholdsLoading, setPreviewBand, setSegmentation,
         setCandidates, setSelectedCandidate, setMorphometry, setTreatment,
         setDeviceMesh, setCenterlineMesh, setCenterlineArcMm, setPickMode, setClSource, setClTarget,
         setNeckOrigin, setNeckDome,
         setMeasurements, setMeasurePending, setGrowSeeds, setCropCenter, setTrajEntry, setTrajTarget, setMorphoOverlay,
+        setCaptureViewport,
         reset, resetDownstream,
       }}
     >
