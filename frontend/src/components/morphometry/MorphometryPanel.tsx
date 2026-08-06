@@ -142,6 +142,13 @@ export function MorphometryPanel({ onNext }: { onNext: () => void }) {
             </div>
           )}
 
+          {m.centroid && m.principal_axis && (
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--foreground)", cursor: "pointer", margin: "4px 0 12px", padding: "8px 10px", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", background: planning.morphoOverlay ? "var(--brand-subtle)" : "transparent" }}>
+              <input type="checkbox" checked={planning.morphoOverlay} onChange={(e) => planning.setMorphoOverlay(e.target.checked)} />
+              Mostrar anotaciones 3D (cuello, altura de domo, Ø máximo) en el visor
+            </label>
+          )}
+
           <Tabs tabs={TABS} value={tab} onChange={setTab} />
           <div style={{ marginTop: 12 }}>
             {tab === "Métricas" && (

@@ -45,6 +45,23 @@ const CROP_CENTER_COLOR: Vector3 = [0.98, 0.60, 0.20]; // orange — crop ROI ce
 const TRAJ_ENTRY_COLOR: Vector3 = [0.40, 0.80, 1.00];  // sky blue — approach entry
 const TRAJ_TARGET_COLOR: Vector3 = [0.97, 0.32, 0.29]; // red — approach target
 const TRAJ_LINE_COLOR: Vector3 = [0.55, 0.85, 1.00];   // light blue — approach corridor
+const MO_NECK_COLOR: Vector3 = [0.20, 0.75, 1.00];     // sky blue — neck ring/marker
+const MO_DOME_COLOR: Vector3 = [1.00, 0.55, 0.10];     // orange — dome-height line/apex
+const MO_MAXD_COLOR: Vector3 = [0.85, 0.20, 0.20];     // red — max-diameter span
+
+/* Small 3-vector helpers for the morphometric overlay geometry. */
+type V3 = [number, number, number];
+const vadd = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const vsub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const vscale = (a: V3, s: number): V3 => [a[0] * s, a[1] * s, a[2] * s];
+const vcross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const vnorm = (a: V3): V3 => { const m = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / m, a[1] / m, a[2] / m]; };
+function perpBasis(axis: V3): [V3, V3] {
+  const ref: V3 = Math.abs(axis[2]) > 0.9 ? [0, 1, 0] : [0, 0, 1];
+  const u = vnorm(vcross(axis, ref));
+  const v = vnorm(vcross(axis, u));
+  return [u, v];
+}
 
 /* Load the volume meta once per session; shared by main view + MPR strip. */
 function useVolumeMeta(sessionId: string | null): VolumeMeta | null {
@@ -80,7 +97,44 @@ export function Viewer({ step }: { step: string }) {
     measurements, measurePending, setMeasurements, setMeasurePending, previewBand,
     growSeeds, setGrowSeeds, cropCenter, setCropCenter,
     trajEntry, trajTarget, setTrajEntry, setTrajTarget,
+    morphometry, morphoOverlay,
   } = usePlanning();
+
+  // 3D morphometric overlay: neck ring + dome-height & max-diameter spans + apex.
+  const overlay = useMemo<{ markers: MeshMarker[]; lines: MeshLine[] } | null>(() => {
+    if (!morphoOverlay || !morphometry) return null;
+    const c = morphometry.centroid;
+    const ax = morphometry.principal_axis;
+    if (!c || !ax || ax.length !== 3) return null;
+    const centroid: V3 = [c.x, c.y, c.z];
+    const axis = vnorm([ax[0], ax[1], ax[2]] as V3);
+    const dome = morphometry.dome_height_mm || 0;
+    const neckR = (morphometry.neck_mm || 0) / 2;
+    const maxR = (morphometry.max_diameter_mm || 0) / 2;
+    const neckC = vsub(centroid, vscale(axis, dome / 2));
+    const apex = vadd(centroid, vscale(axis, dome / 2));
+    const [u, v] = perpBasis(axis);
+
+    const markers: MeshMarker[] = [
+      { pos: neckC, color: MO_NECK_COLOR },
+      { pos: apex, color: MO_DOME_COLOR },
+    ];
+    const lines: MeshLine[] = [
+      { a: neckC, b: apex, color: MO_DOME_COLOR },                                   // dome height
+      { a: vsub(centroid, vscale(u, maxR)), b: vadd(centroid, vscale(u, maxR)), color: MO_MAXD_COLOR }, // max Ø
+    ];
+    // Neck ring approximated by N segments in the plane perpendicular to the axis.
+    if (neckR > 0.05) {
+      const N = 28;
+      const ring: V3[] = [];
+      for (let k = 0; k < N; k++) {
+        const t = (2 * Math.PI * k) / N;
+        ring.push(vadd(neckC, vadd(vscale(u, neckR * Math.cos(t)), vscale(v, neckR * Math.sin(t)))));
+      }
+      for (let k = 0; k < N; k++) lines.push({ a: ring[k], b: ring[(k + 1) % N], color: MO_NECK_COLOR });
+    }
+    return { markers, lines };
+  }, [morphoOverlay, morphometry]);
   // mesh_url carries a generation token (?v=…) from the backend, so it changes
   // on every re-segmentation and vtk.js refetches instead of serving the cache.
   const meshUrl = segmentation?.mesh_url ?? null;
@@ -132,16 +186,18 @@ export function Viewer({ step }: { step: string }) {
     if (cropCenter) out.push({ pos: cropCenter, color: CROP_CENTER_COLOR });
     if (trajEntry) out.push({ pos: trajEntry, color: TRAJ_ENTRY_COLOR });
     if (trajTarget) out.push({ pos: trajTarget, color: TRAJ_TARGET_COLOR });
+    if (overlay) out.push(...overlay.markers);
     return out;
-  }, [clSource, clTarget, measurePending, neckOrigin, neckDome, growSeeds, cropCenter, trajEntry, trajTarget]);
+  }, [clSource, clTarget, measurePending, neckOrigin, neckDome, growSeeds, cropCenter, trajEntry, trajTarget, overlay]);
 
   const lines = useMemo<MeshLine[]>(() => {
     const out: MeshLine[] = measurements
       .filter((m) => m.visible)
       .map((m) => ({ a: m.a, b: m.b, color: MEASURE_COLOR }));
     if (trajEntry && trajTarget) out.push({ a: trajEntry, b: trajTarget, color: TRAJ_LINE_COLOR });
+    if (overlay) out.push(...overlay.lines);
     return out;
-  }, [measurements, trajEntry, trajTarget]);
+  }, [measurements, trajEntry, trajTarget, overlay]);
 
   const onPick = useCallback(
     (xyz: [number, number, number]) => {
@@ -262,6 +318,16 @@ export function Viewer({ step }: { step: string }) {
           {pickMode === "traj_entry" && "Clic para el punto de entrada del abordaje"}
           {pickMode === "traj_target" && "Clic sobre el aneurisma (punto diana)"}
           {pickMode === "measure" && (measurePending ? "Clic en el segundo punto" : "Clic en el primer punto")}
+        </div>
+      )}
+
+      {/* Morphometric overlay legend — values annotated in the 3D scene. */}
+      {viewMode === "default" && meshVisible && overlay && morphometry && (
+        <div style={{ position: "absolute", bottom: 40, left: 16, display: "flex", flexDirection: "column", gap: 3, background: "rgba(20,24,28,0.72)", border: "1px solid rgba(120,140,160,0.4)", borderRadius: 8, padding: "8px 11px", pointerEvents: "none", fontSize: 11, fontFamily: "var(--font-mono)", color: "#DCE6EE" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: "rgb(51,191,255)" }} />Ø cuello {morphometry.neck_mm.toFixed(1)} mm</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: "rgb(255,140,26)" }} />H domo {morphometry.dome_height_mm.toFixed(1)} mm</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: "rgb(217,51,51)" }} />Ø máx {morphometry.max_diameter_mm.toFixed(1)} mm</span>
+          <span style={{ color: "rgba(200,210,220,0.75)" }}>AR {morphometry.ar.toFixed(2)} · DNR {morphometry.dnr.toFixed(2)}</span>
         </div>
       )}
 
