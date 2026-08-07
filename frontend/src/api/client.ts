@@ -156,6 +156,13 @@ export const api = {
   approvePending: (id: number) => post<{ status: string }>(`/api/auth/pending/${id}/approve`),
   rejectPending: (id: number) => post<{ status: string }>(`/api/auth/pending/${id}/reject`),
   listUsers: () => get<UserAdminInfo[]>("/api/auth/users"),
+  createUser: (fields: Record<string, string>, photo?: File | null, cv?: File | null) => {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(fields)) fd.append(k, v ?? "");
+    if (photo) fd.append("photo", photo, photo.name);
+    if (cv) fd.append("cv", cv, cv.name);
+    return post<UserAdminInfo>("/api/auth/users", fd);
+  },
   updateUser: (id: number, u: UserUpdate) =>
     request<UserAdminInfo>(`/api/auth/users/${id}`, { method: "PUT", body: JSON.stringify(u), headers: { "Content-Type": "application/json" } }),
   deleteUser: (id: number) =>

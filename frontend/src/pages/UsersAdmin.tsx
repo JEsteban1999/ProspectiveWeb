@@ -7,6 +7,7 @@ import { api } from "../api/client";
 import type { UserAdminInfo } from "../api/types";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
+import { FileField } from "../components/FileField";
 import { Icon } from "../components/Icon";
 import { Input } from "../components/Input";
 import { Select } from "../components/Select";
@@ -14,6 +15,20 @@ import { Sheet } from "../components/Sheet";
 import { Topbar } from "../components/Topbar";
 import { ErrorNote } from "../components/PanelHead";
 import { useAuth } from "../store/auth";
+
+const SPECIALTIES = [
+  "Neurocirugía", "Neurorradiología intervencionista", "Neurología",
+  "Radiología", "Anestesiología", "Medicina interna", "Otra",
+];
+const POSITIONS = [
+  "Neurocirujano/a", "Neurorradiólogo/a", "Residente de Neurocirugía",
+  "Residente de Radiología", "Fellow", "Médico adjunto",
+  "Estudiante de medicina", "Investigador/a", "Otro",
+];
+const GROUP_LABEL: React.CSSProperties = {
+  fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
+  color: "var(--muted-foreground)", margin: "20px 0 2px",
+};
 
 const ROLE_OPTS = [
   { value: "admin", label: "Administrador" },
@@ -81,6 +96,99 @@ function EditUserSheet({
   );
 }
 
+/* Admin-created account — same professional fields as self-registration, plus a
+   role selector. The account is created ACTIVE (no approval step). */
+function NewUserSheet({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
+  const BLANK = {
+    full_name: "", national_id: "", professional_id: "",
+    specialty: SPECIALTIES[0], university: "", hospital: "",
+    position: POSITIONS[0], orcid: "", role: "medico",
+    username: "", password: "", confirm: "",
+  };
+  const [form, setForm] = useState({ ...BLANK });
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [cv, setCv] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) { setForm({ ...BLANK }); setPhoto(null); setCv(null); setError(null); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const set = (k: keyof typeof form) => (e: { target: { value: string } }) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const submit = async () => {
+    setError(null);
+    if (!form.full_name.trim()) return setError("El nombre completo es obligatorio.");
+    if (form.username.trim().length < 3) return setError("El usuario debe tener al menos 3 caracteres.");
+    if (form.password.length < 8) return setError("La contraseña debe tener al menos 8 caracteres.");
+    if (form.password !== form.confirm) return setError("Las contraseñas no coinciden.");
+    setBusy(true);
+    try {
+      await api.createUser({
+        username: form.username.trim(), password: form.password, full_name: form.full_name.trim(),
+        role: form.role, national_id: form.national_id.trim(), professional_id: form.professional_id.trim(),
+        specialty: form.specialty, university: form.university.trim(), hospital: form.hospital.trim(),
+        position: form.position, orcid: form.orcid.trim(),
+      }, photo, cv);
+      onCreated();
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al crear el usuario");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Sheet open={open} onClose={onClose} title="Nuevo usuario" width={480}>
+      <div style={{ fontSize: 13, color: "var(--muted-foreground)", marginBottom: 4 }}>
+        La cuenta se crea <b style={{ color: "var(--foreground)" }}>activa</b> (sin aprobación) y podrá iniciar sesión de inmediato.
+      </div>
+
+      <div style={GROUP_LABEL}>Datos personales</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <Input label="Nombre completo *" value={form.full_name} onChange={set("full_name")} placeholder="Dr. …" />
+        <Input label="Cédula o ID" value={form.national_id} onChange={set("national_id")} />
+        <FileField label="Foto de perfil" accept="image/*" file={photo} onPick={setPhoto} />
+      </div>
+
+      <div style={GROUP_LABEL}>Datos profesionales</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Input label="ID profesional" value={form.professional_id} onChange={set("professional_id")} />
+        <Select label="Especialidad" options={SPECIALTIES} value={form.specialty} onChange={set("specialty")} />
+        <Input label="Universidad" value={form.university} onChange={set("university")} />
+        <Input label="Hospital / Centro" value={form.hospital} onChange={set("hospital")} />
+        <Select label="Cargo" options={POSITIONS} value={form.position} onChange={set("position")} />
+        <Input label="ORCID" value={form.orcid} onChange={set("orcid")} placeholder="0000-0002-1825-0097" />
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <FileField label="Currículum (CV)" accept=".pdf,.doc,.docx" file={cv} onPick={setCv} />
+      </div>
+
+      <div style={GROUP_LABEL}>Acceso y rol</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Input label="Usuario *" value={form.username} onChange={set("username")} autoComplete="off" />
+          <Select label="Rol" options={ROLE_OPTS} value={form.role} onChange={set("role")} />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Input label="Contraseña *" type="password" value={form.password} onChange={set("password")} autoComplete="new-password" />
+          <Input label="Confirmar *" type="password" value={form.confirm} onChange={set("confirm")} autoComplete="new-password" />
+        </div>
+      </div>
+
+      <ErrorNote>{error}</ErrorNote>
+      <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+        <Button style={{ flex: 1 }} disabled={busy} onClick={submit}>{busy ? "Creando…" : "Crear usuario"}</Button>
+        <Button variant="outline" onClick={onClose}>Cancelar</Button>
+      </div>
+    </Sheet>
+  );
+}
+
 export function UsersAdmin({ onBack }: { onBack: () => void }) {
   const { user: me } = useAuth();
   const [users, setUsers] = useState<UserAdminInfo[]>([]);
@@ -89,6 +197,7 @@ export function UsersAdmin({ onBack }: { onBack: () => void }) {
   const [q, setQ] = useState("");
   const [editUser, setEditUser] = useState<UserAdminInfo | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [newOpen, setNewOpen] = useState(false);
   const [toDelete, setToDelete] = useState<UserAdminInfo | null>(null);
   const [delBusy, setDelBusy] = useState(false);
 
@@ -149,7 +258,8 @@ export function UsersAdmin({ onBack }: { onBack: () => void }) {
               </div>
             </div>
             <div style={{ flex: 1 }} />
-            <Button variant="outline" leadingIcon={<Icon name="REFRESH" />} onClick={load}>Actualizar</Button>
+            <Button variant="outline" leadingIcon={<Icon name="REFRESH" />} onClick={load} style={{ marginRight: 10 }}>Actualizar</Button>
+            <Button leadingIcon={<Icon name="USERS" />} onClick={() => setNewOpen(true)}>Nuevo usuario</Button>
           </div>
 
           <ErrorNote>{error}</ErrorNote>
@@ -231,6 +341,7 @@ export function UsersAdmin({ onBack }: { onBack: () => void }) {
       </div>
 
       <EditUserSheet open={editOpen} user={editUser} onClose={() => { setEditOpen(false); setEditUser(null); }} onSaved={load} />
+      <NewUserSheet open={newOpen} onClose={() => setNewOpen(false)} onCreated={load} />
 
       {toDelete && (
         <div

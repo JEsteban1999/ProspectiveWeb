@@ -322,6 +322,58 @@ async def list_users(
     return [_user_to_admin(u) for u in users]
 
 
+@router.post(
+    "/users",
+    response_model=UserAdminInfo,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a user (admin)",
+    description=(
+        "Admin-only. Creates an **active** account with the full professional "
+        "profile (same fields as self-registration) plus an explicit role and "
+        "optional photo/CV. No approval step — the user can log in immediately."
+    ),
+)
+async def create_user(
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+    username: str = Form(...),
+    password: str = Form(...),
+    full_name: str = Form(...),
+    role: str = Form("medico"),
+    national_id: str = Form(""),
+    professional_id: str = Form(""),
+    specialty: str = Form(""),
+    university: str = Form(""),
+    hospital: str = Form(""),
+    position: str = Form(""),
+    orcid: str = Form(""),
+    photo: UploadFile | None = File(None),
+    cv: UploadFile | None = File(None),
+) -> UserAdminInfo:
+    user, err = create_pending_user(
+        db, active=True, role=role,
+        username=username, password=password, full_name=full_name,
+        national_id=national_id, professional_id=professional_id, specialty=specialty,
+        university=university, hospital=hospital, position=position, orcid=orcid,
+    )
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err)
+
+    changed = False
+    if photo is not None and photo.filename:
+        user.photo_path = await _save_user_upload(photo, "photos", user.id)
+        changed = True
+    if cv is not None and cv.filename:
+        user.cv_path = await _save_user_upload(cv, "cv", user.id)
+        changed = True
+    if changed:
+        db.commit()
+        db.refresh(user)
+
+    logger.info("Admin %s created active user %s (role=%s)", _admin.username, user.username, user.role)
+    return _user_to_admin(user)
+
+
 @router.put(
     "/users/{user_id}",
     response_model=UserAdminInfo,

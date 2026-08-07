@@ -102,8 +102,17 @@ def authenticate_user(db: Session, username: str, password: str) -> User | None:
 
 # ── Self-registration + admin approval ─────────────────────────────────────── #
 
-def create_pending_user(db: Session, **fields) -> tuple[User | None, str]:
-    """Create a pending (inactive) account from a self-registration request."""
+_VALID_ROLES = ("admin", "medico", "residente", "viewer")
+
+
+def create_pending_user(
+    db: Session, *, active: bool = False, role: str = "medico", **fields
+) -> tuple[User | None, str]:
+    """Create an account from the professional-profile fields.
+
+    Default: a **pending** (inactive) self-registration. When `active=True`
+    (admin-created), the account is immediately usable with the given `role`.
+    """
     username = str(fields.get("username", "")).strip()
     password = str(fields.get("password", ""))
     if len(username) < 3:
@@ -112,15 +121,16 @@ def create_pending_user(db: Session, **fields) -> tuple[User | None, str]:
         return None, "La contraseña debe tener al menos 8 caracteres."
     if db.query(User).filter(User.username == username).first() is not None:
         return None, f"El usuario '{username}' ya existe."
+    role = role if role in _VALID_ROLES else "medico"
 
     user = User(
         username        = username,
         hashed_password = get_password_hash(password),
         full_name       = str(fields.get("full_name", "")).strip(),
-        role            = "medico",
+        role            = role if active else "medico",
         institution     = str(fields.get("hospital", "")).strip(),
-        is_active       = False,
-        status          = User.STATUS_PENDING,
+        is_active       = bool(active),
+        status          = User.STATUS_ACTIVE if active else User.STATUS_PENDING,
         national_id     = str(fields.get("national_id", "")).strip(),
         professional_id = str(fields.get("professional_id", "")).strip(),
         specialty       = str(fields.get("specialty", "")).strip(),
@@ -134,7 +144,7 @@ def create_pending_user(db: Session, **fields) -> tuple[User | None, str]:
     db.add(user)
     db.commit()
     db.refresh(user)
-    logger.info("Signup request created: %s (%s)", username, user.specialty)
+    logger.info("%s created: %s (%s)", "Admin user" if active else "Signup request", username, user.specialty)
     return user, ""
 
 
