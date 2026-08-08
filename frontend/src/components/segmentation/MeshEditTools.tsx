@@ -3,7 +3,7 @@
    · Recortar malla por ROI caja/esfera (POST /api/mesh-crop)
    Ambas operan sobre vessel_tree.vtp; picking 3D reutiliza la infra del visor. */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { Button } from "../Button";
 import { Icon } from "../Icon";
@@ -17,18 +17,35 @@ export function MeshEditTools() {
     sessionId, segmentation,
     pickMode, setPickMode,
     growSeeds, setGrowSeeds, cropCenter, setCropCenter,
+    mprSeedMode, setMprSeedMode,
     setSegmentation, setCandidates, setSelectedCandidate,
     setMorphometry, setTreatment, setCenterlineMesh,
   } = usePlanning();
 
   const [lower, setLower] = useState(SEG_LOWER_DEFAULT);
   const [upper, setUpper] = useState(SEG_UPPER_DEFAULT);
+  const [huRange, setHuRange] = useState<{ min: number; max: number }>({ min: -200, max: 3000 });
   const [shape, setShape] = useState<"sphere" | "box">("sphere");
   const [radius, setRadius] = useState(10);
   const [invert, setInvert] = useState(false);
   const [busy, setBusy] = useState<"grow" | "crop" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+
+  // Adapt the grow HU band + slider range to this volume's intensity scale
+  // (so it works for 3DRA/CT alike, not a fixed HU window).
+  useEffect(() => {
+    if (!sessionId) return;
+    let alive = true;
+    api.suggestedBand(sessionId).then((b) => {
+      if (!alive) return;
+      setLower(Math.round(b.lower));
+      setUpper(Math.round(b.upper));
+      const pad = Math.max(1, (b.vmax - b.vmin) * 0.05);
+      setHuRange({ min: Math.floor(b.vmin - pad), max: Math.ceil(b.vmax + pad) });
+    }).catch(() => { /* keep defaults */ });
+    return () => { alive = false; };
+  }, [sessionId]);
 
   if (!segmentation) return null;
 
@@ -47,6 +64,7 @@ export function MeshEditTools() {
     setError(null);
     setNote(null);
     setPickMode(null);
+    setMprSeedMode(false);
     try {
       const res = await api.segmentGrow(sessionId, {
         seeds: growSeeds.map(([x, y, z]) => ({ x, y, z })),
@@ -112,29 +130,38 @@ export function MeshEditTools() {
       {/* ── Grow from seeds ─────────────────────────────────────────────── */}
       <Card style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)", marginBottom: 4 }}>
-          Crecer desde semillas
+          Crecer desde semillas <span style={{ fontSize: 10, fontWeight: 600, color: "var(--brand-deep)", background: "var(--brand-subtle)", padding: "1px 6px", borderRadius: 999 }}>recomendado con hueso</span>
         </div>
-        <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginBottom: 10 }}>
-          Coloca semillas sobre el vaso real; crece solo lo conectado dentro del rango HU.
+        <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginBottom: 10, lineHeight: 1.5 }}>
+          Marca 1–2 semillas <b style={{ color: "var(--foreground)" }}>sobre un vaso en los cortes MPR</b> de abajo
+          (donde el vaso se separa del cráneo) y crece solo lo conectado dentro del rango HU: el hueso desconectado queda fuera.
         </div>
-        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <button
-            onClick={() => setPickMode(pickMode === "grow_seed" ? null : "grow_seed")}
-            style={toolBtn(pickMode === "grow_seed")}
+            onClick={() => { const on = !mprSeedMode; setMprSeedMode(on); if (on) setPickMode(null); }}
+            style={toolBtn(mprSeedMode)}
           >
-            {pickMode === "grow_seed" ? "Colocando… (clic en el visor)" : `+ Semilla (${growSeeds.length})`}
+            {mprSeedMode ? `Clic en un vaso (MPR)… (${growSeeds.length})` : `Semilla en cortes MPR (${growSeeds.length})`}
           </button>
           <button
-            onClick={() => { setGrowSeeds([]); if (pickMode === "grow_seed") setPickMode(null); }}
+            onClick={() => { setGrowSeeds([]); setMprSeedMode(false); if (pickMode === "grow_seed") setPickMode(null); }}
             disabled={growSeeds.length === 0}
             style={{ ...toolBtn(false), flex: "0 0 auto", opacity: growSeeds.length === 0 ? 0.5 : 1 }}
           >
             Limpiar
           </button>
         </div>
-        <Slider label="HU inferior" min={-200} max={1500} value={lower} onChange={setLower} unit=" HU" />
+        <div style={{ marginBottom: 10 }}>
+          <button
+            onClick={() => { const on = pickMode !== "grow_seed"; setPickMode(on ? "grow_seed" : null); if (on) setMprSeedMode(false); }}
+            style={{ ...toolBtn(pickMode === "grow_seed"), width: "100%", fontSize: 11 }}
+          >
+            {pickMode === "grow_seed" ? "Colocando en la malla 3D…" : "…o semilla en la malla 3D"}
+          </button>
+        </div>
+        <Slider label="Umbral inferior" min={huRange.min} max={huRange.max} value={lower} onChange={setLower} unit="" />
         <div style={{ height: 10 }} />
-        <Slider label="HU superior" min={0} max={3000} value={upper} onChange={setUpper} unit=" HU" />
+        <Slider label="Umbral superior" min={huRange.min} max={huRange.max} value={upper} onChange={setUpper} unit="" />
         <div style={{ height: 12 }} />
         <Button
           variant="outline"

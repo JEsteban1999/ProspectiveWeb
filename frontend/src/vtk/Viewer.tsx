@@ -381,7 +381,7 @@ export function Viewer({ step }: { step: string }) {
 /* MprStrip — franja inferior con los tres planos reales, crosshairs
    sincronizados y window/level por arrastre compartido. */
 export function MprStrip() {
-  const { sessionId, series, previewBand } = usePlanning();
+  const { sessionId, series, previewBand, mprSeedMode, growSeeds, setGrowSeeds } = usePlanning();
   const meta = useVolumeMeta(sessionId);
 
   // Shared crosshair voxel {x,y,z} and window/level across the three planes.
@@ -396,29 +396,53 @@ export function MprStrip() {
     }
   }, [meta, nx, ny, nz]);
 
-  // Per-plane wiring: controlled index, crosshair {u,v}, click→voxel.
+  // spacing = [sz, sy, sx]; mesh/world coords have origin 0 → world = voxel·spacing.
+  const sp = meta?.spacing ?? [1, 1, 1];
+  const worldOf = (vx: number, vy: number, vz: number): V3 => [vx * sp[2], vy * sp[1], vz * sp[0]];
+  const voxelOf = (s: V3) => ({ vx: Math.round(s[0] / sp[2]), vy: Math.round(s[1] / sp[1]), vz: Math.round(s[2] / sp[0]) });
+  const addSeed = (vx: number, vy: number, vz: number) => setGrowSeeds([...growSeeds, worldOf(vx, vy, vz)]);
+
+  // Per-plane wiring: controlled index, crosshair {u,v}, click→voxel, seed dots.
   const cfg = (plane: "axial" | "coronal" | "sagital") => {
     const f = (n: number, i: number) => (n > 1 ? i / (n - 1) : 0.5);
     const clamp = (n: number, u: number) => Math.max(0, Math.min(n - 1, Math.round(u * (n - 1))));
+    // Grow seeds that lie on (±1 slice of) this plane's current slice → dots.
+    const dotsFor = (onSlice: (v: ReturnType<typeof voxelOf>) => boolean, uv: (v: ReturnType<typeof voxelOf>) => { u: number; v: number }) =>
+      mprSeedMode ? growSeeds.map(voxelOf).filter(onSlice).map(uv) : [];
     if (plane === "axial")
       return {
         index: vox.z,
         crosshair: { u: f(nx, vox.x), v: f(ny, vox.y) },
         onIndexChange: (i: number) => setVox((p) => ({ ...p, z: i })),
-        onPlaneClick: (u: number, v: number) => setVox((p) => ({ ...p, x: clamp(nx, u), y: clamp(ny, v) })),
+        onPlaneClick: (u: number, v: number) => {
+          const x = clamp(nx, u), y = clamp(ny, v);
+          setVox((p) => ({ ...p, x, y }));
+          if (mprSeedMode) addSeed(x, y, vox.z);
+        },
+        seedDots: dotsFor((s) => Math.abs(s.vz - vox.z) <= 1, (s) => ({ u: f(nx, s.vx), v: f(ny, s.vy) })),
       };
     if (plane === "coronal")
       return {
         index: vox.y,
         crosshair: { u: f(nx, vox.x), v: f(nz, vox.z) },
         onIndexChange: (i: number) => setVox((p) => ({ ...p, y: i })),
-        onPlaneClick: (u: number, v: number) => setVox((p) => ({ ...p, x: clamp(nx, u), z: clamp(nz, v) })),
+        onPlaneClick: (u: number, v: number) => {
+          const x = clamp(nx, u), z = clamp(nz, v);
+          setVox((p) => ({ ...p, x, z }));
+          if (mprSeedMode) addSeed(x, vox.y, z);
+        },
+        seedDots: dotsFor((s) => Math.abs(s.vy - vox.y) <= 1, (s) => ({ u: f(nx, s.vx), v: f(nz, s.vz) })),
       };
     return {
       index: vox.x,
       crosshair: { u: f(ny, vox.y), v: f(nz, vox.z) },
       onIndexChange: (i: number) => setVox((p) => ({ ...p, x: i })),
-      onPlaneClick: (u: number, v: number) => setVox((p) => ({ ...p, y: clamp(ny, u), z: clamp(nz, v) })),
+      onPlaneClick: (u: number, v: number) => {
+        const y = clamp(ny, u), z = clamp(nz, v);
+        setVox((p) => ({ ...p, y, z }));
+        if (mprSeedMode) addSeed(vox.x, y, z);
+      },
+      seedDots: dotsFor((s) => Math.abs(s.vx - vox.x) <= 1, (s) => ({ u: f(ny, s.vy), v: f(nz, s.vz) })),
     };
   };
 
@@ -444,7 +468,7 @@ export function MprStrip() {
       {(["axial", "coronal", "sagital"] as const).map((plane) => {
         const c = cfg(plane);
         return (
-        <div key={plane} style={{ flex: 1, position: "relative", minWidth: 0 }}>
+        <div key={plane} style={{ flex: 1, position: "relative", minWidth: 0, outline: mprSeedMode ? "2px solid rgba(140,224,90,0.9)" : "none", outlineOffset: -2 }}>
           {sessionId && meta ? (
             <MprView
               sessionId={sessionId} meta={meta} plane={plane} compact
@@ -455,6 +479,7 @@ export function MprStrip() {
               crosshair={c.crosshair}
               onPlaneClick={c.onPlaneClick}
               onWindowLevel={(wc, ww) => setWl({ wc, ww })}
+              seedDots={c.seedDots}
             />
           ) : (
             <div style={{ width: "100%", height: "100%", background: "var(--viewer-bg)", position: "relative" }}>

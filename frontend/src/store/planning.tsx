@@ -45,6 +45,9 @@ interface PlanningState {
   measurePending: Vec3 | null;
   /** Seed points placed on the volume for grow-from-seeds segmentation. */
   growSeeds: Vec3[];
+  /** When true, clicking an MPR slice adds a grow-from-seeds seed (place seeds on
+   *  a vessel where it's clearly separable from bone — the clean path for CTA). */
+  mprSeedMode: boolean;
   /** Picked centre of the mesh-crop ROI (box/sphere). */
   cropCenter: Vec3 | null;
   /** Surgical approach trajectory: entry point and aneurysm target (mm). */
@@ -76,6 +79,7 @@ interface PlanningState {
   setMeasurements: (m: Measurement[]) => void;
   setMeasurePending: (p: Vec3 | null) => void;
   setGrowSeeds: (s: Vec3[]) => void;
+  setMprSeedMode: (v: boolean) => void;
   setCropCenter: (p: Vec3 | null) => void;
   setTrajEntry: (p: Vec3 | null) => void;
   setTrajTarget: (p: Vec3 | null) => void;
@@ -123,6 +127,7 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
   const [measurePending, setMeasurePending] = useState<Vec3 | null>(null);
   const [growSeeds, setGrowSeeds] = useState<Vec3[]>([]);
+  const [mprSeedMode, setMprSeedMode] = useState(false);
   const [cropCenter, setCropCenter] = useState<Vec3 | null>(null);
   const [trajEntry, setTrajEntry] = useState<Vec3 | null>(null);
   const [trajTarget, setTrajTarget] = useState<Vec3 | null>(null);
@@ -150,6 +155,7 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
     setMeasurements([]);
     setMeasurePending(null);
     setGrowSeeds([]);
+    setMprSeedMode(false);
     setCropCenter(null);
     setTrajEntry(null);
     setTrajTarget(null);
@@ -168,12 +174,12 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
         patient, sessionId, series, previewBand, previewMeshUrl, segmentation, candidates,
         selectedCandidate, morphometry, treatment, deviceMesh,
         centerlineMesh, centerlineArcMm, pickMode, clSource, clTarget, neckOrigin, neckDome,
-        measurements, measurePending, growSeeds, cropCenter, trajEntry, trajTarget, morphoOverlay, captureViewport,
+        measurements, measurePending, growSeeds, mprSeedMode, cropCenter, trajEntry, trajTarget, morphoOverlay, captureViewport,
         setPatient, setSession, setSeries, setPreviewBand, setPreviewMeshUrl, setSegmentation,
         setCandidates, setSelectedCandidate, setMorphometry, setTreatment,
         setDeviceMesh, setCenterlineMesh, setCenterlineArcMm, setPickMode, setClSource, setClTarget,
         setNeckOrigin, setNeckDome,
-        setMeasurements, setMeasurePending, setGrowSeeds, setCropCenter, setTrajEntry, setTrajTarget, setMorphoOverlay,
+        setMeasurements, setMeasurePending, setGrowSeeds, setMprSeedMode, setCropCenter, setTrajEntry, setTrajTarget, setMorphoOverlay,
         setCaptureViewport,
         reset, resetDownstream,
       }}
