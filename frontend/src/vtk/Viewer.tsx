@@ -403,9 +403,12 @@ export function MprStrip() {
   const addSeed = (vx: number, vy: number, vz: number) => setGrowSeeds([...growSeeds, worldOf(vx, vy, vz)]);
 
   // Per-plane wiring: controlled index, crosshair {u,v}, click→voxel, seed dots.
+  // NOTE: the backend flips the Z axis for coronal/sagital slices (so superior is
+  // up), so their VERTICAL axis (v) is 1 − f(z). Axial has no flip.
   const cfg = (plane: "axial" | "coronal" | "sagital") => {
     const f = (n: number, i: number) => (n > 1 ? i / (n - 1) : 0.5);
     const clamp = (n: number, u: number) => Math.max(0, Math.min(n - 1, Math.round(u * (n - 1))));
+    const clampFlip = (n: number, u: number) => clamp(n, 1 - u);   // Z-flipped axis
     // Grow seeds that lie on (±1 slice of) this plane's current slice → dots.
     const dotsFor = (onSlice: (v: ReturnType<typeof voxelOf>) => boolean, uv: (v: ReturnType<typeof voxelOf>) => { u: number; v: number }) =>
       mprSeedMode ? growSeeds.map(voxelOf).filter(onSlice).map(uv) : [];
@@ -424,25 +427,25 @@ export function MprStrip() {
     if (plane === "coronal")
       return {
         index: vox.y,
-        crosshair: { u: f(nx, vox.x), v: f(nz, vox.z) },
+        crosshair: { u: f(nx, vox.x), v: 1 - f(nz, vox.z) },
         onIndexChange: (i: number) => setVox((p) => ({ ...p, y: i })),
         onPlaneClick: (u: number, v: number) => {
-          const x = clamp(nx, u), z = clamp(nz, v);
+          const x = clamp(nx, u), z = clampFlip(nz, v);
           setVox((p) => ({ ...p, x, z }));
           if (mprSeedMode) addSeed(x, vox.y, z);
         },
-        seedDots: dotsFor((s) => Math.abs(s.vy - vox.y) <= 1, (s) => ({ u: f(nx, s.vx), v: f(nz, s.vz) })),
+        seedDots: dotsFor((s) => Math.abs(s.vy - vox.y) <= 1, (s) => ({ u: f(nx, s.vx), v: 1 - f(nz, s.vz) })),
       };
     return {
       index: vox.x,
-      crosshair: { u: f(ny, vox.y), v: f(nz, vox.z) },
+      crosshair: { u: f(ny, vox.y), v: 1 - f(nz, vox.z) },
       onIndexChange: (i: number) => setVox((p) => ({ ...p, x: i })),
       onPlaneClick: (u: number, v: number) => {
-        const y = clamp(ny, u), z = clamp(nz, v);
+        const y = clamp(ny, u), z = clampFlip(nz, v);
         setVox((p) => ({ ...p, y, z }));
         if (mprSeedMode) addSeed(vox.x, y, z);
       },
-      seedDots: dotsFor((s) => Math.abs(s.vx - vox.x) <= 1, (s) => ({ u: f(ny, s.vy), v: f(nz, s.vz) })),
+      seedDots: dotsFor((s) => Math.abs(s.vx - vox.x) <= 1, (s) => ({ u: f(ny, s.vy), v: 1 - f(nz, s.vz) })),
     };
   };
 
