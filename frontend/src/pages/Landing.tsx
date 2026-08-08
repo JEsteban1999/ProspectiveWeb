@@ -10,8 +10,12 @@ import logo from "../assets/logo.png";
 import { Icon } from "../components/Icon";
 import type { IconName } from "../components/Icon";
 import { ThemeToggle } from "../components/ThemeToggle";
+import { VideoSplash } from "../components/VideoSplash";
 
 const MAXW = 1320;
+/* Shown once per session (same key as the app) so the branded intro plays on the
+   first page loaded — landing or /app — and never twice in the same session. */
+const SPLASH_KEY = "prospective.splashShown";
 
 /* Section content reveals with a fade + rise as it scrolls into view. Driven by
    the CSS `.reveal` class (scroll-driven animation, gated behind @supports) so
@@ -661,14 +665,19 @@ function Footer() {
 /* ── Page ───────────────────────────────────────────────────────────────── */
 export function Landing() {
   const navigate = useNavigate();
-  // Señala que se entra desde la landing → la app mostrará la pantalla de carga
-  // aunque ya haya sesión activa (si no, saltaría el login y no se vería).
-  const enter = () => {
-    sessionStorage.setItem("prospective.enterLoading", "1");
-    navigate("/app");
-  };
+  // Intro de marca: se ve la primera vez que se carga la página en la sesión.
+  const [showSplash, setShowSplash] = useState(() => sessionStorage.getItem(SPLASH_KEY) !== "1");
+  const enter = () => navigate("/app");
   return (
     <div style={{ background: "var(--canvas)", minHeight: "100%" }}>
+      {showSplash && (
+        <VideoSplash
+          onDone={() => {
+            sessionStorage.setItem(SPLASH_KEY, "1");
+            setShowSplash(false);
+          }}
+        />
+      )}
       <Nav onEnter={enter} />
       <Hero onEnter={enter} />
       <What />

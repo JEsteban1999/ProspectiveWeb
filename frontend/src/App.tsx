@@ -1,6 +1,6 @@
 /* PROSPECTIVE Web — root: splash → Login/Signup → Pacientes → Sesión → Solicitudes. */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { PatientSummary } from "./api/types";
 import { Login } from "./pages/Login";
 import { Signup } from "./pages/Signup";
@@ -100,19 +100,11 @@ function Router() {
 }
 
 const SPLASH_KEY = "prospective.splashShown";
-const ENTER_KEY = "prospective.enterLoading";
 
 export default function App() {
-  // Muestra el splash de intro SIEMPRE que se entra por los botones "Entrar" /
-  // "Entrar a la plataforma" de la landing (la landing deja la señal ENTER_KEY);
-  // en cualquier otro caso (recarga directa de /app) solo una vez por sesión.
-  const [dismissed, setDismissed] = useState(() => {
-    if (sessionStorage.getItem(ENTER_KEY) === "1") return false; // entró por botón → splash siempre
-    return sessionStorage.getItem(SPLASH_KEY) === "1";
-  });
-
-  // Consume la señal de entrada para que una recarga de /app no repita el splash.
-  useEffect(() => { sessionStorage.removeItem(ENTER_KEY); }, []);
+  // El splash de intro se ve una sola vez por sesión, en la primera página que se
+  // cargue (la landing lo muestra si entras por "/"; aquí si entras directo a /app).
+  const [dismissed, setDismissed] = useState(() => sessionStorage.getItem(SPLASH_KEY) === "1");
 
   return (
     <AuthProvider>
