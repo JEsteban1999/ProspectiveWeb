@@ -120,12 +120,14 @@ def _run_grow(session_id: str, meshes_dir: Path, req: GrowRequest) -> GrowResult
     volume = np.asarray(_get_volume(session_id))
     spacing = tuple(float(s) for s in meta["spacing"])  # (sz, sy, sx)
 
-    # Keep growing responsive on large volumes, exactly like the threshold path.
-    seg_volume, seg_spacing, _factor = _maybe_downsample(volume, spacing)
+    # Grow at FULL resolution: thin vessels are only a few voxels wide, so the
+    # downsample used for global thresholding would break their connectivity and
+    # drop distal branches. The grown region is small, so this stays fast.
+    # (Cap only very large volumes to keep marching cubes bounded.)
+    seg_volume, seg_spacing, _factor = _maybe_downsample(volume, spacing, max_axis=400)
     sz, sy, sx = seg_spacing
 
-    # World (mm) → voxel index on the (possibly downsampled) grid. Mesh space has
-    # origin 0 and axis-aligned spacing, so index = round(world / spacing).
+    # World (mm) → voxel index. Mesh space has origin 0 and axis-aligned spacing.
     seeds: list[tuple[int, int, int]] = []
     for p in req.seeds:
         seeds.append((
@@ -139,9 +141,9 @@ def _run_grow(session_id: str, meshes_dir: Path, req: GrowRequest) -> GrowResult
         lower_hu=req.lower,
         upper_hu=req.upper,
         smooth_iterations=level_to_smooth_iters(req.smoothing),
-        target_reduction=0.70,
-        keep_top_n=1,
-        morpho_closing_mm=0.5,
+        target_reduction=0.30,   # keep thin-vessel detail (was 0.70)
+        keep_top_n=0,            # keep ALL seed-connected growth (multi-seed)
+        morpho_closing_mm=1.0,   # bridge small intensity gaps along the vessel
     )
 
     vtp_path = meshes_dir / "vessel_tree.vtp"

@@ -67,12 +67,13 @@ def _threshold_volume(session_id: str) -> "np.ndarray | None":
 def _maybe_downsample(
     volume: np.ndarray,
     spacing: tuple[float, float, float],
+    max_axis: int = _SEG_MAX_AXIS,
 ) -> tuple[np.ndarray, tuple[float, float, float], int]:
-    """Integer-downsample the volume if its largest axis exceeds _SEG_MAX_AXIS.
+    """Integer-downsample the volume if its largest axis exceeds *max_axis*.
 
     Returns (volume, spacing, factor). factor == 1 means no change.
     """
-    factor = max(1, math.ceil(max(volume.shape) / _SEG_MAX_AXIS))
+    factor = max(1, math.ceil(max(volume.shape) / max_axis))
     if factor <= 1:
         return volume, spacing, 1
     ds = np.ascontiguousarray(volume[::factor, ::factor, ::factor])
