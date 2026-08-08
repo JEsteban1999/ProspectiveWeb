@@ -1,11 +1,13 @@
 /* Paso 2 — Segmentación vascular. POST /api/segment.
 
-   Umbral FIJO para todos los casos: en vez de calcular un preset por caso (que
-   variaba por modalidad y no era reutilizable), se arranca siempre desde la
-   misma banda vascular con contraste y el clínico la afina con la vista previa
-   de HU en tiempo real sobre los cortes MPR. */
+   Umbral ADAPTATIVO por percentil: la banda de arranque y el rango de los
+   sliders se derivan de la distribución de intensidad DEL PROPIO volumen (una
+   sola regla universal, no presets por modalidad), así arrancan en el sitio
+   correcto para cualquier escala (TC HU, 3DRA crudo, RM). El clínico la afina
+   viendo la malla 3D formándose casi en tiempo real (vista previa gruesa) y el
+   tinte verde en los cortes MPR. */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
 import { Badge } from "../Badge";
 import { Button } from "../Button";
@@ -18,31 +20,73 @@ import { MeshEditTools } from "./MeshEditTools";
 import { PreprocessSection } from "./PreprocessSection";
 import { usePlanning } from "../../store/planning";
 
-/* Banda vascular con contraste, la misma para cualquier estudio. Por debajo de
-   ~150 es fondo/tejido blando; por encima de ~500 entra hueso denso/calcio. */
+/* Fallback si aún no hay volumen para calcular la banda adaptativa. */
 export const SEG_LOWER_DEFAULT = 150;
 export const SEG_UPPER_DEFAULT = 500;
 
 export function SegmentPanel({ onNext }: { onNext: () => void }) {
   const planning = usePlanning();
-  const { sessionId, series, segmentation, setPreviewBand } = planning;
+  const { sessionId, series, segmentation, setPreviewBand, setPreviewMeshUrl } = planning;
 
   const [lower, setLower] = useState(SEG_LOWER_DEFAULT);
   const [upper, setUpper] = useState(SEG_UPPER_DEFAULT);
   const [smoothing, setSmoothing] = useState(3);
-  const [cleanup, setCleanup] = useState(3);
+  const [cleanup, setCleanup] = useState(7);   // level 7 → top-N isolation, mesh limpia
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Slider range + suggested band, adapted to this volume's intensity scale.
+  const [range, setRange] = useState<{ min: number; max: number }>({ min: -500, max: 3000 });
+  const suggested = useRef<{ lower: number; upper: number } | null>(null);
+  const [previewing, setPreviewing] = useState(false);
 
-  // Live threshold preview on the MPR views (debounced) — tints the voxels the
-  // current band would capture, so the clinician tunes it before segmenting.
+  // On entering the step (fresh volume, no mesh yet), fetch the adaptive band.
   useEffect(() => {
-    const t = setTimeout(() => setPreviewBand([lower, upper]), 160);
+    if (!sessionId || segmentation) return;
+    let alive = true;
+    api.suggestedBand(sessionId).then((b) => {
+      if (!alive) return;
+      suggested.current = { lower: b.lower, upper: b.upper };
+      setLower(Math.round(b.lower));
+      setUpper(Math.round(b.upper));
+      const pad = Math.max(1, (b.vmax - b.vmin) * 0.05);
+      setRange({ min: Math.floor(b.vmin - pad), max: Math.ceil(b.vmax + pad) });
+    }).catch(() => { /* keep fallback defaults */ });
+    return () => { alive = false; };
+  }, [sessionId, segmentation]);
+
+  // Live 2D tint on the MPR slices (fast, debounced).
+  useEffect(() => {
+    const t = setTimeout(() => setPreviewBand([lower, upper]), 140);
     return () => clearTimeout(t);
   }, [lower, upper, setPreviewBand]);
 
-  // Clear the preview when leaving the segmentation step.
-  useEffect(() => () => setPreviewBand(null), [setPreviewBand]);
+  // Live 3D coarse-mesh preview (debounced) — the "casi en tiempo real" of the
+  // desktop: shows the vascular tree forming as the sliders move.
+  useEffect(() => {
+    if (!sessionId || segmentation) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      setPreviewing(true);
+      try {
+        const res = await api.segmentPreview(sessionId, { lower, upper, cleanup, downsample: 3 });
+        if (!cancelled) setPreviewMeshUrl(res.mesh_url);
+      } catch {
+        if (!cancelled) setPreviewMeshUrl(null);   // empty band → no mesh
+      } finally {
+        if (!cancelled) setPreviewing(false);
+      }
+    }, 420);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [lower, upper, cleanup, sessionId, segmentation, setPreviewMeshUrl]);
+
+  // Clear the previews when leaving the segmentation step.
+  useEffect(() => () => { setPreviewBand(null); setPreviewMeshUrl(null); }, [setPreviewBand, setPreviewMeshUrl]);
+
+  const resetBand = () => {
+    const s = suggested.current;
+    setLower(Math.round(s ? s.lower : SEG_LOWER_DEFAULT));
+    setUpper(Math.round(s ? s.upper : SEG_UPPER_DEFAULT));
+  };
 
   const run = async () => {
     if (!sessionId || !series) return;
@@ -58,7 +102,8 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
         cleanup,
       });
       planning.setSegmentation(res);
-      setPreviewBand(null);   // mesh now shows; drop the threshold overlay
+      setPreviewBand(null);       // final mesh now shows
+      setPreviewMeshUrl(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error en la segmentación");
     } finally {
@@ -74,27 +119,39 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
         right={segmentation && <Badge variant="success">Malla lista</Badge>}
       />
 
-      <SectionLabel style={{ marginBottom: 10 }}>Umbral de intensidad</SectionLabel>
+      <SectionLabel style={{ marginBottom: 10 }}>
+        Umbral de intensidad
+        {previewing && !segmentation && (
+          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 500, color: "var(--muted-foreground)" }}>
+            · actualizando vista previa…
+          </span>
+        )}
+      </SectionLabel>
       <div style={{ fontSize: 12, color: "var(--muted-foreground)", marginBottom: 12 }}>
-        Banda vascular por defecto para cualquier estudio. Ajústala viendo en los cortes MPR
-        qué se captura (resaltado en verde) antes de segmentar.
+        Banda de arranque adaptada a este volumen. Mueve los sliders y observa la
+        malla 3D formándose (vista previa) y el tinte verde en los cortes MPR.
       </div>
       <div>
-        <Slider label="Umbral inferior" min={-500} max={1500} value={lower} onChange={setLower} unit=" HU" />
+        <Slider label="Umbral inferior" min={range.min} max={range.max} value={lower} onChange={setLower} unit="" />
         <div style={{ height: 14 }} />
-        <Slider label="Umbral superior" min={-500} max={3000} value={upper} onChange={setUpper} unit=" HU" />
+        <Slider label="Umbral superior" min={range.min} max={range.max} value={upper} onChange={setUpper} unit="" />
         <div style={{ height: 14 }} />
         <Slider label="Suavizado" min={0} max={10} value={smoothing} onChange={setSmoothing} />
         <div style={{ height: 14 }} />
-        <Slider label="Limpieza de fragmentos" min={0} max={10} value={cleanup} onChange={setCleanup} />
+        <Slider label="Limpieza (aísla árbol principal)" min={0} max={10} value={cleanup} onChange={setCleanup} />
       </div>
       <div style={{ marginTop: 6, textAlign: "right" }}>
         <button
-          onClick={() => { setLower(SEG_LOWER_DEFAULT); setUpper(SEG_UPPER_DEFAULT); }}
+          onClick={resetBand}
           style={{ background: "transparent", border: "none", color: "var(--brand-deep)", fontSize: 11, cursor: "pointer", padding: 0 }}
         >
-          Restablecer umbral por defecto ({SEG_LOWER_DEFAULT}–{SEG_UPPER_DEFAULT} HU)
+          Restablecer banda sugerida
         </button>
+      </div>
+      <div style={{ marginTop: 8, fontSize: 11, color: "var(--muted-foreground)", lineHeight: 1.5 }}>
+        En estudios con hueso/cráneo, el umbral por sí solo no separa el vaso: sube "Limpieza"
+        para aislar el árbol principal, o usa <b style={{ color: "var(--foreground)" }}>Crecer desde
+        semillas</b> (abajo) para crecer solo el vaso conectado y dejar fuera el hueso.
       </div>
 
       <PreprocessSection />

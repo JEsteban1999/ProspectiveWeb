@@ -50,6 +50,9 @@ import type {
   ReportResult,
   SegmentRequest,
   SegmentResult,
+  SuggestedBand,
+  PreviewRequest,
+  PreviewResult,
   SessionSaveRequest,
   SessionSaveResult,
   StentLibraryItem,
@@ -194,6 +197,10 @@ export const api = {
     return post<UploadResult>("/api/upload", form);
   },
   segment: (req: SegmentRequest) => post<SegmentResult>("/api/segment", req),
+  suggestedBand: (sessionId: string) =>
+    get<SuggestedBand>(`/api/segment/suggested-band/${sessionId}`),
+  segmentPreview: (sessionId: string, req: PreviewRequest) =>
+    post<PreviewResult>(`/api/segment/preview/${sessionId}`, req),
   segmentGrow: (sessionId: string, req: GrowRequest) =>
     post<GrowResult>(`/api/segment/grow/${sessionId}`, req),
   meshCrop: (sessionId: string, req: MeshCropRequest) =>

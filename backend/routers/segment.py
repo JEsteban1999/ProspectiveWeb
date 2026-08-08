@@ -13,13 +13,14 @@ import numpy as np
 from fastapi import APIRouter, HTTPException
 
 from models import AutoThresholdResult, SegmentRequest, SegmentResult
+from models.segmentation import SuggestedBand, PreviewRequest, PreviewResult
 from services.sessions     import read_state, session_exists, session_subdir, write_state, mesh_url
 from services.thresholds   import compute_auto_thresholds, strategy_hint
 from services.dicom_loader import load_series
 from services.segmentation import (
     SegmentationPipeline, write_vtp,
     voxel_fraction as seg_voxel_fraction,
-    level_to_smooth_iters, level_to_cleanup_verts,
+    level_to_smooth_iters, level_to_cleanup,
 )
 
 logger = logging.getLogger(__name__)
@@ -178,8 +179,8 @@ async def segment(req: SegmentRequest) -> SegmentResult:
         )
 
     # Map API levels (0–10) to pipeline parameters
-    smooth_iters  = level_to_smooth_iters(req.smoothing)
-    cleanup_verts = level_to_cleanup_verts(req.cleanup)
+    smooth_iters = level_to_smooth_iters(req.smoothing)
+    top_n, min_voxels, closing_mm = level_to_cleanup(req.cleanup)
 
     # Run heavy CPU work off the event loop
     loop = asyncio.get_event_loop()
@@ -195,7 +196,9 @@ async def segment(req: SegmentRequest) -> SegmentResult:
                 lower=        req.lower,
                 upper=        req.upper,
                 smooth_iters= smooth_iters,
-                cleanup_verts=cleanup_verts,
+                keep_top_n=   top_n,
+                min_voxels=   min_voxels,
+                closing_mm=   closing_mm,
             ),
         )
     except ValueError as exc:
@@ -209,6 +212,97 @@ async def segment(req: SegmentRequest) -> SegmentResult:
     return result
 
 
+# ── GET /segment/suggested-band/{session_id} ───────────────────────────────── #
+
+@router.get(
+    "/segment/suggested-band/{session_id}",
+    response_model=SuggestedBand,
+    summary="Adaptive starting band from the volume histogram",
+    description=(
+        "Returns a percentile-based starting band + a robust value range for the "
+        "sliders, derived from THIS volume's own intensity distribution. One "
+        "universal rule for any scale (CT HU, 3DRA raw, MR) — no per-modality "
+        "presets — so the sliders start in the right place regardless of units."
+    ),
+)
+async def suggested_band(session_id: str) -> SuggestedBand:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    loop = asyncio.get_event_loop()
+    sample = await loop.run_in_executor(_executor, partial(_threshold_volume, session_id))
+    if sample is None or sample.size == 0:
+        # No volume cached yet → sensible CT-HU fallback.
+        return SuggestedBand(lower=150.0, upper=500.0, vmin=-500.0, vmax=1500.0)
+    s = np.asarray(sample, dtype=np.float32)
+    vmin = float(np.percentile(s, 0.5))
+    vmax = float(np.percentile(s, 99.9))
+    # Suggested band = the bright end (structures of interest). p94 captures the
+    # brightest ~6%, well above soft tissue; the clinician refines with the live
+    # preview. Bounded to the robust range so the sliders can always reach it.
+    lower = float(np.percentile(s, 94.0))
+    upper = vmax
+    if upper <= lower:
+        upper = lower + max(1.0, (vmax - vmin) * 0.05)
+    return SuggestedBand(
+        lower=round(lower, 1), upper=round(upper, 1),
+        vmin=round(vmin, 1), vmax=round(vmax, 1),
+    )
+
+
+# ── POST /segment/preview/{session_id} ─────────────────────────────────────── #
+
+@router.post(
+    "/segment/preview/{session_id}",
+    response_model=PreviewResult,
+    summary="Fast coarse-mesh preview for interactive threshold tuning",
+    description=(
+        "Runs a downsampled marching-cubes pass (no full smoothing/decimation) with "
+        "top-N component isolation, so the clinician sees the 3D vascular tree form "
+        "in near-real-time as they move the sliders — like the desktop app."
+    ),
+)
+async def segment_preview(session_id: str, req: PreviewRequest) -> PreviewResult:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    meshes_dir = session_subdir(session_id, "meshes")
+    loop = asyncio.get_event_loop()
+    try:
+        result = await loop.run_in_executor(
+            _executor, partial(_run_preview_sync, session_id, meshes_dir, req)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except FileNotFoundError:
+        raise HTTPException(status_code=409, detail="No hay volumen en la sesión. Sube un DICOM primero.")
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Segment preview failed")
+        raise HTTPException(status_code=500, detail=f"Error en la vista previa: {exc}")
+    return result
+
+
+def _run_preview_sync(session_id: str, meshes_dir: Path, req: PreviewRequest) -> PreviewResult:
+    """Coarse preview mesh from the cached full-res volume (downsampled)."""
+    from services.mpr import _get_volume, ensure_volume_cached
+
+    meta = ensure_volume_cached(session_id)
+    volume = np.asarray(_get_volume(session_id))
+    spacing = tuple(float(s) for s in meta["spacing"])  # (sz, sy, sx)
+
+    top_n, _min_voxels, _closing = level_to_cleanup(req.cleanup)
+    pipeline = SegmentationPipeline(
+        threshold_hu=req.lower,
+        threshold_max_hu=req.upper if req.upper > req.lower else 0.0,
+        keep_top_n=top_n if top_n > 0 else 12,   # preview always isolates for a clean look
+    )
+    seg = pipeline.run_fast_preview(volume, spacing, downsample=req.downsample)
+
+    vtp_path = meshes_dir / "preview_mesh.vtp"
+    write_vtp(seg.poly_data, vtp_path)
+    vf = seg_voxel_fraction(volume, req.lower, req.upper)
+    url = f"{mesh_url(session_id, 'preview_mesh.vtp')}?v={int(time.time() * 1000)}"
+    return PreviewResult(mesh_url=url, vertices=seg.n_vertices, voxel_fraction=round(float(vf), 6))
+
+
 # ── Synchronous worker (runs in thread-pool) ───────────────────────────────── #
 
 def _run_segmentation_sync(
@@ -219,7 +313,9 @@ def _run_segmentation_sync(
     lower:         float,
     upper:         float,
     smooth_iters:  int,
-    cleanup_verts: int,
+    keep_top_n:    int,
+    min_voxels:    int,
+    closing_mm:    float,
 ) -> SegmentResult:
     """Load DICOM → run VTK pipeline → write .vtp → update session state.
 
@@ -259,6 +355,8 @@ def _run_segmentation_sync(
     vf = seg_voxel_fraction(dcm.volume, lower, upper)
 
     # ── Build pipeline parameters ─────────────────────────────────────────── #
+    # Cleanup slider maps to topological isolation (keep_top_n) from level 5 up —
+    # like the desktop — which removes large tissue blobs a size-only filter can't.
     pipeline = SegmentationPipeline(
         threshold_hu=        lower,
         threshold_max_hu=    upper if upper > lower else 0.0,
@@ -266,9 +364,9 @@ def _run_segmentation_sync(
         smooth_pass_band=    0.06,
         target_reduction=    0.70,
         gaussian_sigma=      0.5,
-        min_component_verts= cleanup_verts,
-        morpho_closing_mm=   0.5,   # small closing to fill micro-gaps
-        keep_top_n=          0,     # use min_component_verts, not top-N
+        min_component_verts= min_voxels,
+        morpho_closing_mm=   closing_mm,
+        keep_top_n=          keep_top_n,
     )
 
     # ── Downsample very large volumes so segmentation stays responsive ────── #
@@ -276,8 +374,8 @@ def _run_segmentation_sync(
 
     # ── Run marching cubes ────────────────────────────────────────────────── #
     logger.info(
-        "Running marching cubes: lower=%.0f upper=%.0f smooth=%d cleanup=%d shape=%s (ds=%d)",
-        lower, upper, smooth_iters, cleanup_verts, seg_volume.shape, ds_factor,
+        "Running marching cubes: lower=%.0f upper=%.0f smooth=%d top_n=%d min_vox=%d shape=%s (ds=%d)",
+        lower, upper, smooth_iters, keep_top_n, min_voxels, seg_volume.shape, ds_factor,
     )
     seg_result = pipeline.run(seg_volume, seg_spacing)
 

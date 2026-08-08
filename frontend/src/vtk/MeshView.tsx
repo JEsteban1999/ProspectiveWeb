@@ -50,6 +50,7 @@ export function MeshView({
   onPick,
   focusUrl,
   registerCapture,
+  preserveCamera = false,
 }: {
   layers: MeshLayer[];
   markers?: MeshMarker[];
@@ -64,12 +65,19 @@ export function MeshView({
   /** Registers a function that captures the live viewport as a PNG data URL
    *  (used to embed the 3D scene in the PDF report). Called with null on unmount. */
   registerCapture?: (fn: (() => Promise<string | null>) | null) => void;
+  /** Keep the camera across scene rebuilds — used by the live threshold preview so
+   *  the view doesn't jump back to the default framing on every mesh update. */
+  preserveCamera?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const handles = useRef<Handles | null>(null);
   const markerActors = useRef<vtkActor[]>([]);
   const registerCaptureRef = useRef(registerCapture);
   registerCaptureRef.current = registerCapture;
+  // Camera params kept across scene rebuilds (for the live preview).
+  const savedCamera = useRef<{ position: number[]; focalPoint: number[]; viewUp: number[]; parallelScale: number } | null>(null);
+  const preserveCameraRef = useRef(preserveCamera);
+  preserveCameraRef.current = preserveCamera;
 
   // Latest pick config, read inside the vtk interactor callback without
   // forcing the scene to rebuild when the pick mode toggles.
@@ -158,7 +166,16 @@ export function MeshView({
       }
       if (cancelled) return;
       if (anyGeometry) {
-        if (focusBounds && isFinite(focusBounds[0]) && focusBounds[1] >= focusBounds[0]) {
+        const cam = renderer.getActiveCamera();
+        if (preserveCameraRef.current && savedCamera.current) {
+          // Live preview refresh: keep the user's current viewpoint.
+          const s = savedCamera.current;
+          cam.setPosition(s.position[0], s.position[1], s.position[2]);
+          cam.setFocalPoint(s.focalPoint[0], s.focalPoint[1], s.focalPoint[2]);
+          cam.setViewUp(s.viewUp[0], s.viewUp[1], s.viewUp[2]);
+          cam.setParallelScale(s.parallelScale);
+          renderer.resetCameraClippingRange();
+        } else if (focusBounds && isFinite(focusBounds[0]) && focusBounds[1] >= focusBounds[0]) {
           // Frame the candidate with local context: expand its bounds to a cube
           // around its centre so the surrounding vessel stays visible (needed to
           // place the neck plane), then fit the camera to that.
@@ -172,11 +189,11 @@ export function MeshView({
           ) * 1.4;
           const r = Math.max(half, 16);
           renderer.resetCamera([cx - r, cx + r, cy - r, cy + r, cz - r, cz + r]);
+          cam.elevation(-20);
         } else {
           renderer.resetCamera();
+          cam.elevation(-20);
         }
-        const cam = renderer.getActiveCamera();
-        cam.elevation(-20);
         renderer.updateLightsGeometryToFollowCamera();
       }
       renderWindow.render();
@@ -206,6 +223,20 @@ export function MeshView({
       markerActors.current = [];
       const h = handles.current;
       if (h) {
+        // Remember the camera so a preview refresh can restore the viewpoint.
+        if (preserveCameraRef.current) {
+          try {
+            const cam = h.renderer.getActiveCamera();
+            savedCamera.current = {
+              position: [...cam.getPosition()],
+              focalPoint: [...cam.getFocalPoint()],
+              viewUp: [...cam.getViewUp()],
+              parallelScale: cam.getParallelScale(),
+            };
+          } catch { /* ignore */ }
+        } else {
+          savedCamera.current = null;
+        }
         h.actors.forEach((a) => h.renderer.removeActor(a));
         h.fsrw.delete();
       }

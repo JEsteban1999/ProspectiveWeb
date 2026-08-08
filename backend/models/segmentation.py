@@ -60,6 +60,34 @@ class SegmentRequest(BaseModel):
     )
 
 
+class SuggestedBand(BaseModel):
+    """Adaptive starting band derived from the volume's own intensity histogram.
+
+    A single universal rule (percentile-based) — not a per-modality preset — so
+    the sliders start in the right place for ANY scale (CT HU, 3DRA raw, MR).
+    """
+
+    lower: float = Field(..., description="Suggested lower threshold (starting band)")
+    upper: float = Field(..., description="Suggested upper threshold (starting band)")
+    vmin: float = Field(..., description="Robust minimum for the slider range (p0.5)")
+    vmax: float = Field(..., description="Robust maximum for the slider range (p99.9)")
+
+
+class PreviewRequest(BaseModel):
+    """Fast coarse-mesh preview while the user tunes the thresholds."""
+
+    lower: float
+    upper: float
+    cleanup: int = Field(7, ge=0, le=10, description="Cleanup level 0–10 (top-N isolation)")
+    downsample: int = Field(3, ge=1, le=6, description="Volume stride for the coarse preview")
+
+
+class PreviewResult(BaseModel):
+    mesh_url: str = Field(..., description="URL of the coarse preview mesh (.vtp), cache-busted")
+    vertices: int
+    voxel_fraction: float = Field(..., description="Fraction of voxels in [lower, upper] (0–1)")
+
+
 class SegmentResult(BaseModel):
     """Mesh produced by the segmentation pipeline."""
 

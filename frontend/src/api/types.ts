@@ -306,6 +306,26 @@ export interface VolumeMeta {
 }
 
 /* ── segmentation ──────────────────────────────────────────────────────── */
+export interface SuggestedBand {
+  lower: number;
+  upper: number;
+  vmin: number;
+  vmax: number;
+}
+
+export interface PreviewRequest {
+  lower: number;
+  upper: number;
+  cleanup?: number;
+  downsample?: number;
+}
+
+export interface PreviewResult {
+  mesh_url: string;
+  vertices: number;
+  voxel_fraction: number;
+}
+
 export interface SegmentRequest {
   session_id: string;
   series_id: string;

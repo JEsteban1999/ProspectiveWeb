@@ -108,7 +108,7 @@ export function Viewer({ step }: { step: string }) {
     sessionId, segmentation, candidates, selectedCandidate, series, deviceMesh,
     centerlineMesh, pickMode, clSource, clTarget, setPickMode, setClSource, setClTarget,
     neckOrigin, neckDome, setNeckOrigin, setNeckDome,
-    measurements, measurePending, setMeasurements, setMeasurePending, previewBand,
+    measurements, measurePending, setMeasurements, setMeasurePending, previewBand, previewMeshUrl,
     growSeeds, setGrowSeeds, cropCenter, setCropCenter,
     trajEntry, trajTarget, setTrajEntry, setTrajTarget,
     morphometry, morphoOverlay, setCaptureViewport,
@@ -152,14 +152,17 @@ export function Viewer({ step }: { step: string }) {
   // mesh_url carries a generation token (?v=…) from the backend, so it changes
   // on every re-segmentation and vtk.js refetches instead of serving the cache.
   const meshUrl = segmentation?.mesh_url ?? null;
-  // While a live threshold preview is active on the segmentation step, show the
-  // MPR slices (with the tinted band) instead of the 3D mesh — unless a 3D pick
-  // is in progress (seed/crop placement needs the mesh visible to click on).
-  const previewActive = !!previewBand && step === "segment" && pickMode === null;
+  // During threshold tuning (segment step, no final mesh yet) show the coarse 3D
+  // preview mesh forming in near-real-time, like the desktop app.
+  const segPreview = step === "segment" && !meshUrl && !!previewMeshUrl && pickMode === null;
+  const displayMeshUrl = meshUrl ?? (segPreview ? previewMeshUrl : null);
+  // Fall back to the MPR slices (with the tinted band) only while no 3D preview
+  // mesh is available yet — and never during a 3D pick (seed/crop needs the mesh).
+  const previewActive = !!previewBand && step === "segment" && pickMode === null && !segPreview;
   // Step 1 (DICOM upload) always shows the volume preview (axial MPR + strip),
   // even after a mesh has been segmented — so navigating back to it from a later
   // step shows the study's DICOM views, not the leftover 3D mesh.
-  const meshVisible = !!meshUrl && step !== "upload" && !previewActive;
+  const meshVisible = !!displayMeshUrl && step !== "upload" && !previewActive;
   const candidate = candidates[selectedCandidate];
   // Frame + highlight the selected candidate during detection and morphometry,
   // so it's obvious where the aneurysm is (and where to place the neck plane).
@@ -174,9 +177,9 @@ export function Viewer({ step }: { step: string }) {
   const showCenterline = !!centerlineMesh && centerlineMesh.startsWith("/data/");
 
   const layers = useMemo<MeshLayer[]>(() => {
-    if (!meshUrl) return [];
+    if (!displayMeshUrl) return [];
     const vesselDim = step === "detect" || step === "morpho" || showDevice || pickMode !== null || showCenterline;
-    const out: MeshLayer[] = [{ url: meshUrl, color: VESSEL_COLOR, opacity: vesselDim ? 0.45 : 1 }];
+    const out: MeshLayer[] = [{ url: displayMeshUrl, color: VESSEL_COLOR, opacity: vesselDim ? 0.45 : 1 }];
     if (candidate?.dome_mesh_url && step !== "segment" && step !== "upload") {
       out.push({ url: candidate.dome_mesh_url, color: DOME_COLOR, opacity: showDevice ? 0.5 : 1 });
     }
@@ -187,7 +190,7 @@ export function Viewer({ step }: { step: string }) {
       out.push({ url: centerlineMesh, color: CENTERLINE_COLOR, opacity: 1 });
     }
     return out;
-  }, [meshUrl, candidate?.dome_mesh_url, step, showDevice, deviceMesh, showCenterline, centerlineMesh, pickMode]);
+  }, [displayMeshUrl, candidate?.dome_mesh_url, step, showDevice, deviceMesh, showCenterline, centerlineMesh, pickMode]);
 
   const markers = useMemo<MeshMarker[]>(() => {
     const out: MeshMarker[] = [];
@@ -248,7 +251,7 @@ export function Viewer({ step }: { step: string }) {
         <ObliqueMprView sessionId={sessionId} wc={meta.wc} ww={meta.ww} />
       ) : meshVisible ? (
         <Suspense fallback={<ViewerLoading label="Cargando visor 3D…" />}>
-          <MeshView layers={layers} markers={markers} lines={lines} pickMode={pickMode !== null} onPick={onPick} focusUrl={focusUrl} registerCapture={setCaptureViewport} />
+          <MeshView layers={layers} markers={markers} lines={lines} pickMode={pickMode !== null} onPick={onPick} focusUrl={focusUrl} registerCapture={setCaptureViewport} preserveCamera={segPreview} />
         </Suspense>
       ) : sessionId && meta ? (
         <MprView sessionId={sessionId} meta={meta} plane="axial" showSlider band={previewActive ? previewBand : null} />
@@ -281,12 +284,22 @@ export function Viewer({ step }: { step: string }) {
         {step === "detect" && candidate && <span style={{ marginLeft: 10, color: "#A8B8C6" }}>· {candidate.id}</span>}
       </div>
 
-      {/* Live threshold-preview legend. */}
+      {/* Live threshold-preview legend (2D tint fallback). */}
       {previewActive && previewBand && (
         <div style={{ position: "absolute", top: 38, left: 16, display: "flex", alignItems: "center", gap: 8, background: "rgba(20,24,28,0.72)", border: "1px solid rgba(54,214,168,0.5)", borderRadius: 999, padding: "5px 12px", pointerEvents: "none", boxShadow: "0 2px 10px rgba(0,0,0,0.35)" }}>
           <span style={{ width: 9, height: 9, borderRadius: 2, background: "rgb(54,214,168)" }} />
           <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "#DCE6EE" }}>
-            Vista previa · captura HU [{Math.round(previewBand[0])}, {Math.round(previewBand[1])}]
+            Vista previa · captura [{Math.round(previewBand[0])}, {Math.round(previewBand[1])}]
+          </span>
+        </div>
+      )}
+
+      {/* Coarse 3D mesh preview chip (interactive threshold tuning). */}
+      {viewMode === "default" && segPreview && (
+        <div style={{ position: "absolute", top: 38, left: 16, display: "flex", alignItems: "center", gap: 8, background: "rgba(20,24,28,0.72)", border: "1px solid rgba(54,214,168,0.5)", borderRadius: 999, padding: "5px 12px", pointerEvents: "none", boxShadow: "0 2px 10px rgba(0,0,0,0.35)" }}>
+          <span style={{ width: 9, height: 9, borderRadius: "50%", background: "rgb(54,214,168)" }} />
+          <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "#DCE6EE" }}>
+            Vista previa 3D (malla gruesa) · pulsa «Segmentar» para la malla final
           </span>
         </div>
       )}

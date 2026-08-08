@@ -19,6 +19,8 @@ interface PlanningState {
   /** Live threshold-preview band [lower, upper] HU set from the segmentation
    *  sliders; the MPR views tint the captured voxels in near-real-time. */
   previewBand: [number, number] | null;
+  /** URL of the coarse 3D preview mesh shown while tuning the thresholds. */
+  previewMeshUrl: string | null;
   segmentation: SegmentResult | null;
   candidates: AneurysmCandidate[];
   selectedCandidate: number;
@@ -57,6 +59,7 @@ interface PlanningState {
   setSession: (id: string | null) => void;
   setSeries: (s: SeriesInfo | null) => void;
   setPreviewBand: (b: [number, number] | null) => void;
+  setPreviewMeshUrl: (u: string | null) => void;
   setSegmentation: (s: SegmentResult | null) => void;
   setCandidates: (c: AneurysmCandidate[]) => void;
   setSelectedCandidate: (i: number) => void;
@@ -103,6 +106,7 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   const [sessionId, setSession] = useState<string | null>(null);
   const [series, setSeries] = useState<SeriesInfo | null>(null);
   const [previewBand, setPreviewBand] = useState<[number, number] | null>(null);
+  const [previewMeshUrl, setPreviewMeshUrl] = useState<string | null>(null);
   const [segmentation, setSegmentation] = useState<SegmentResult | null>(null);
   const [candidates, setCandidates] = useState<AneurysmCandidate[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState(0);
@@ -129,6 +133,7 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   // uploaded in the same workspace so stale meshes/metrics don't linger.
   const resetDownstream = () => {
     setPreviewBand(null);
+    setPreviewMeshUrl(null);
     setSegmentation(null);
     setCandidates([]);
     setSelectedCandidate(0);
@@ -160,11 +165,11 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   return (
     <PlanningContext.Provider
       value={{
-        patient, sessionId, series, previewBand, segmentation, candidates,
+        patient, sessionId, series, previewBand, previewMeshUrl, segmentation, candidates,
         selectedCandidate, morphometry, treatment, deviceMesh,
         centerlineMesh, centerlineArcMm, pickMode, clSource, clTarget, neckOrigin, neckDome,
         measurements, measurePending, growSeeds, cropCenter, trajEntry, trajTarget, morphoOverlay, captureViewport,
-        setPatient, setSession, setSeries, setPreviewBand, setSegmentation,
+        setPatient, setSession, setSeries, setPreviewBand, setPreviewMeshUrl, setSegmentation,
         setCandidates, setSelectedCandidate, setMorphometry, setTreatment,
         setDeviceMesh, setCenterlineMesh, setCenterlineArcMm, setPickMode, setClSource, setClTarget,
         setNeckOrigin, setNeckDome,

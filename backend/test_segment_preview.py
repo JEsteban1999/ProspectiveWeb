@@ -1,0 +1,89 @@
+"""Tests for the adaptive band + real-time coarse-mesh preview + top-N cleanup."""
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+
+_tmp = tempfile.mkdtemp(prefix="prospective_segprev_")
+os.environ.setdefault("DATABASE_URL", f"sqlite:///{_tmp}/test.db")
+os.environ.setdefault("JWT_SECRET", "test-secret-key-do-not-use-in-production")
+
+import numpy as np
+from fastapi.testclient import TestClient
+
+from main import app
+from services.database import Base, engine
+from services.sessions import create_session, session_subdir
+from services.segmentation import level_to_cleanup
+from services import mpr as mprmod
+
+Base.metadata.create_all(bind=engine)
+client = TestClient(app, raise_server_exceptions=True)
+
+
+def _wide_range_session() -> str:
+    """A '3DRA-like' volume: background ~50, bone shell ~1500, bright vessel ~3200."""
+    sid = create_session()
+    n = 64
+    zz, yy, xx = np.mgrid[0:n, 0:n, 0:n]
+    r = np.sqrt((zz - 32) ** 2 + (yy - 32) ** 2 + (xx - 32) ** 2)
+    vol = np.full((n, n, n), 50.0, np.float32)
+    vol[r <= 20] = 1500.0
+    vol[r <= 8] = 3200.0
+    npy, meta = mprmod._cache_paths(sid)
+    np.save(npy, vol)
+    meta.write_text(json.dumps({"shape": [n, n, n], "spacing": [1, 1, 1], "wc": 150, "ww": 700, "modality": "XA"}))
+    mprmod._downsampled_volume.cache_clear()
+    return sid
+
+
+class TestCleanupMapping:
+    def test_switches_to_topn_at_level_5(self):
+        assert level_to_cleanup(4)[0] == 0     # still size-based
+        assert level_to_cleanup(5)[0] == 20    # top-N kicks in
+        assert level_to_cleanup(7)[0] == 10
+        assert level_to_cleanup(10)[0] == 3    # only the 3 largest
+
+
+class TestSuggestedBand:
+    def test_adapts_to_volume_scale(self):
+        sid = _wide_range_session()
+        r = client.get(f"/api/segment/suggested-band/{sid}")
+        assert r.status_code == 200, r.text
+        b = r.json()
+        # slider range must reach the bright values (3200), not stop at a HU default
+        assert b["vmax"] > 1500
+        # suggested lower is well above background (50), adapted to the scale
+        assert b["lower"] > 100
+        assert b["upper"] >= b["lower"]
+
+    def test_fallback_without_volume(self):
+        sid = create_session()  # no cached volume
+        r = client.get(f"/api/segment/suggested-band/{sid}")
+        assert r.status_code == 200
+        assert r.json()["lower"] == 150.0  # CT-HU fallback
+
+    def test_unknown_session_404(self):
+        assert client.get("/api/segment/suggested-band/nope").status_code == 404
+
+
+class TestPreview:
+    def test_preview_builds_coarse_mesh(self):
+        sid = _wide_range_session()
+        r = client.post(f"/api/segment/preview/{sid}", json={"lower": 2500, "upper": 4000, "cleanup": 7, "downsample": 2})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["vertices"] > 0
+        assert 0 < body["voxel_fraction"] < 0.1  # only the bright vessel core
+        assert "preview_mesh.vtp" in body["mesh_url"]
+        assert (session_subdir(sid, "meshes") / "preview_mesh.vtp").exists()
+
+    def test_empty_band_422(self):
+        sid = _wide_range_session()
+        r = client.post(f"/api/segment/preview/{sid}", json={"lower": 9000, "upper": 9500, "cleanup": 7})
+        assert r.status_code == 422
+
+    def test_unknown_session_404(self):
+        r = client.post("/api/segment/preview/nope", json={"lower": 100, "upper": 500})
+        assert r.status_code == 404
