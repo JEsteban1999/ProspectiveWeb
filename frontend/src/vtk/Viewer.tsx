@@ -156,9 +156,11 @@ export function Viewer({ step }: { step: string }) {
   // preview mesh forming in near-real-time, like the desktop app.
   const segPreview = step === "segment" && !meshUrl && !!previewMeshUrl && pickMode === null;
   const displayMeshUrl = meshUrl ?? (segPreview ? previewMeshUrl : null);
-  // Fall back to the MPR slices (with the tinted band) only while no 3D preview
-  // mesh is available yet — and never during a 3D pick (seed/crop needs the mesh).
-  const previewActive = !!previewBand && step === "segment" && pickMode === null && !segPreview;
+  // Fall back to the MPR slices (with the tinted band) only while there is NO
+  // mesh yet (initial threshold tuning) and no 3D coarse preview — and never
+  // during a 3D pick. Once a mesh exists (segmented or grown) the main view shows
+  // it; the tint stays on the bottom MPR strip for further tuning.
+  const previewActive = !!previewBand && step === "segment" && pickMode === null && !segPreview && !meshUrl;
   // Step 1 (DICOM upload) always shows the volume preview (axial MPR + strip),
   // even after a mesh has been segmented — so navigating back to it from a later
   // step shows the study's DICOM views, not the leftover 3D mesh.
