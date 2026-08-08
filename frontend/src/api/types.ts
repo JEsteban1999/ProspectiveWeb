@@ -364,6 +364,7 @@ export interface GrowRequest {
   seeds: Position3D[];
   lower?: number;
   upper?: number;
+  auto_band?: boolean;
   smoothing?: number;
   cleanup?: number;
 }
@@ -375,6 +376,8 @@ export interface GrowResult {
   n_voxels: number;
   fragments_removed: number;
   seeds: number;
+  band_lower: number;
+  band_upper: number;
 }
 
 /* ── surgical approach trajectory ──────────────────────────────────────── */

@@ -46,6 +46,14 @@ class GrowRequest(BaseModel):
     )
     lower: float = Field(80.0, description="Lower HU bound for connected-threshold growing")
     upper: float = Field(600.0, description="Upper HU bound for connected-threshold growing")
+    auto_band: bool = Field(
+        False,
+        description=(
+            "Derive the HU band automatically from the intensity at the seeds — a "
+            "narrow window around the vessel value that excludes bone/tissue. When "
+            "true, `lower`/`upper` are ignored."
+        ),
+    )
     smoothing: int = Field(5, ge=0, le=10, description="Smoothing level 0–10")
     cleanup: int = Field(5, ge=0, le=10, description="Component cleanup level 0–10")
 
@@ -57,3 +65,5 @@ class GrowResult(BaseModel):
     n_voxels: int = Field(..., description="Voxels in the grown region")
     fragments_removed: int = Field(..., description="Satellite components discarded")
     seeds: int = Field(..., description="Number of seeds used")
+    band_lower: float = Field(0.0, description="Lower HU bound actually used (derived when auto_band)")
+    band_upper: float = Field(0.0, description="Upper HU bound actually used")

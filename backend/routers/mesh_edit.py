@@ -111,6 +111,35 @@ async def mesh_crop(session_id: str, req: MeshCropRequest) -> MeshCropResult:
 
 # ── POST /segment/grow/{session_id} ─────────────────────────────────────────── #
 
+def _band_from_seeds(volume: np.ndarray, seed_voxels: list[tuple[int, int, int]]) -> tuple[float, float]:
+    """Narrow HU band around the vessel intensity sampled at the seeds.
+
+    Samples a small neighbourhood at each seed and takes a high percentile (the
+    vessel is the bright part even if the click is slightly off-centre), then
+    builds a window around the seeds' brightness: low enough to follow dimmer
+    connected vessel, high enough for bright cores, but bounded so it excludes
+    bone (typically brighter) and background/tissue (dimmer).
+    """
+    nz, ny, nx = volume.shape
+    seed_vals: list[float] = []
+    for (z, y, x) in seed_voxels:
+        z0, z1 = max(0, z - 2), min(nz, z + 3)
+        y0, y1 = max(0, y - 2), min(ny, y + 3)
+        x0, x1 = max(0, x - 2), min(nx, x + 3)
+        nb = volume[z0:z1, y0:y1, x0:x1]
+        if nb.size:
+            seed_vals.append(float(np.percentile(nb, 75)))
+    if not seed_vals:
+        return 80.0, 600.0
+    v_lo = float(np.min(seed_vals))
+    v_hi = float(np.max(seed_vals))
+    center = 0.5 * (v_lo + v_hi)
+    spread = max(v_hi - v_lo, abs(center) * 0.35)   # at least ±35% of the value
+    lower = v_lo - spread * 0.6
+    upper = v_hi + spread * 0.6
+    return round(lower, 1), round(upper, 1)
+
+
 def _run_grow(session_id: str, meshes_dir: Path, req: GrowRequest) -> GrowResult:
     """Load full-res volume, map world seeds → voxels, region-grow, write mesh."""
     from routers.segment import _maybe_downsample
@@ -136,10 +165,17 @@ def _run_grow(session_id: str, meshes_dir: Path, req: GrowRequest) -> GrowResult
             int(round(p.x / sx)),
         ))
 
+    # Band: either the user's sliders, or derived from the vessel intensity at the
+    # seeds — a narrow window that excludes bone (brighter) and tissue (dimmer),
+    # so a single click on a vessel gives a clean tree without tuning thresholds.
+    lower, upper = req.lower, req.upper
+    if req.auto_band:
+        lower, upper = _band_from_seeds(seg_volume, seeds)
+
     result = grow_from_seeds(
         seg_volume, seg_spacing, seeds,
-        lower_hu=req.lower,
-        upper_hu=req.upper,
+        lower_hu=lower,
+        upper_hu=upper,
         smooth_iterations=level_to_smooth_iters(req.smoothing),
         target_reduction=0.30,   # keep thin-vessel detail (was 0.70)
         keep_top_n=0,            # keep ALL seed-connected growth (multi-seed)
@@ -154,8 +190,8 @@ def _run_grow(session_id: str, meshes_dir: Path, req: GrowRequest) -> GrowResult
     write_state(session_id, "seg.mesh_url", mesh_url(session_id, "vessel_tree.vtp"))
     write_state(session_id, "seg.n_vertices", str(result.n_vertices))
     write_state(session_id, "seg.n_faces", str(result.n_triangles))
-    write_state(session_id, "seg.threshold_lower", str(req.lower))
-    write_state(session_id, "seg.threshold_upper", str(req.upper))
+    write_state(session_id, "seg.threshold_lower", str(lower))
+    write_state(session_id, "seg.threshold_upper", str(upper))
     write_state(session_id, "seg.strategy", "grow_from_seeds")
     write_state(session_id, "dicom.volume_z", str(volume.shape[0]))
     write_state(session_id, "dicom.volume_y", str(volume.shape[1]))
@@ -171,6 +207,8 @@ def _run_grow(session_id: str, meshes_dir: Path, req: GrowRequest) -> GrowResult
         n_voxels=result.n_voxels,
         fragments_removed=result.n_fragments_removed,
         seeds=len(seeds),
+        band_lower=round(float(lower), 1),
+        band_upper=round(float(upper), 1),
     )
 
 

@@ -190,3 +190,42 @@ class TestCropEndpoint:
             "mode": "sphere", "center": {"x": 32.0, "y": 32.0, "z": 32.0}, "radius": 10.0,
         })
         assert r.status_code == 409
+
+
+class TestAutoBand:
+    """Auto-band: derive a narrow HU window from the vessel intensity at the seed."""
+
+    def _session_with_vessel_in_block(self):
+        import numpy as np
+        from services.sessions import create_session, session_subdir
+        from services import mpr as mprmod
+        sid = create_session()
+        n = 80
+        vol = np.full((n, n, n), 50.0, np.float32)
+        vol[20:60, 20:60, 20:60] = 1500.0          # tissue/bone block (mid)
+        vol[25:55, 38:42, 38:42] = 3200.0          # bright vessel tube inside
+        npy, meta = mprmod._cache_paths(sid)
+        np.save(npy, vol)
+        meta.write_text(__import__("json").dumps({"shape": [n, n, n], "spacing": [1, 1, 1], "wc": 150, "ww": 700, "modality": "XA"}))
+        mprmod._downsampled_volume.cache_clear()
+        (session_subdir(sid, "dicom") / "d.txt").write_text("x")
+        return sid
+
+    def test_auto_band_isolates_vessel(self):
+        from services.sessions import session_subdir
+        from services.segmentation import read_vtp
+        sid = self._session_with_vessel_in_block()
+        # Wide manual band grabs the whole 1500 block.
+        rm = client.post(f"/api/segment/grow/{sid}", json={"seeds": [{"x": 40, "y": 40, "z": 40}], "lower": 401, "upper": 4450, "auto_band": False})
+        assert rm.status_code == 200
+        manual_vox = rm.json()["n_voxels"]
+        # Auto band derives ~[2500,3900] from the 3200 vessel → only the tube.
+        ra = client.post(f"/api/segment/grow/{sid}", json={"seeds": [{"x": 40, "y": 40, "z": 40}], "auto_band": True})
+        assert ra.status_code == 200
+        j = ra.json()
+        assert j["band_lower"] > 1600           # excludes the 1500 tissue block
+        assert j["n_voxels"] < manual_vox       # much less than the wide band
+        m = read_vtp(session_subdir(sid, "meshes") / "vessel_tree.vtp")
+        b = [0.0] * 6
+        m.GetBounds(b)
+        assert b[2] > 30 and b[3] < 50          # stayed in the vessel, not the block

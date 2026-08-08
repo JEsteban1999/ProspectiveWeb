@@ -24,6 +24,7 @@ export function MeshEditTools() {
 
   const [lower, setLower] = useState(SEG_LOWER_DEFAULT);
   const [upper, setUpper] = useState(SEG_UPPER_DEFAULT);
+  const [autoBand, setAutoBand] = useState(true);   // derive band from the seed
   const [huRange, setHuRange] = useState<{ min: number; max: number }>({ min: -200, max: 3000 });
   const [shape, setShape] = useState<"sphere" | "box">("sphere");
   const [radius, setRadius] = useState(10);
@@ -77,7 +78,7 @@ export function MeshEditTools() {
     try {
       const res = await api.segmentGrow(sessionId, {
         seeds: growSeeds.map(([x, y, z]) => ({ x, y, z })),
-        lower, upper, smoothing: 5, cleanup: 5,
+        lower, upper, auto_band: autoBand, smoothing: 5, cleanup: 5,
       });
       setSegmentation({
         mesh_url: res.mesh_url,
@@ -89,7 +90,10 @@ export function MeshEditTools() {
       });
       clearDownstream();
       setGrowSeeds([]);
-      setNote(`Malla regenerada: ${res.vertices.toLocaleString("es")} vértices · ${res.n_voxels.toLocaleString("es")} vóxeles${res.fragments_removed ? ` · ${res.fragments_removed} fragmento(s) descartado(s)` : ""}.`);
+      // Show the band that was actually used (derived from the seed when auto).
+      if (autoBand) { setLower(Math.round(res.band_lower)); setUpper(Math.round(res.band_upper)); }
+      const bandTxt = autoBand ? ` · banda auto [${Math.round(res.band_lower)}, ${Math.round(res.band_upper)}]` : "";
+      setNote(`Malla regenerada: ${res.vertices.toLocaleString("es")} vértices · ${res.n_voxels.toLocaleString("es")} vóxeles${bandTxt}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error en el crecimiento por semillas");
     } finally {
@@ -168,10 +172,23 @@ export function MeshEditTools() {
             {pickMode === "grow_seed" ? "Colocando en la malla 3D…" : "…o semilla en la malla 3D"}
           </button>
         </div>
-        <Slider label="Umbral inferior" min={huRange.min} max={huRange.max} value={lower} onChange={setLower} unit="" />
-        <div style={{ height: 10 }} />
-        <Slider label="Umbral superior" min={huRange.min} max={huRange.max} value={upper} onChange={setUpper} unit="" />
-        <div style={{ height: 12 }} />
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--foreground)", cursor: "pointer", margin: "2px 0 10px" }}>
+          <input type="checkbox" checked={autoBand} onChange={(e) => setAutoBand(e.target.checked)} />
+          Banda automática desde la semilla <span style={{ fontSize: 10, color: "var(--brand-deep)" }}>(recomendado)</span>
+        </label>
+        {autoBand ? (
+          <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginBottom: 12, lineHeight: 1.5 }}>
+            La banda se calcula sola a partir de la intensidad del vaso en la semilla (excluye
+            hueso/tejido). No necesitas mover los umbrales — solo clica el vaso y regenera.
+          </div>
+        ) : (
+          <div style={{ opacity: 1 }}>
+            <Slider label="Umbral inferior" min={huRange.min} max={huRange.max} value={lower} onChange={setLower} unit="" />
+            <div style={{ height: 10 }} />
+            <Slider label="Umbral superior" min={huRange.min} max={huRange.max} value={upper} onChange={setUpper} unit="" />
+            <div style={{ height: 12 }} />
+          </div>
+        )}
         <Button
           variant="outline"
           onClick={() => void runGrow()}
