@@ -251,7 +251,7 @@ export function Viewer({ step }: { step: string }) {
         <ObliqueMprView sessionId={sessionId} wc={meta.wc} ww={meta.ww} />
       ) : meshVisible ? (
         <Suspense fallback={<ViewerLoading label="Cargando visor 3D…" />}>
-          <MeshView layers={layers} markers={markers} lines={lines} pickMode={pickMode !== null} onPick={onPick} focusUrl={focusUrl} registerCapture={setCaptureViewport} preserveCamera={segPreview} />
+          <MeshView layers={layers} markers={markers} lines={lines} pickMode={pickMode !== null} onPick={onPick} focusUrl={focusUrl} registerCapture={setCaptureViewport} />
         </Suspense>
       ) : sessionId && meta ? (
         <MprView sessionId={sessionId} meta={meta} plane="axial" showSlider band={previewActive ? previewBand : null} />
