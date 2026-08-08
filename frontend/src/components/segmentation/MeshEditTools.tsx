@@ -17,7 +17,7 @@ export function MeshEditTools() {
     sessionId, segmentation,
     pickMode, setPickMode,
     growSeeds, setGrowSeeds, cropCenter, setCropCenter,
-    mprSeedMode, setMprSeedMode,
+    mprSeedMode, setMprSeedMode, setPreviewBand,
     setSegmentation, setCandidates, setSelectedCandidate,
     setMorphometry, setTreatment, setCenterlineMesh,
   } = usePlanning();
@@ -46,6 +46,15 @@ export function MeshEditTools() {
     }).catch(() => { /* keep defaults */ });
     return () => { alive = false; };
   }, [sessionId]);
+
+  // Live green tint on the MPR slices for the grow band — so you set the band
+  // watching what turns green (vessel yes, bone no) BEFORE regenerating once.
+  useEffect(() => {
+    if (!segmentation) return;
+    const t = setTimeout(() => setPreviewBand([lower, upper]), 140);
+    return () => clearTimeout(t);
+  }, [lower, upper, segmentation, setPreviewBand]);
+  useEffect(() => () => setPreviewBand(null), [setPreviewBand]);
 
   if (!segmentation) return null;
 

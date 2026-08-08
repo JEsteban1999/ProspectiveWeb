@@ -54,11 +54,13 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
     return () => { alive = false; };
   }, [sessionId, segmentation]);
 
-  // Live 2D tint on the MPR slices (fast, debounced).
+  // Live 2D tint on the MPR slices (fast, debounced). Only while tuning the
+  // initial threshold — after segmenting, the grow panel drives the tint.
   useEffect(() => {
+    if (segmentation) return;
     const t = setTimeout(() => setPreviewBand([lower, upper]), 140);
     return () => clearTimeout(t);
-  }, [lower, upper, setPreviewBand]);
+  }, [lower, upper, segmentation, setPreviewBand]);
 
   // Live 3D coarse-mesh preview (debounced) — the "casi en tiempo real" of the
   // desktop: shows the vascular tree forming as the sliders move.
