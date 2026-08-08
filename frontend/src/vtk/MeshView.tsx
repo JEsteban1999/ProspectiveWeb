@@ -40,6 +40,7 @@ interface Handles {
   renderer: ReturnType<vtkFullScreenRenderWindow["getRenderer"]>;
   renderWindow: ReturnType<vtkFullScreenRenderWindow["getRenderWindow"]>;
   actors: vtkActor[];
+  actorByUrl: Map<string, vtkActor>;   // for incremental opacity/color updates
 }
 
 export function MeshView({
@@ -86,8 +87,13 @@ export function MeshView({
   pickModeRef.current = pickMode;
   onPickRef.current = onPick;
 
-  // Serialise layers + overlays so each effect only re-runs when it must.
-  const key = layers.map((l) => `${l.url}|${l.color.join(",")}|${l.opacity ?? 1}`).join(";") + `#${focusUrl ?? ""}`;
+  // Serialise layers + overlays so each effect only re-runs when it must. The
+  // scene rebuilds ONLY when the geometry (URLs) or focus changes — NOT on an
+  // opacity/color tweak (those update the existing actors incrementally). This
+  // keeps a heavy mesh from reloading (and flashing black) when the pick mode
+  // just dims it.
+  const key = layers.map((l) => l.url).join(";") + `#${focusUrl ?? ""}`;
+  const appearanceKey = layers.map((l) => `${l.url}|${l.color.join(",")}|${l.opacity ?? 1}`).join(";");
   const markerKey = markers.map((m) => `${m.pos.join(",")}|${m.color.join(",")}`).join(";");
   const lineKey = lines.map((l) => `${l.a.join(",")}-${l.b.join(",")}|${l.color.join(",")}`).join(";");
 
@@ -103,7 +109,7 @@ export function MeshView({
     });
     const renderer = fsrw.getRenderer();
     const renderWindow = fsrw.getRenderWindow();
-    handles.current = { fsrw, renderer, renderWindow, actors: [] };
+    handles.current = { fsrw, renderer, renderWindow, actors: [], actorByUrl: new Map() };
 
     let cancelled = false;
 
@@ -158,6 +164,7 @@ export function MeshView({
 
           renderer.addActor(actor);
           handles.current?.actors.push(actor);
+          handles.current?.actorByUrl.set(layer.url, actor);
           anyGeometry = true;
         } catch (err) {
           // A single failed layer must not blank the whole scene.
@@ -244,6 +251,26 @@ export function MeshView({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
+
+  // ── Appearance (opacity/color): update actors in place, never rebuild the ──
+  //    scene — so dimming a heavy mesh (e.g. entering a pick mode) is instant. ─ #
+  useEffect(() => {
+    const h = handles.current;
+    if (!h) return;
+    let changed = false;
+    for (const l of layers) {
+      const actor = h.actorByUrl.get(l.url);
+      if (!actor) continue;
+      const prop = actor.getProperty();
+      if (!(focusUrl && l.url === focusUrl)) {   // the focused layer keeps its highlight
+        prop.setColor(...l.color);
+        prop.setOpacity(l.opacity ?? 1);
+      }
+      changed = true;
+    }
+    if (changed) h.renderWindow.render();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appearanceKey]);
 
   // ── Overlays (markers + ruler lines): incremental so a pick never rebuilds ─ #
   useEffect(() => {
