@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from main import app
 from services.database import Base, engine
-from services.sessions import create_session, session_subdir
+from services.sessions import create_session, session_subdir, write_state
 from services.segmentation import level_to_cleanup
 from services import mpr as mprmod
 
@@ -38,6 +38,30 @@ def _wide_range_session() -> str:
     return sid
 
 
+def _wide_ww_3dra_session() -> "tuple[str, np.ndarray]":
+    """Non-subtracted wide-WW 3DRA (like case 3): tissue fills the head, a thin
+    bright vessel is the top ~2%. State carries modality=XA + wide WW so the
+    band goes through the xa_band_pass branch, as it does after a real upload.
+    Returns (sid, volume) so the test can measure the captured voxel fraction."""
+    sid = create_session()
+    rng = np.random.default_rng(5)
+    n = 70
+    vol = rng.normal(-400.0, 130.0, (n, n, n)).astype(np.float32)   # tissue bulk
+    # ~2% of voxels are bright vessel (2200..5000), scattered.
+    flat = vol.reshape(-1)
+    k = int(flat.size * 0.02)
+    idx = rng.choice(flat.size, k, replace=False)
+    flat[idx] = rng.uniform(2200.0, 5000.0, k).astype(np.float32)
+    npy, meta = mprmod._cache_paths(sid)
+    np.save(npy, vol)
+    meta.write_text(json.dumps({"shape": [n, n, n], "spacing": [1, 1, 1], "wc": -343.0, "ww": 7577.0, "modality": "XA"}))
+    mprmod._downsampled_volume.cache_clear()
+    write_state(sid, "dicom.modality", "XA")
+    write_state(sid, "dicom.window_center", "-343.0")
+    write_state(sid, "dicom.window_width", "7577.0")
+    return sid, vol
+
+
 class TestCleanupMapping:
     def test_switches_to_topn_at_level_5(self):
         assert level_to_cleanup(4)[0] == 0     # still size-based
@@ -57,6 +81,22 @@ class TestSuggestedBand:
         # suggested lower is well above background (50), adapted to the scale
         assert b["lower"] > 100
         assert b["upper"] >= b["lower"]
+
+    def test_non_subtracted_3dra_starts_on_vessels_not_tissue(self):
+        # Regresión case 3: antes la banda sugerida (p94) arrancaba dentro del
+        # bloque de tejido y capturaba ~9% del volumen (la cabeza entera). Ahora
+        # usa la banda por modalidad y captura una fracción pequeña (los vasos).
+        from services.thresholds import voxel_fraction
+        sid, vol = _wide_ww_3dra_session()
+        b = client.get(f"/api/segment/suggested-band/{sid}").json()
+        assert b["vmax"] > 2000.0                       # el slider alcanza los vasos
+        assert b["upper"] >= b["lower"]
+        # La banda sugerida captura ~vasos (<3%), no el bloque de tejido (~9%).
+        frac = voxel_fraction(vol, b["lower"], b["upper"])
+        assert frac < 0.03, (b, frac)
+        # Y es mucho más selectiva que la vieja banda p90–p99.
+        p90, p99 = float(np.percentile(vol, 90)), float(np.percentile(vol, 99))
+        assert frac < voxel_fraction(vol, p90, p99)
 
     def test_fallback_without_volume(self):
         sid = create_session()  # no cached volume

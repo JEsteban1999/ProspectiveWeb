@@ -94,13 +94,23 @@ class TestXaDsaUnaffected:
 
 
 class TestXaWideWindowBandPass:
-    """Ventana ancha (>2000) → banda p90–p99 (casos 2 y 39)."""
+    """Ventana ancha (>2000), 3DRA no sustraído (case 3).
 
-    def test_band_pass(self):
+    Regresión: la Rama 3 devolvía [p90, p99] = ~9% de vóxeles (bloque
+    tejido+cráneo). Ahora aísla la cola brillante [p99, p99.9] (~1% = vasos),
+    igual que la Rama 4. El tejido de fondo NO debe caer dentro de la banda.
+    """
+
+    def test_band_pass_targets_bright_tail(self):
+        # Fondo (tejido) ≈ -300, 10 % de vóxeles brillantes (vasos+hueso) 300..7000.
         vol = _volume_like(p50=-300.0, bright_frac=0.10, bright_lo=300.0, bright_hi=7000.0, seed=3)
         lower, upper, strategy = compute_auto_thresholds(vol, "XA", -271.0, 2215.0)
         assert strategy == "xa_band_pass"
         assert lower < upper
+        # El inferior queda muy por encima del tejido de fondo (~-300)…
+        assert lower > 0.0
+        # …y la banda captura una fracción pequeña (vasos), no el ~9% de antes.
+        assert voxel_fraction(vol, lower, upper) < 0.03
 
 
 class TestThresholdsEndpointUsesVolume:

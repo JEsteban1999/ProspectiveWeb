@@ -220,10 +220,11 @@ async def segment(req: SegmentRequest) -> SegmentResult:
     response_model=SuggestedBand,
     summary="Adaptive starting band from the volume histogram",
     description=(
-        "Returns a percentile-based starting band + a robust value range for the "
-        "sliders, derived from THIS volume's own intensity distribution. One "
-        "universal rule for any scale (CT HU, 3DRA raw, MR) — no per-modality "
-        "presets — so the sliders start in the right place regardless of units."
+        "Starting band + a robust value range for the sliders, derived from THIS "
+        "volume's own intensity distribution via the SAME modality-aware logic the "
+        "segmentation uses (compute_auto_thresholds). One source of truth: the live "
+        "preview reflects the real result, and non-subtracted 3DRA/CTA start on the "
+        "bright vasculature (~1%) instead of a generic p94 that grabbed ~6% of tissue."
     ),
 )
 async def suggested_band(session_id: str) -> SuggestedBand:
@@ -237,11 +238,24 @@ async def suggested_band(session_id: str) -> SuggestedBand:
     s = np.asarray(sample, dtype=np.float32)
     vmin = float(np.percentile(s, 0.5))
     vmax = float(np.percentile(s, 99.9))
-    # Suggested band = the bright end (structures of interest). p94 captures the
-    # brightest ~6%, well above soft tissue; the clinician refines with the live
-    # preview. Bounded to the robust range so the sliders can always reach it.
-    lower = float(np.percentile(s, 94.0))
-    upper = vmax
+    # Start the sliders (and the live preview) at the SAME modality-aware band
+    # the segmentation actually uses — one source of truth, no drift. A flat p94
+    # ignored the modality and, on non-subtracted 3DRA/CTA, captured ~6% of
+    # voxels (a solid tissue+skull blob) before the user even placed a seed.
+    modality      = read_state(session_id, "dicom.modality", "CT")
+    window_center = _load_float(session_id, "dicom.window_center", 400.0)
+    window_width  = _load_float(session_id, "dicom.window_width", 1500.0)
+    try:
+        lower, upper, _strategy = compute_auto_thresholds(
+            volume=s, modality=modality,
+            window_center=window_center, window_width=window_width,
+        )
+    except Exception as exc:  # noqa: BLE001 — the slider band must never 500
+        logger.warning("Auto-band failed for %s (%s); using p94 fallback", session_id, exc)
+        lower, upper = float(np.percentile(s, 94.0)), vmax
+    # Bound to the robust slider range so the handles can always reach the band.
+    lower = float(np.clip(lower, vmin, vmax))
+    upper = float(np.clip(upper, lower, vmax))
     if upper <= lower:
         upper = lower + max(1.0, (vmax - vmin) * 0.05)
     return SuggestedBand(

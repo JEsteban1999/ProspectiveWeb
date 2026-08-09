@@ -71,8 +71,11 @@ def strategy_hint(strategy: str, lower: float, upper: float, is_dsa: bool) -> st
             f"captura el árbol vascular con pared. Superior = 95% del máximo ({upper:.0f} HU)."
         ),
         "xa_band_pass": (
-            f"3DRA estándar (WW amplio). Banda p90–p99: "
-            f"inferior = {lower:.0f} HU, superior = {upper:.0f} HU."
+            f"3DRA no sustraído (WW amplio). Los vasos son el ~1% más brillante; "
+            f"banda p99–p99.9 para aislarlos del tejido: "
+            f"inferior = {lower:.0f} HU, superior = {upper:.0f} HU. "
+            f"El hueso denso comparte esta cola: usa una semilla para separarlo. "
+            f"Baja el umbral inferior si falta vasculatura."
         ),
         "xa_wc_ww": (
             f"3DRA ventana calibrada. Derivado de WC/WW: "
@@ -145,9 +148,17 @@ def _xa_thresholds(
             upper = float(np.percentile(flat, 99.9))
             return lower, upper, False, "xa_raw16"
 
-        # Branch 3: Standard 3DRA, wide WW
+        # Branch 3: Standard 3DRA, wide WW — non-subtracted.
+        # Soft tissue fills the whole head and the contrast-filled vessels are
+        # the brightest ~1% of voxels. The old p90–p99 band started just above
+        # background, so it captured ~9% of the volume: a solid tissue+skull
+        # blob rather than the vasculature. Target [p99, p99.9] like Branch 4
+        # (same non-subtracted physics) so the surface is the vascular tree.
+        # Dense bone shares this bright tail and remains — a seed (region-grow)
+        # later disconnects it; no global threshold can separate bone here.
         if window_width > 2000:
-            return p90, p99, False, "xa_band_pass"
+            p999 = float(np.percentile(flat, 99.9))
+            return p99, p999, False, "xa_band_pass"
 
         # Branch 4: Narrow WW — derive from WC/WW, but only if that window
         # actually covers the bright voxels. Some 3DRA series carry a *display*
