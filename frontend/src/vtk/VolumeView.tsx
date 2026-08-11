@@ -83,6 +83,7 @@ export function VolumeView({ sessionId }: { sessionId: string }) {
     });
     const renderer = fsrw.getRenderer();
     const renderWindow = fsrw.getRenderWindow();
+    const interactor = fsrw.getInteractor();
     rwRef.current = renderWindow;
     let cancelled = false;
 
@@ -130,6 +131,9 @@ export function VolumeView({ sessionId }: { sessionId: string }) {
       cancelled = true;
       actorRef.current = null;
       rwRef.current = null;
+      // Release the interactor's DOM listeners before delete() so it doesn't
+      // linger as a "zombie" firing pointer events on a torn-down container.
+      try { interactor.unbindEvents(); } catch { /* older vtk.js */ }
       fsrw.delete();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

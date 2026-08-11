@@ -253,6 +253,10 @@ async def suggested_band(session_id: str) -> SuggestedBand:
     except Exception as exc:  # noqa: BLE001 — the slider band must never 500
         logger.warning("Auto-band failed for %s (%s); using p94 fallback", session_id, exc)
         lower, upper = float(np.percentile(s, 94.0)), vmax
+    # Let the slider's top reach the computed band's upper: on subtracted DSA the
+    # band's upper (≈ the bright vessel max) sits ABOVE p99.9, and clamping it down
+    # to p99.9 would silently narrow the band, dropping the dense vessel cores.
+    vmax = max(vmax, upper)
     # Bound to the robust slider range so the handles can always reach the band.
     lower = float(np.clip(lower, vmin, vmax))
     upper = float(np.clip(upper, lower, vmax))

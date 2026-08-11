@@ -245,6 +245,12 @@ export function MeshView({
           savedCamera.current = null;
         }
         h.actors.forEach((a) => h.renderer.removeActor(a));
+        // Unbind the interactor's DOM listeners BEFORE delete(). vtk.js does not
+        // release them on delete(), so a rebuilt scene (new step / mesh) would
+        // leave a "zombie" interactor firing pointer events on a torn-down
+        // container → `getBoundingClientRect` of undefined, spamming the console
+        // and leaking listeners over a long session.
+        try { interactor.unbindEvents(); } catch { /* older vtk.js */ }
         h.fsrw.delete();
       }
       handles.current = null;

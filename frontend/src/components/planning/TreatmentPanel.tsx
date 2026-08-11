@@ -96,12 +96,13 @@ export function TreatmentPanel({ onNext }: { onNext: () => void }) {
       {t && (
         <>
           <div style={{ background: "var(--brand-subtle)", borderRadius: "var(--radius-lg)", padding: "16px 18px", margin: "16px 0" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 15, fontWeight: 800, color: "var(--brand-subtle-foreground)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 15, fontWeight: 800, color: "var(--brand-subtle-foreground)", flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
                 Recomendación: {t.recommendation}
               </span>
-              <div style={{ flex: 1 }} />
-              <Badge variant="subtle">Confianza {t.confidence.toLowerCase()}</Badge>
+              <span style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
+                <Badge variant="subtle">Confianza {t.confidence.toLowerCase()}</Badge>
+              </span>
             </div>
             <div style={{ marginTop: 12 }}>
               <ScoreBar label="CLIP" pct={t.clip_pct} fill="var(--brand-deep)" />
