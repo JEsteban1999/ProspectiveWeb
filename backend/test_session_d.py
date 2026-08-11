@@ -326,6 +326,50 @@ class TestSessionState:
         resp = client.post("/api/sessions/nonexistent-session/restore")
         assert resp.status_code == 404
 
+    def test_durable_save_survives_ttl_purge_and_rehydrates_files(self):
+        """The core of resumable sessions: a saved session's files (mesh + volume)
+        survive deletion of the live dir (TTL purge) and are copied back into a
+        fresh session on restore."""
+        from services.sessions import create_session, write_state, session_subdir, delete_session
+
+        sid = create_session()
+        write_state(sid, "seg.n_vertices", "5577")
+        write_state(sid, "seg.n_faces", "11285")
+        write_state(sid, "dicom.modality", "XA")
+        (session_subdir(sid, "meshes") / "vessel_tree.vtp").write_text("<VTKFile>fake mesh</VTKFile>")
+        (session_subdir(sid, "meshes") / "_volume.npy").write_bytes(b"\x00\x01\x02volume")
+
+        r = client.post("/api/sessions/save", json={"session_id": sid, "label": "durable", "current_step": 3})
+        assert r.status_code == 200, r.text
+
+        # Simulate the 24h TTL sweep wiping the live session dir.
+        delete_session(sid)
+
+        resp = client.post(f"/api/sessions/{sid}/restore")
+        assert resp.status_code == 200, resp.text
+        d = resp.json()
+        new_sid = d["session_id"]
+        assert new_sid != sid
+        assert d["current_step"] == 3
+        assert d["has_segmentation"] is True
+        assert d["n_vertices"] == 5577
+        assert d["modality"] == "XA"
+        assert "vessel_tree.vtp" in d["mesh_url"] and new_sid in d["mesh_url"]
+        # The actual files were rehydrated into the new live session.
+        meshes = session_subdir(new_sid, "meshes")
+        assert (meshes / "vessel_tree.vtp").read_text().startswith("<VTKFile>")
+        assert (meshes / "_volume.npy").exists()
+
+    def test_restore_without_durable_snapshot_conflicts(self):
+        """A DB record whose files were saved before durable-save existed (or lost)
+        → 409, not a silent empty restore."""
+        from services.sessions import create_session, delete_saved_session
+        sid = create_session()
+        client.post("/api/sessions/save", json={"session_id": sid, "label": "x", "current_step": 1})
+        delete_saved_session(sid)   # simulate a pre-durable / purged snapshot
+        resp = client.post(f"/api/sessions/{sid}/restore")
+        assert resp.status_code == 409
+
     def test_save_with_patient_link(self):
         token = _login()
         # Create patient

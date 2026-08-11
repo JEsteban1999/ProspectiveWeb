@@ -15,6 +15,7 @@ from services.auth_service import get_current_user
 from services.db_models import PlanningSession, Patient, User
 from services.sessions import (
     session_exists, session_subdir, read_state, write_state, create_session,
+    snapshot_session, rehydrate_session, has_saved_session, mesh_url as mesh_url_for,
 )
 
 logger = logging.getLogger(__name__)
@@ -101,7 +102,13 @@ async def save_session(
         raise HTTPException(status_code=404, detail=f"Session '{req.session_id}' not found")
 
     morpho      = _read_morpho(req.session_id)
-    file_size   = _session_dir_size_kb(req.session_id)
+    # Snapshot the whole session dir (volume + meshes + state) into the durable
+    # store so it survives the TTL purge and can be rehydrated on resume.
+    try:
+        file_size = snapshot_session(req.session_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Session snapshot failed")
+        raise HTTPException(status_code=500, detail=f"No se pudo guardar la sesión: {exc}")
     now         = datetime.now(timezone.utc)
 
     # Upsert: update existing record or create new one
@@ -203,25 +210,43 @@ async def restore_session(
             status_code=404,
             detail=f"No saved session found with id '{session_id}'",
         )
+    if not has_saved_session(session_id):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "La sesión existe en la base de datos pero sus archivos ya no están "
+                "disponibles (guardada antes de habilitar el guardado duradero, o "
+                "purgada). Vuelve a generar y guardar el estudio."
+            ),
+        )
 
-    # Create a brand-new temp session dir
-    new_sid = create_session()
-    _restore_state(new_sid, ps)
-
-    # Detect what data is available (check if files still exist on disk)
+    # Rehydrate: copy the durable snapshot into a brand-new live session dir.
     try:
-        old_meshes = session_subdir(session_id, "meshes")
-        has_seg  = (old_meshes / "vessel_tree.vtp").exists()
-        has_det  = (old_meshes / "aneurysm_cand_001.vtp").exists()
-    except Exception:
-        has_seg = has_det = False
+        new_sid = rehydrate_session(session_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Session rehydration failed")
+        raise HTTPException(status_code=500, detail=f"No se pudo restaurar la sesión: {exc}")
 
+    # Inspect the rehydrated dir to build a payload the frontend can hydrate from.
+    meshes = session_subdir(new_sid, "meshes")
+    vessel = meshes / "vessel_tree.vtp"
+    has_seg = vessel.exists()
+    has_det = (meshes / "aneurysm_cand_001.vtp").exists()
     has_morpho = ps.max_diameter_mm is not None
     has_plan   = ps.current_step >= 4
 
+    def _int_state(key: str) -> int:
+        raw = read_state(new_sid, key, "")
+        try:
+            return int(float(raw)) if raw else 0
+        except ValueError:
+            return 0
+
+    mesh_url = f"{mesh_url_for(new_sid, 'vessel_tree.vtp')}?v={int(datetime.now().timestamp() * 1000)}" if has_seg else ""
+
     logger.info(
-        "Session restored — original=%s  new=%s  step=%d",
-        session_id, new_sid, ps.current_step,
+        "Session restored — original=%s  new=%s  step=%d  has_seg=%s",
+        session_id, new_sid, ps.current_step, has_seg,
     )
 
     return SessionRestoreResult(
@@ -233,4 +258,10 @@ async def restore_session(
         has_morphometry=has_morpho,
         has_plan=has_plan,
         restored_at=datetime.now(timezone.utc),
+        mesh_url=mesh_url,
+        n_vertices=_int_state("seg.n_vertices"),
+        n_faces=_int_state("seg.n_faces"),
+        modality=read_state(new_sid, "dicom.modality", "") or "",
+        patient_id=ps.patient_id,
+        study_id=ps.study_id,
     )

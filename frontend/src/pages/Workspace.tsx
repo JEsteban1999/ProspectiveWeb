@@ -1,6 +1,7 @@
 /* Sesión de planificación — rail de flujo (7 pasos) · visor 3D + MPR · panel del paso. */
 
 import { useState } from "react";
+import { api } from "../api/client";
 import type { PatientSummary } from "../api/types";
 import { Badge, riskVariant } from "../components/Badge";
 import { Button } from "../components/Button";
@@ -33,17 +34,37 @@ const STEPS: { key: string; icon: IconName; label: string }[] = [
 
 export function Workspace({
   patient,
+  initialStep = 0,
   onBack,
   onFinish,
 }: {
   patient: PatientSummary | null;
+  initialStep?: number;
   onBack: () => void;
   onFinish: () => void;
 }) {
-  const { morphometry } = usePlanning();
-  const [stepIdx, setStepIdx] = useState(0);
-  const [maxStep, setMaxStep] = useState(0);
+  const { morphometry, sessionId } = usePlanning();
+  const [stepIdx, setStepIdx] = useState(initialStep);
+  const [maxStep, setMaxStep] = useState(initialStep);
+  const [saving, setSaving] = useState<"idle" | "saving" | "saved">("idle");
   const step = STEPS[stepIdx].key;
+
+  const saveProgress = async () => {
+    if (!sessionId) return;
+    setSaving("saving");
+    try {
+      await api.saveSession({
+        session_id: sessionId,
+        patient_id: patient?.id ?? null,
+        current_step: stepIdx,
+        label: patient ? `${patient.full_name} · ${STEPS[stepIdx].label}` : STEPS[stepIdx].label,
+      });
+      setSaving("saved");
+      setTimeout(() => setSaving("idle"), 1800);
+    } catch {
+      setSaving("idle");
+    }
+  };
 
   const go = (i: number) => {
     setStepIdx(i);
@@ -74,6 +95,16 @@ export function Workspace({
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--canvas)" }}>
       <Topbar crumb={`Pacientes / ${patient ? patient.full_name : "Sesión"}`}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={saveProgress}
+          disabled={!sessionId || saving === "saving"}
+          leadingIcon={<Icon name={saving === "saved" ? "STATUS_OK" : "SAVE"} />}
+          style={{ marginRight: 8 }}
+        >
+          {saving === "saving" ? "Guardando…" : saving === "saved" ? "Guardado ✓" : "Guardar progreso"}
+        </Button>
         <Button variant="ghost" size="sm" onClick={onBack} leadingIcon={<Icon name="HOME" />}>
           Pacientes
         </Button>

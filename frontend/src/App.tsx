@@ -1,6 +1,7 @@
 /* PROSPECTIVE Web — root: splash → Login/Signup → Pacientes → Sesión → Solicitudes. */
 
 import { useState } from "react";
+import { api } from "./api/client";
 import type { PatientSummary } from "./api/types";
 import { Login } from "./pages/Login";
 import { Signup } from "./pages/Signup";
@@ -24,6 +25,7 @@ function Router() {
   const [toast, setToast] = useState<string | null>(null);
   const [loginNotice, setLoginNotice] = useState<string | null>(null);
   const [loadingIn, setLoadingIn] = useState(false);
+  const [resumeStep, setResumeStep] = useState(0);
 
   if (!ready) return null; // restoring stored token
 
@@ -35,7 +37,47 @@ function Router() {
     planning.reset();
     planning.setPatient(p);
     setPatient(p);
+    setResumeStep(0);
     setScreen("workspace");
+  };
+
+  // Resume a saved study session: restore its files into a fresh live session,
+  // rehydrate the store (mesh + downstream results are re-derived deterministically),
+  // and open the workspace at the step it was saved on.
+  const resumeSession = async (sessionId: string, p: PatientSummary) => {
+    setToast("Restaurando sesión…");
+    try {
+      const r = await api.restoreSession(sessionId);
+      planning.reset();
+      planning.setPatient(p);
+      setPatient(p);
+      planning.setSession(r.session_id);
+      if (r.has_segmentation && r.mesh_url) {
+        planning.setSegmentation({
+          mesh_url: r.mesh_url, vertices: r.n_vertices, faces: r.n_faces,
+          voxel_fraction: null, strategy: "restaurada", is_dsa: false,
+        });
+      }
+      // Replay downstream so the saved step shows its results (deterministic on
+      // the restored mesh). Failures are non-fatal — the user can re-run a step.
+      if (r.current_step >= 2) {
+        try {
+          const det = await api.detect(r.session_id);
+          planning.setCandidates(det.candidates);
+          planning.setSelectedCandidate(0);
+        } catch { /* leave candidates empty */ }
+      }
+      if (r.current_step >= 3) {
+        try { planning.setMorphometry(await api.morphometry(r.session_id)); }
+        catch { /* leave morphometry empty */ }
+      }
+      setResumeStep(Math.min(Math.max(r.current_step, 0), 6));
+      setToast(null);
+      setScreen("workspace");
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : "No se pudo restaurar la sesión");
+      setTimeout(() => setToast(null), 3000);
+    }
   };
 
   const finish = () => {
@@ -63,11 +105,11 @@ function Router() {
       />
     );
   else if (effective === "patients")
-    view = <Patients onOpenPatient={openPatient} onOpenPending={() => setScreen("pending")} />;
+    view = <Patients onOpenPatient={openPatient} onResume={resumeSession} onOpenPending={() => setScreen("pending")} />;
   else if (effective === "pending") view = <PendingRequests onBack={() => setScreen("patients")} />;
   else if (effective === "users") view = <UsersAdmin onBack={() => setScreen("patients")} />;
   else if (effective === "audit") view = <AuditTrail onBack={() => setScreen("patients")} />;
-  else view = <Workspace patient={patient} onBack={() => setScreen("patients")} onFinish={finish} />;
+  else view = <Workspace patient={patient} initialStep={resumeStep} onBack={() => setScreen("patients")} onFinish={finish} />;
 
   return (
     <NavProvider value={{ screen: effective, go: (s) => setScreen(s) }}>

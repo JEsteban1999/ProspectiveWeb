@@ -31,11 +31,13 @@ function PatientSheet({
   patientId,
   onClose,
   onSaved,
+  onResume,
 }: {
   open: boolean;
   patientId: number | null;   // null → create, otherwise edit
   onClose: () => void;
   onSaved: () => void;
+  onResume?: (sessionId: string) => void;
 }) {
   const editing = patientId !== null;
   const [busy, setBusy] = useState(false);
@@ -216,6 +218,17 @@ function PatientSheet({
                         {new Date(s.updated_at).toLocaleString()} · Paso: {STEP_LABELS[s.current_step] ?? s.current_step}
                         {s.max_diameter_mm != null && ` · Ø ${s.max_diameter_mm.toFixed(1)} mm`}
                       </div>
+                      {onResume && (
+                        <div style={{ marginTop: 8 }}>
+                          <Button
+                            type="button" variant="outline" size="sm"
+                            onClick={() => onResume(s.session_id)}
+                            leadingIcon={<Icon name="STEP_PLAN" size={13} />}
+                          >
+                            Reanudar en «{STEP_LABELS[s.current_step] ?? s.current_step}»
+                          </Button>
+                        </div>
+                      )}
                     </Card>
                   ))}
                 </div>
@@ -319,9 +332,11 @@ function DeleteConfirm({
 
 export function Patients({
   onOpenPatient,
+  onResume,
   onOpenPending,
 }: {
   onOpenPatient: (p: PatientSummary) => void;
+  onResume: (sessionId: string, patient: PatientSummary) => void;
   onOpenPending: () => void;
 }) {
   const [patients, setPatients] = useState<PatientSummary[]>([]);
@@ -525,7 +540,16 @@ export function Patients({
         </div>
       </div>
 
-      <PatientSheet open={sheetOpen} patientId={sheetPatientId} onClose={() => setSheetOpen(false)} onSaved={load} />
+      <PatientSheet
+        open={sheetOpen}
+        patientId={sheetPatientId}
+        onClose={() => setSheetOpen(false)}
+        onSaved={load}
+        onResume={(sid) => {
+          const p = patients.find((x) => x.id === sheetPatientId);
+          if (p) { setSheetOpen(false); onResume(sid, p); }
+        }}
+      />
       {/* Nuevo caso = elegir paciente existente → formulario del caso para ese paciente. */}
       <CasePatientPicker
         open={caseSheet}

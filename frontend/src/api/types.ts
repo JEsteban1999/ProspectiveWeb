@@ -723,6 +723,23 @@ export interface SessionSaveResult {
   saved_at: string;
 }
 
+export interface SessionRestoreResult {
+  session_id: string;      // NEW live session id to use from now on
+  current_step: number;
+  label: string;
+  has_segmentation: boolean;
+  has_detection: boolean;
+  has_morphometry: boolean;
+  has_plan: boolean;
+  restored_at: string;
+  mesh_url: string;
+  n_vertices: number;
+  n_faces: number;
+  modality: string;
+  patient_id: number | null;
+  study_id: number | null;
+}
+
 /* ── longitudinal ──────────────────────────────────────────────────────── */
 export interface LongitudinalEntry {
   session_date: string;

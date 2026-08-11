@@ -22,8 +22,8 @@ class SessionSaveRequest(BaseModel):
         None, description="Associate this session with a specific study"
     )
     current_step: int = Field(
-        0, ge=0, le=5,
-        description="Current workflow step index (0-based, 0=Paciente … 5=Exportar)"
+        0, ge=0, le=6,
+        description="Current workflow step index (0-based: 0=Carga … 6=Informe)"
     )
 
 
@@ -46,6 +46,13 @@ class SessionRestoreResult(BaseModel):
     has_morphometry: bool
     has_plan: bool
     restored_at: datetime
+    # Rehydration payload — lets the frontend repopulate the store without re-upload.
+    mesh_url: str = Field("", description="URL of the restored vessel mesh (empty if none)")
+    n_vertices: int = Field(0, description="Vertex count of the restored mesh")
+    n_faces: int = Field(0, description="Face count of the restored mesh")
+    modality: str = Field("", description="DICOM modality of the restored volume")
+    patient_id: int | None = Field(None, description="Patient this session belongs to")
+    study_id: int | None = Field(None, description="Study this session belongs to")
 
 
 class SessionListItem(BaseModel):

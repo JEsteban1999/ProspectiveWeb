@@ -55,6 +55,7 @@ import type {
   PreviewResult,
   SessionSaveRequest,
   SessionSaveResult,
+  SessionRestoreResult,
   StentLibraryItem,
   StentParams,
   StentPlanResult,
@@ -277,6 +278,8 @@ export const api = {
   /* sessions */
   saveSession: (req: SessionSaveRequest) =>
     post<SessionSaveResult>("/api/sessions/save", req),
+  restoreSession: (sessionId: string) =>
+    post<SessionRestoreResult>(`/api/sessions/${sessionId}/restore`),
 
   /* audit (SkullChain) */
   auditBlocks: () => get<AuditBlock[]>("/api/audit/blocks"),

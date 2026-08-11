@@ -19,6 +19,11 @@ logger = logging.getLogger(__name__)
 
 SESSIONS_ROOT = Path(__file__).resolve().parents[1] / "data" / "sessions"
 
+# Durable store for SAVED sessions. Unlike SESSIONS_ROOT this is never purged by
+# the TTL sweep, so a saved study (volume + meshes + state) survives indefinitely
+# and can be rehydrated into a fresh live session on resume.
+SAVES_ROOT = Path(__file__).resolve().parents[1] / "data" / "session_saves"
+
 # Sessions older than this are purged. Configurable via SESSION_TTL_HOURS
 # (defaults to 24 h, matching the documented env var in the README).
 try:
@@ -63,6 +68,57 @@ def session_exists(session_id: str) -> bool:
 def delete_session(session_id: str) -> None:
     """Permanently delete a session and all its files."""
     d = SESSIONS_ROOT / session_id
+    if d.is_dir():
+        shutil.rmtree(d, ignore_errors=True)
+
+
+# ── Durable save / resume ──────────────────────────────────────────────────── #
+
+def snapshot_session(session_id: str) -> float:
+    """Copy the live session dir into the durable saves store (overwrite).
+
+    Returns the snapshot size in KB. This is what makes a saved session survive
+    the TTL purge: the copy lives under SAVES_ROOT, which the sweep never touches.
+    """
+    src = SESSIONS_ROOT / session_id
+    if not src.is_dir():
+        raise FileNotFoundError(f"Session '{session_id}' has no live directory to save")
+    dst = SAVES_ROOT / session_id
+    if dst.exists():
+        shutil.rmtree(dst, ignore_errors=True)
+    shutil.copytree(src, dst)
+    total = sum(f.stat().st_size for f in dst.rglob("*") if f.is_file())
+    return round(total / 1024, 1)
+
+
+def has_saved_session(session_id: str) -> bool:
+    return (SAVES_ROOT / session_id).is_dir()
+
+
+def rehydrate_session(saved_session_id: str) -> str:
+    """Copy a durable saved session into a fresh live session; return its new id.
+
+    The mesh/volume files and the full state.txt are copied verbatim, so the
+    restored session is functionally identical to the saved one — segmentation,
+    detection and morphometry re-read/re-derive from the same inputs.
+    """
+    src = SAVES_ROOT / saved_session_id
+    if not src.is_dir():
+        raise FileNotFoundError(f"No saved session '{saved_session_id}' found")
+    new_sid = create_session()  # creates the sub-dirs + .created_at
+    dst = SESSIONS_ROOT / new_sid
+    for item in src.iterdir():
+        s, d = src / item.name, dst / item.name
+        if s.is_dir():
+            shutil.copytree(s, d, dirs_exist_ok=True)
+        else:
+            shutil.copy2(s, d)
+    return new_sid
+
+
+def delete_saved_session(session_id: str) -> None:
+    """Remove a session's durable snapshot (does not touch any live session)."""
+    d = SAVES_ROOT / session_id
     if d.is_dir():
         shutil.rmtree(d, ignore_errors=True)
 
