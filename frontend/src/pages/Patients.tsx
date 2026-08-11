@@ -15,7 +15,7 @@ import { Topbar } from "../components/Topbar";
 import { ErrorNote, Card } from "../components/PanelHead";
 import { useAuth } from "../store/auth";
 import { useNav } from "../store/nav";
-import { NuevoCasoSheet, NuevoEstudioSheet } from "./NuevoCaso";
+import { CasePatientPicker, NuevoEstudioSheet } from "./NuevoCaso";
 
 const STEP_LABELS = ["Carga", "Segmentación", "Detección", "Morfometría", "Decisión", "Dispositivos", "Informe"];
 
@@ -330,6 +330,7 @@ export function Patients({
   const [sheetPatientId, setSheetPatientId] = useState<number | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [caseSheet, setCaseSheet] = useState(false);
+  const [casePatient, setCasePatient] = useState<PatientSummary | null>(null);
   const [toDelete, setToDelete] = useState<PatientSummary | null>(null);
   const [q, setQ] = useState("");
   const { user } = useAuth();
@@ -525,7 +526,21 @@ export function Patients({
       </div>
 
       <PatientSheet open={sheetOpen} patientId={sheetPatientId} onClose={() => setSheetOpen(false)} onSaved={load} />
-      <NuevoCasoSheet open={caseSheet} onClose={() => setCaseSheet(false)} onCreated={() => load()} />
+      {/* Nuevo caso = elegir paciente existente → formulario del caso para ese paciente. */}
+      <CasePatientPicker
+        open={caseSheet}
+        patients={patients}
+        onClose={() => setCaseSheet(false)}
+        onPick={(p) => { setCaseSheet(false); setCasePatient(p); }}
+        onCreatePatient={() => { setCaseSheet(false); openCreate(); }}
+      />
+      <NuevoEstudioSheet
+        open={!!casePatient}
+        patientId={casePatient?.id ?? null}
+        patientName={casePatient?.full_name}
+        onClose={() => setCasePatient(null)}
+        onCreated={() => { setCasePatient(null); load(); }}
+      />
       {toDelete && <DeleteConfirm patient={toDelete} onCancel={() => setToDelete(null)} onConfirm={confirmDelete} />}
     </div>
   );

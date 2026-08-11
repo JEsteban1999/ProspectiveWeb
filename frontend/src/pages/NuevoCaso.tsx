@@ -7,6 +7,7 @@ import type { FormEvent } from "react";
 import { api } from "../api/client";
 import type { CaseCreate, PatientSummary, StudyCreate, StudySummary } from "../api/types";
 import { Button } from "../components/Button";
+import { Icon } from "../components/Icon";
 import { Input } from "../components/Input";
 import { Select } from "../components/Select";
 import { Sheet } from "../components/Sheet";
@@ -339,6 +340,83 @@ export function NuevoEstudioSheet({
           <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
         </div>
       </form>
+    </Sheet>
+  );
+}
+
+/* Nuevo caso — paso 1: elegir el paciente al que pertenece el caso.
+   Un caso se adjunta a UN solo paciente ya registrado; al elegirlo se abre el
+   formulario del caso (NuevoEstudioSheet). Si no hay pacientes, invita a crear
+   uno primero. Reemplaza al antiguo NuevoCasoSheet (que creaba paciente+caso a
+   la vez y duplicaba pacientes). */
+export function CasePatientPicker({
+  open, patients, onPick, onClose, onCreatePatient,
+}: {
+  open: boolean;
+  patients: PatientSummary[];
+  onPick: (p: PatientSummary) => void;
+  onClose: () => void;
+  onCreatePatient: () => void;
+}) {
+  const [q, setQ] = useState("");
+  const rows = patients.filter(
+    (p) =>
+      p.full_name.toLowerCase().includes(q.toLowerCase()) ||
+      (p.hospital_id || "").toLowerCase().includes(q.toLowerCase()),
+  );
+  return (
+    <Sheet open={open} onClose={onClose} title="Nuevo caso — elegir paciente" width={460}>
+      <div style={{ ...SUBTLE, marginBottom: 12 }}>
+        Selecciona el paciente al que pertenece este caso. Un caso se adjunta a un solo paciente.
+      </div>
+      {patients.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "20px 0", color: "var(--muted-foreground)", fontSize: 13 }}>
+          Aún no hay pacientes registrados.
+          <div style={{ marginTop: 14 }}>
+            <Button onClick={onCreatePatient} leadingIcon={<Icon name="STEP_PATIENT" size={14} />}>
+              Crear el primer paciente
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <Input placeholder="Buscar por nombre o N.º de historia…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <div style={{ height: 10 }} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 320, overflowY: "auto" }}>
+            {rows.length === 0 && (
+              <div style={{ fontSize: 13, color: "var(--muted-foreground)", padding: "8px 2px" }}>
+                Ningún paciente coincide con la búsqueda.
+              </div>
+            )}
+            {rows.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => onPick(p)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10, textAlign: "left", cursor: "pointer",
+                  padding: "10px 12px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)",
+                  background: "var(--card)", fontFamily: "var(--font-sans)",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--brand-deep)")}
+                onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>{p.full_name}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted-foreground)", fontFamily: "var(--font-mono)" }}>
+                    {p.hospital_id || "sin HC"} · {p.sex || "—"} · {p.study_count} {p.study_count === 1 ? "caso" : "casos"}
+                  </div>
+                </div>
+                <Icon name="STEP_PLAN" size={14} color="var(--muted-foreground)" />
+              </button>
+            ))}
+          </div>
+          <div style={{ height: 14 }} />
+          <Button type="button" variant="outline" onClick={onCreatePatient} leadingIcon={<Icon name="STEP_PATIENT" size={14} />}>
+            + Nuevo paciente
+          </Button>
+        </>
+      )}
     </Sheet>
   );
 }
