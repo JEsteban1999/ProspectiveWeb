@@ -154,32 +154,32 @@ export function MorphometryPanel({ onNext }: { onNext: () => void }) {
             {tab === "Métricas" && (
               <div>
                 <Metric label="Ø máximo" value={m.max_diameter_mm.toFixed(1)} unit=" mm" />
-                <Metric label="Cuello" value={m.neck_mm.toFixed(1)} unit=" mm" />
-                <Metric label="Altura de domo" value={m.dome_height_mm.toFixed(1)} unit=" mm" />
-                <Metric label="Volumen" value={m.volume_mm3.toFixed(1)} unit=" mm³" />
+                <Metric label="Cuello" value={m.reliable ? m.neck_mm.toFixed(1) : "—"} unit={m.reliable ? " mm" : ""} />
+                <Metric label="Altura de domo" value={m.reliable ? m.dome_height_mm.toFixed(1) : "—"} unit={m.reliable ? " mm" : ""} />
+                <Metric label="Volumen" value={m.reliable ? m.volume_mm3.toFixed(1) : "—"} unit={m.reliable ? " mm³" : ""} />
                 <Metric label="Área superficie" value={m.surface_area_mm2.toFixed(1)} unit=" mm²" />
                 <Metric
                   label="DNR"
-                  value={m.dnr.toFixed(2)}
-                  badge={m.dnr > 2.0 ? ["Alto", "destructive"] : m.dnr > 1.5 ? ["Mod", "warning"] : ["OK", "success"]}
+                  value={m.reliable ? m.dnr.toFixed(2) : "—"}
+                  badge={!m.reliable ? ["sin medir", "outline"] : m.dnr > 2.0 ? ["Alto", "destructive"] : m.dnr > 1.5 ? ["Mod", "warning"] : ["OK", "success"]}
                 />
                 <Metric
                   label="AR"
-                  value={m.ar.toFixed(2)}
-                  badge={m.ar > 1.6 ? ["Alto", "destructive"] : m.ar > 1.2 ? ["Mod", "warning"] : ["OK", "success"]}
+                  value={m.reliable ? m.ar.toFixed(2) : "—"}
+                  badge={!m.reliable ? ["sin medir", "outline"] : m.ar > 1.6 ? ["Alto", "destructive"] : m.ar > 1.2 ? ["Mod", "warning"] : ["OK", "success"]}
                 />
                 <Metric
                   label="BF"
-                  value={m.bf.toFixed(2)}
-                  badge={m.bf > 1.5 ? ["Cuello ancho", "warning"] : ["OK", "success"]}
+                  value={m.reliable ? m.bf.toFixed(2) : "—"}
+                  badge={!m.reliable ? ["sin medir", "outline"] : m.bf > 1.5 ? ["Cuello ancho", "warning"] : ["OK", "success"]}
                 />
               </div>
             )}
             {tab === "Índices" && (
               <div>
-                <Metric label="UI · Undulación" value={m.ui.toFixed(2)} badge={m.ui > 0.15 ? ["Irregular", "warning"] : ["Bajo", "success"]} />
-                <Metric label="EI · Elipticidad" value={m.ei.toFixed(2)} badge={m.ei > 0.35 ? ["Alto", "warning"] : ["Bajo", "success"]} />
-                <Metric label="NSI · No-esfericidad" value={m.nsi.toFixed(2)} />
+                <Metric label="UI · Undulación" value={m.reliable ? m.ui.toFixed(2) : "—"} badge={!m.reliable ? ["sin medir", "outline"] : m.ui > 0.15 ? ["Irregular", "warning"] : ["Bajo", "success"]} />
+                <Metric label="EI · Elipticidad" value={m.reliable ? m.ei.toFixed(2) : "—"} badge={!m.reliable ? ["sin medir", "outline"] : m.ei > 0.35 ? ["Alto", "warning"] : ["Bajo", "success"]} />
+                <Metric label="NSI · No-esfericidad" value={m.reliable ? m.nsi.toFixed(2) : "—"} />
                 <Metric
                   label="SR · Size Ratio"
                   value={m.sr > 0 ? m.sr.toFixed(2) : "—"}

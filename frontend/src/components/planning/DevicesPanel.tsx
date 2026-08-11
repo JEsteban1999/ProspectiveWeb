@@ -148,7 +148,9 @@ function ClipsTab() {
       <SectionLabel>Modelo de clip</SectionLabel>
       {recs.length === 0 && customs.length === 0 && (
         <div style={{ fontSize: 12, color: "var(--muted-foreground)", padding: "8px 0" }}>
-          Sin recomendaciones — ejecuta la morfometría (cuello y AR) o importa un clip.
+          {morphometry?.reliable
+            ? "Sin recomendación automática de clip para esta geometría. Elige un modelo del catálogo o importa un clip."
+            : "Marca el plano de cuello en Morfometría (para obtener cuello y AR) o importa un clip."}
         </div>
       )}
       <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 8 }}>

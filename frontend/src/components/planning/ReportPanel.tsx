@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { api } from "../../api/client";
 import type { ReportResult } from "../../api/types";
-import { riskVariant } from "../Badge";
+import { Badge, riskVariant } from "../Badge";
 import { Button } from "../Button";
 import { Icon } from "../Icon";
 import { Input } from "../Input";
@@ -131,11 +131,15 @@ export function ReportPanel({ onFinish }: { onFinish: () => void }) {
           </>
         )}
         {treatment && (
-          <Metric
-            label="Recomendación"
-            value={treatment.recommendation}
-            badge={[`Confianza ${treatment.confidence.toLowerCase()}`, "subtle"]}
-          />
+          <div style={{ padding: "9px 0" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ fontSize: 13, color: "var(--muted-foreground)" }}>Recomendación</span>
+              <Badge variant="subtle">Confianza {treatment.confidence.toLowerCase()}</Badge>
+            </div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 14, color: "var(--foreground)", fontWeight: 500, marginTop: 4 }}>
+              {treatment.recommendation}
+            </div>
+          </div>
         )}
       </Card>
 
