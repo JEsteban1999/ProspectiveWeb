@@ -110,6 +110,7 @@ export function Viewer({ step }: { step: string }) {
     neckOrigin, neckDome, setNeckOrigin, setNeckDome,
     measurements, measurePending, setMeasurements, setMeasurePending, previewBand, previewMeshUrl,
     growSeeds, setGrowSeeds, cropCenter, setCropCenter,
+    cropRadius, cropShape, cropInvert,
     trajEntry, trajTarget, setTrajEntry, setTrajTarget,
     morphometry, morphoOverlay, setCaptureViewport,
   } = usePlanning();
@@ -218,6 +219,15 @@ export function Viewer({ step }: { step: string }) {
     return out;
   }, [measurements, trajEntry, trajTarget, overlay]);
 
+  // Translucent preview of the crop ROI so the user SEES what will be kept
+  // (cyan) or removed (red) before applying — the crop is otherwise blind.
+  const cropPreview = useMemo(
+    () => (cropCenter && step === "segment")
+      ? { center: cropCenter, radius: cropRadius, shape: cropShape, invert: cropInvert }
+      : null,
+    [cropCenter, cropRadius, cropShape, cropInvert, step],
+  );
+
   const onPick = useCallback(
     (xyz: [number, number, number]) => {
       if (pickMode === "cl_source") { setClSource(xyz); setPickMode(null); }
@@ -253,7 +263,7 @@ export function Viewer({ step }: { step: string }) {
         <ObliqueMprView sessionId={sessionId} wc={meta.wc} ww={meta.ww} />
       ) : meshVisible ? (
         <Suspense fallback={<ViewerLoading label="Cargando visor 3D…" />}>
-          <MeshView layers={layers} markers={markers} lines={lines} pickMode={pickMode !== null} onPick={onPick} focusUrl={focusUrl} registerCapture={setCaptureViewport} />
+          <MeshView layers={layers} markers={markers} lines={lines} cropPreview={cropPreview} pickMode={pickMode !== null} onPick={onPick} focusUrl={focusUrl} registerCapture={setCaptureViewport} />
         </Suspense>
       ) : sessionId && meta ? (
         <MprView sessionId={sessionId} meta={meta} plane="axial" showSlider band={previewActive ? previewBand : null} />

@@ -17,6 +17,9 @@ export function MeshEditTools() {
     sessionId, segmentation,
     pickMode, setPickMode,
     growSeeds, setGrowSeeds, cropCenter, setCropCenter,
+    cropRadius: radius, setCropRadius: setRadius,
+    cropShape: shape, setCropShape: setShape,
+    cropInvert: invert, setCropInvert: setInvert,
     mprSeedMode, setMprSeedMode, setPreviewBand,
     setSegmentation, setCandidates, setSelectedCandidate,
     setMorphometry, setTreatment, setCenterlineMesh,
@@ -26,9 +29,6 @@ export function MeshEditTools() {
   const [upper, setUpper] = useState(SEG_UPPER_DEFAULT);
   const [autoBand, setAutoBand] = useState(true);   // derive band from the seed
   const [huRange, setHuRange] = useState<{ min: number; max: number }>({ min: -200, max: 3000 });
-  const [shape, setShape] = useState<"sphere" | "box">("sphere");
-  const [radius, setRadius] = useState(10);
-  const [invert, setInvert] = useState(false);
   const [busy, setBusy] = useState<"grow" | "crop" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);

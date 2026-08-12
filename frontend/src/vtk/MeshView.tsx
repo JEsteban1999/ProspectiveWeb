@@ -13,6 +13,7 @@ import vtkMapper from "@kitware/vtk.js/Rendering/Core/Mapper";
 import vtkActor from "@kitware/vtk.js/Rendering/Core/Actor";
 import vtkCellPicker from "@kitware/vtk.js/Rendering/Core/CellPicker";
 import vtkSphereSource from "@kitware/vtk.js/Filters/Sources/SphereSource";
+import vtkCubeSource from "@kitware/vtk.js/Filters/Sources/CubeSource";
 import vtkLineSource from "@kitware/vtk.js/Filters/Sources/LineSource";
 import vtkTubeFilter from "@kitware/vtk.js/Filters/General/TubeFilter";
 import type { Vector3 } from "@kitware/vtk.js/types";
@@ -35,6 +36,13 @@ export interface MeshLine {
   color: Vector3;
 }
 
+export interface CropPreview {
+  center: [number, number, number];
+  radius: number;               // sphere radius / box half-side (mm)
+  shape: "sphere" | "box";
+  invert: boolean;              // true = the ROI is REMOVED (red), else kept (cyan)
+}
+
 interface Handles {
   fsrw: vtkFullScreenRenderWindow;
   renderer: ReturnType<vtkFullScreenRenderWindow["getRenderer"]>;
@@ -47,6 +55,7 @@ export function MeshView({
   layers,
   markers = [],
   lines = [],
+  cropPreview = null,
   pickMode = false,
   onPick,
   focusUrl,
@@ -56,6 +65,8 @@ export function MeshView({
   layers: MeshLayer[];
   markers?: MeshMarker[];
   lines?: MeshLine[];
+  /** Translucent sphere/box preview of the crop ROI (null to hide). */
+  cropPreview?: CropPreview | null;
   /** When true, a left click on the mesh reports the world position via onPick. */
   pickMode?: boolean;
   onPick?: (xyz: [number, number, number]) => void;
@@ -73,6 +84,7 @@ export function MeshView({
   const containerRef = useRef<HTMLDivElement>(null);
   const handles = useRef<Handles | null>(null);
   const markerActors = useRef<vtkActor[]>([]);
+  const cropActor = useRef<vtkActor | null>(null);
   const registerCaptureRef = useRef(registerCapture);
   registerCaptureRef.current = registerCapture;
   // Camera params kept across scene rebuilds (for the live preview).
@@ -96,6 +108,9 @@ export function MeshView({
   const appearanceKey = layers.map((l) => `${l.url}|${l.color.join(",")}|${l.opacity ?? 1}`).join(";");
   const markerKey = markers.map((m) => `${m.pos.join(",")}|${m.color.join(",")}`).join(";");
   const lineKey = lines.map((l) => `${l.a.join(",")}-${l.b.join(",")}|${l.color.join(",")}`).join(";");
+  const cropKey = cropPreview
+    ? `${cropPreview.center.join(",")}|${cropPreview.radius}|${cropPreview.shape}|${cropPreview.invert}`
+    : "";
 
   // ── Scene: render window + mesh layers + surface picking ──────────────── #
   useEffect(() => {
@@ -324,6 +339,36 @@ export function MeshView({
     h.renderWindow.render();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, markerKey, lineKey]);
+
+  // ── Crop ROI preview: a translucent sphere/box so the crop is not blind ──── #
+  useEffect(() => {
+    const h = handles.current;
+    if (!h) return;
+    if (cropActor.current) { h.renderer.removeActor(cropActor.current); cropActor.current = null; }
+
+    if (cropPreview && cropPreview.radius > 0) {
+      const { center, radius, shape, invert } = cropPreview;
+      const src = shape === "sphere"
+        ? vtkSphereSource.newInstance({ center, radius, thetaResolution: 32, phiResolution: 32 })
+        : vtkCubeSource.newInstance({ center, xLength: radius * 2, yLength: radius * 2, zLength: radius * 2 });
+      const mapper = vtkMapper.newInstance();
+      mapper.setInputConnection(src.getOutputPort());
+      const actor = vtkActor.newInstance();
+      actor.setMapper(mapper);
+      const prop = actor.getProperty();
+      // Red = the ROI is removed; cyan = the ROI is kept.
+      prop.setColor(invert ? 0.95 : 0.25, invert ? 0.30 : 0.85, invert ? 0.30 : 0.95);
+      prop.setOpacity(0.22);
+      prop.setEdgeVisibility(true);
+      prop.setEdgeColor(invert ? 0.98 : 0.4, invert ? 0.5 : 0.95, invert ? 0.5 : 1.0);
+      prop.setLineWidth(1);
+      actor.setPickable(false);   // never intercept surface picks
+      h.renderer.addActor(actor);
+      cropActor.current = actor;
+    }
+    h.renderWindow.render();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, cropKey]);
 
   return <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />;
 }

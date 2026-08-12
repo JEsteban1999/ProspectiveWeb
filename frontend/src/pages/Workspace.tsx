@@ -43,7 +43,7 @@ export function Workspace({
   onBack: () => void;
   onFinish: () => void;
 }) {
-  const { morphometry, sessionId } = usePlanning();
+  const { morphometry, sessionId, setPickMode, setMprSeedMode } = usePlanning();
   const [stepIdx, setStepIdx] = useState(initialStep);
   const [maxStep, setMaxStep] = useState(initialStep);
   const [saving, setSaving] = useState<"idle" | "saving" | "saved">("idle");
@@ -67,6 +67,10 @@ export function Workspace({
   };
 
   const go = (i: number) => {
+    // Cancel any active 3D/MPR pick mode so a tool armed on one step (e.g. the
+    // crop-centre picker) doesn't linger — and its banner persist — on the next.
+    setPickMode(null);
+    setMprSeedMode(false);
     setStepIdx(i);
     setMaxStep((m) => Math.max(m, i));
   };
