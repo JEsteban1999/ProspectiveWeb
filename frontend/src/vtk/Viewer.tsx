@@ -175,6 +175,14 @@ export function Viewer({ step }: { step: string }) {
       : undefined;
   const meta = useVolumeMeta(sessionId);
   const [viewMode, setViewMode] = useState<"default" | "volume" | "oblique">("default");
+  // Transient "you clicked outside the mesh" hint — without it a missed pick is
+  // silent and the tool feels broken.
+  const [pickMiss, setPickMiss] = useState(false);
+  const onPickMiss = useCallback(() => {
+    setPickMiss(true);
+    setTimeout(() => setPickMiss(false), 1800);
+  }, []);
+  useEffect(() => { if (!pickMode) setPickMiss(false); }, [pickMode]);
   // Only show a placed device mesh once its URL points at a real session file.
   const showDevice = step === "devices" && !!deviceMesh && deviceMesh.startsWith("/data/");
   const showCenterline = !!centerlineMesh && centerlineMesh.startsWith("/data/");
@@ -263,7 +271,7 @@ export function Viewer({ step }: { step: string }) {
         <ObliqueMprView sessionId={sessionId} wc={meta.wc} ww={meta.ww} />
       ) : meshVisible ? (
         <Suspense fallback={<ViewerLoading label="Cargando visor 3D…" />}>
-          <MeshView layers={layers} markers={markers} lines={lines} cropPreview={cropPreview} pickMode={pickMode !== null} onPick={onPick} focusUrl={focusUrl} registerCapture={setCaptureViewport} />
+          <MeshView layers={layers} markers={markers} lines={lines} cropPreview={cropPreview} pickMode={pickMode !== null} onPick={onPick} onPickMiss={onPickMiss} focusUrl={focusUrl} registerCapture={setCaptureViewport} />
         </Suspense>
       ) : sessionId && meta ? (
         <MprView sessionId={sessionId} meta={meta} plane="axial" showSlider band={previewActive ? previewBand : null} />
@@ -345,18 +353,19 @@ export function Viewer({ step }: { step: string }) {
         </div>
       )}
 
-      {/* Pick-mode banner */}
+      {/* Pick-mode banner — turns into a "you missed the mesh" hint on a miss. */}
       {pickMode && meshUrl && (
-        <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", background: pickMode === "cl_source" ? "rgba(63,186,80,0.92)" : pickMode === "cl_target" ? "rgba(248,81,73,0.92)" : pickMode === "neck_origin" ? "rgba(217,89,217,0.92)" : pickMode === "neck_dome" ? "rgba(92,217,219,0.94)" : pickMode === "grow_seed" ? "rgba(140,224,90,0.94)" : pickMode === "crop_center" ? "rgba(240,150,50,0.94)" : pickMode === "traj_entry" ? "rgba(102,204,255,0.94)" : pickMode === "traj_target" ? "rgba(248,81,73,0.92)" : "rgba(234,179,8,0.94)", color: pickMode === "measure" || pickMode === "neck_dome" || pickMode === "grow_seed" || pickMode === "traj_entry" ? "#1a1a1a" : "#fff", fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 999, pointerEvents: "none", boxShadow: "0 2px 8px rgba(0,0,0,0.35)" }}>
-          {pickMode === "cl_source" && "Clic sobre el vaso para marcar el origen"}
-          {pickMode === "cl_target" && "Clic sobre el vaso para marcar el destino"}
-          {pickMode === "neck_origin" && "Clic sobre el cuello del aneurisma"}
-          {pickMode === "neck_dome" && "Clic sobre el ápice del domo"}
-          {pickMode === "grow_seed" && `Clic sobre el vaso para añadir semilla (${growSeeds.length})`}
-          {pickMode === "crop_center" && "Clic sobre la malla para el centro del recorte"}
-          {pickMode === "traj_entry" && "Clic para el punto de entrada del abordaje"}
-          {pickMode === "traj_target" && "Clic sobre el aneurisma (punto diana)"}
-          {pickMode === "measure" && (measurePending ? "Clic en el segundo punto" : "Clic en el primer punto")}
+        <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", background: pickMiss ? "rgba(220,60,60,0.95)" : pickMode === "cl_source" ? "rgba(63,186,80,0.92)" : pickMode === "cl_target" ? "rgba(248,81,73,0.92)" : pickMode === "neck_origin" ? "rgba(217,89,217,0.92)" : pickMode === "neck_dome" ? "rgba(92,217,219,0.94)" : pickMode === "grow_seed" ? "rgba(140,224,90,0.94)" : pickMode === "crop_center" ? "rgba(240,150,50,0.94)" : pickMode === "traj_entry" ? "rgba(102,204,255,0.94)" : pickMode === "traj_target" ? "rgba(248,81,73,0.92)" : "rgba(234,179,8,0.94)", color: pickMiss ? "#fff" : pickMode === "measure" || pickMode === "neck_dome" || pickMode === "grow_seed" || pickMode === "traj_entry" ? "#1a1a1a" : "#fff", fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 999, pointerEvents: "none", boxShadow: "0 2px 8px rgba(0,0,0,0.35)" }}>
+          {pickMiss && "⚠ Clic fuera de la malla — haz clic sobre la superficie 3D"}
+          {!pickMiss && pickMode === "cl_source" && "Clic sobre el vaso para marcar el origen"}
+          {!pickMiss && pickMode === "cl_target" && "Clic sobre el vaso para marcar el destino"}
+          {!pickMiss && pickMode === "neck_origin" && "Clic sobre el cuello del aneurisma"}
+          {!pickMiss && pickMode === "neck_dome" && "Clic sobre el ápice del domo"}
+          {!pickMiss && pickMode === "grow_seed" && `Clic sobre el vaso para añadir semilla (${growSeeds.length})`}
+          {!pickMiss && pickMode === "crop_center" && "Clic sobre la malla para el centro del recorte"}
+          {!pickMiss && pickMode === "traj_entry" && "Clic para el punto de entrada del abordaje"}
+          {!pickMiss && pickMode === "traj_target" && "Clic sobre el aneurisma (punto diana)"}
+          {!pickMiss && pickMode === "measure" && (measurePending ? "Clic en el segundo punto" : "Clic en el primer punto")}
         </div>
       )}
 

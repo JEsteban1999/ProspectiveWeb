@@ -58,6 +58,7 @@ export function MeshView({
   cropPreview = null,
   pickMode = false,
   onPick,
+  onPickMiss,
   focusUrl,
   registerCapture,
   preserveCamera = false,
@@ -70,6 +71,8 @@ export function MeshView({
   /** When true, a left click on the mesh reports the world position via onPick. */
   pickMode?: boolean;
   onPick?: (xyz: [number, number, number]) => void;
+  /** Called when a pick click lands on empty space (no surface hit). */
+  onPickMiss?: () => void;
   /** URL of a layer to frame the camera on and highlight (e.g. the selected
    *  aneurysm candidate). The view zooms to its region — with local context —
    *  and the layer is lit to stand out. */
@@ -96,8 +99,10 @@ export function MeshView({
   // forcing the scene to rebuild when the pick mode toggles.
   const pickModeRef = useRef(pickMode);
   const onPickRef = useRef(onPick);
+  const onPickMissRef = useRef(onPickMiss);
   pickModeRef.current = pickMode;
   onPickRef.current = onPick;
+  onPickMissRef.current = onPickMiss;
 
   // Serialise layers + overlays so each effect only re-runs when it must. The
   // scene rebuilds ONLY when the geometry (URLs) or focus changes — NOT on an
@@ -141,6 +146,10 @@ export function MeshView({
       if (hits && hits.length > 0) {
         const [x, y, z] = hits[0];
         onPickRef.current([x, y, z]);
+      } else {
+        // Clicked empty space: without feedback the tool looks broken ("I click
+        // and nothing happens"), so tell the caller the pick missed the surface.
+        onPickMissRef.current?.();
       }
     });
 
