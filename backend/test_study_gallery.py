@@ -39,12 +39,33 @@ def _patient_with_study(name="Galería", hc="HC-GAL-1") -> tuple[int, int]:
         db.close()
 
 
-def _session_with_dicom_and_volume() -> str:
-    """Session with a couple of fake DICOM files and a cached volume."""
+from pathlib import Path
+
+# Real DICOM files, needed by the tests that reopen a study: `open` now scans
+# the archived files for series, so placeholder bytes are (correctly) rejected.
+_CORPUS = Path(r"C:\UniNavarra\Proyectos\Prospective\ProspectiveWeb\Archivos DICOM"
+               r"\DICOM-20260714T160737Z-1-001\DICOM")
+
+
+def _session_with_dicom_and_volume(real_dicom: bool = False) -> str:
+    """Session with a couple of DICOM files and a cached volume.
+
+    `real_dicom=True` copies actual files from the corpus (needed when the test
+    reopens the study, since that path parses the DICOM headers).
+    """
     sid = create_session()
     dicom = session_subdir(sid, "dicom")
-    (dicom / "IM_0001").write_bytes(b"DICM-fake-1")
-    (dicom / "IM_0002").write_bytes(b"DICM-fake-2")
+    if real_dicom:
+        import shutil
+        names = [n for n in ("IM_0001", "IM_0002") if (_CORPUS / n).exists()]
+        if len(names) < 2:
+            import pytest
+            pytest.skip("corpus DICOM no disponible")
+        for n in names:
+            shutil.copy2(_CORPUS / n, dicom / n)
+    else:
+        (dicom / "IM_0001").write_bytes(b"DICM-fake-1")
+        (dicom / "IM_0002").write_bytes(b"DICM-fake-2")
 
     n = 24
     vol = np.zeros((n, n, n), np.float32)
@@ -88,16 +109,20 @@ class TestArchiveAndGallery:
         from services.sessions import delete_session, session_subdir as sub
 
         _pid, study_id = _patient_with_study(name="Purga", hc="HC-GAL-2")
-        sid = _session_with_dicom_and_volume()
+        sid = _session_with_dicom_and_volume(real_dicom=True)
         assert client.post(f"/api/studies/{study_id}/archive", params={"session_id": sid}).status_code == 200
 
         delete_session(sid)                       # simulate the TTL sweep
 
         r = client.post(f"/api/studies/{study_id}/open")
         assert r.status_code == 200, r.text
-        new_sid = r.json()["session_id"]
+        body = r.json()
+        new_sid = body["session_id"]
         assert new_sid != sid
-        assert r.json()["n_files"] == 2
+        assert body["total_files"] == 2
+        # A reopened study must arrive with a series already active, otherwise
+        # the pipeline shows an empty panel and cannot continue.
+        assert body["series"], "debe activar una serie al reabrir"
         restored = sorted(p.name for p in sub(new_sid, "dicom").iterdir())
         assert restored == ["IM_0001", "IM_0002"]
 

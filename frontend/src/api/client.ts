@@ -66,7 +66,7 @@ import type {
   UploadResult,
   SeriesInfo,
   StudyCard,
-  OpenStudyResult,
+
   UserAdminInfo,
   UserInfo,
   UserUpdate,
@@ -301,9 +301,10 @@ export const api = {
   /** Copy the session's DICOM into durable storage under this study. */
   archiveStudy: (studyId: number, sessionId: string) =>
     post<StudyCard>(`/api/studies/${studyId}/archive?session_id=${encodeURIComponent(sessionId)}`),
-  /** Restore an archived study into a fresh working session. */
+  /** Restore an archived study into a fresh working session, series already
+   *  scanned and activated — same payload shape as `upload`. */
   openStudy: (studyId: number) =>
-    post<OpenStudyResult>(`/api/studies/${studyId}/open`),
+    post<UploadResult>(`/api/studies/${studyId}/open`),
 
   /* audit (SkullChain) */
   auditBlocks: () => get<AuditBlock[]>("/api/audit/blocks"),

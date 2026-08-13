@@ -15,11 +15,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
+from models.dicom import UploadResult
 from models.patient import StudyCard
 from services.auth_service import get_current_user
 from services.database import get_db
 from services.db_models import PlanningSession, Patient, Study, User
-from services.sessions import create_session
+from services.sessions import create_session, session_subdir
 from services.storage import get_storage
 from services.study_archive import archive_session_dicom, restore_study_to_session
 
@@ -160,17 +161,20 @@ async def archive_study(
 
 @router.post(
     "/{study_id}/open",
+    response_model=UploadResult,
     summary="Open an archived study in a fresh session",
     description=(
-        "Copies the archived DICOM into a new working session and returns its "
-        "`session_id`, ready for the viewer or the planning pipeline."
+        "Materialises the archived DICOM into a new working session, scans its "
+        "series and activates the best 3-D volume — exactly as a fresh upload "
+        "would — so the pipeline can start straight away. Returns the same shape "
+        "as `POST /api/upload`."
     ),
 )
 async def open_study(
     study_id: int,
     db: Annotated[Session, Depends(get_db)],
     _user: Annotated[User | None, Depends(get_current_user)] = None,
-) -> dict:
+) -> UploadResult:
     s = db.query(Study).filter_by(id=study_id).first()
     if s is None:
         raise HTTPException(status_code=404, detail=f"Estudio {study_id} no encontrado")
@@ -185,8 +189,29 @@ async def open_study(
         n = restore_study_to_session(study_id, sid)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    except OSError as exc:
+        logger.exception("Open study failed (filesystem)")
+        raise HTTPException(status_code=507, detail=f"No se pudo abrir el estudio: {exc}")
     except Exception as exc:  # noqa: BLE001
         logger.exception("Open study failed")
         raise HTTPException(status_code=500, detail=f"No se pudo abrir el estudio: {exc}")
 
-    return {"session_id": sid, "study_id": study_id, "n_files": n}
+    # Scan + activate a series, exactly like an upload: without this the session
+    # has no `dicom.series_id`, so the volume loader would lump every file into
+    # one bogus series and the panel would show no study at all.
+    from routers.upload import _activate_series, _build_series_list
+    from services.dicom_loader import scan_series
+
+    try:
+        raw = scan_series(session_subdir(sid, "dicom"))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Series scan failed on open")
+        raise HTTPException(status_code=500, detail=f"No se pudieron leer las series: {exc}")
+
+    series_list = _build_series_list(sid, raw)
+    if not series_list:
+        raise HTTPException(status_code=422, detail="El estudio archivado no contiene series DICOM legibles.")
+    _activate_series(sid, series_list[0])
+
+    logger.info("Opened study %s into session %s: %d files, %d series", study_id, sid, n, len(series_list))
+    return UploadResult(session_id=sid, series=series_list, total_files=n)

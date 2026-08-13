@@ -54,6 +54,9 @@ function Router() {
       planning.setPatient(p);
       setPatient(p);
       planning.setSession(r.session_id);
+      // The backend already activated the best series; mirror it so step 1 shows
+      // the study (without this the panel looks empty and "Continuar" is off).
+      planning.setSeries(r.series[0] ?? null);
       setResumeStep(0);
       setToast(null);
       setScreen("workspace");
