@@ -274,7 +274,7 @@ export function Viewer({ step }: { step: string }) {
           <MeshView layers={layers} markers={markers} lines={lines} cropPreview={cropPreview} pickMode={pickMode !== null} onPick={onPick} onPickMiss={onPickMiss} focusUrl={focusUrl} registerCapture={setCaptureViewport} />
         </Suspense>
       ) : sessionId && meta ? (
-        <MprView sessionId={sessionId} meta={meta} plane="axial" showSlider band={previewActive ? previewBand : null} />
+        <MprView sessionId={sessionId} meta={meta} plane="axial" showSlider showPlaneLabel={false} band={previewActive ? previewBand : null} />
       ) : (
         <div
           style={{
@@ -300,7 +300,9 @@ export function Viewer({ step }: { step: string }) {
 
       {/* Scene label */}
       <div style={{ position: "absolute", top: 14, left: 16, fontSize: 11, fontFamily: "var(--font-mono)", color: "rgba(168,184,198,0.75)", pointerEvents: "none" }}>
-        {STEP_SCENE[step]} · {viewMode === "volume" ? "volumen" : viewMode === "oblique" ? "oblicuo" : meshVisible ? "vtk.js" : "MPR"}
+        {/* The 2D fallback is always the axial plane, so name it here — its own
+            label would print on top of this one. */}
+        {STEP_SCENE[step]} · {viewMode === "volume" ? "volumen" : viewMode === "oblique" ? "oblicuo" : meshVisible ? "vtk.js" : "MPR axial"}
         {step === "detect" && candidate && <span style={{ marginLeft: 10, color: "#A8B8C6" }}>· {candidate.id}</span>}
       </div>
 

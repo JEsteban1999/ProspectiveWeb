@@ -714,6 +714,7 @@ export interface SessionSaveRequest {
   label?: string;
   patient_id?: number | null;
   study_id?: number | null;
+  imaging_study_id?: number | null;
   current_step?: number;
 }
 
@@ -737,7 +738,10 @@ export interface SessionRestoreResult {
   n_faces: number;
   modality: string;
   patient_id: number | null;
-  study_id: number | null;
+  study_id: number | null;          // clinical case
+  study_label: string;
+  imaging_study_id: number | null;  // acquisition being analysed
+  series: SeriesInfo | null;        // so step 1 shows the restored series
 }
 
 /* ── longitudinal ──────────────────────────────────────────────────────── */

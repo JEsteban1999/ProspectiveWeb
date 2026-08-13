@@ -195,6 +195,8 @@ def _build_series_list(session_id: str, raw_series: list[dict]) -> list[SeriesIn
 def _activate_series(session_id: str, s: SeriesInfo) -> None:
     """Make `s` the session's active series (downstream routers read this state)."""
     write_state(session_id, "dicom.series_id",     s.series_id)
+    # Persisted so a resumed session can rebuild the series card verbatim.
+    write_state(session_id, "dicom.description",   s.description)
     write_state(session_id, "dicom.modality",      s.modality)
     write_state(session_id, "dicom.window_center", str(s.window_center))
     write_state(session_id, "dicom.window_width",  str(s.window_width))

@@ -33,7 +33,19 @@ from typing import Protocol
 logger = logging.getLogger(__name__)
 
 # Deliberately NOT under data/ (that path is public — see module docstring).
-STUDY_FILES_ROOT = Path(__file__).resolve().parents[1] / "study_files"
+_DEFAULT_STUDY_FILES_ROOT = Path(__file__).resolve().parents[1] / "study_files"
+
+
+def study_files_root() -> Path:
+    """Archive root, resolved on every call.
+
+    Read dynamically (not frozen at import time) so `STUDY_FILES_ROOT` set by the
+    test suite always wins: as a module constant it was captured by whichever
+    test imported this module first, and the rest of the suite then archived
+    studies 1, 2, 3… into the real store — overwriting a clinician's DICOM and
+    preview. Same class of bug as the test database contaminating the dev one.
+    """
+    return Path(os.environ.get("STUDY_FILES_ROOT") or _DEFAULT_STUDY_FILES_ROOT)
 
 _PRESIGN_TTL_SEC = 300   # short-lived: these URLs expose patient imaging
 
@@ -67,8 +79,14 @@ class StorageBackend(Protocol):
 class LocalBackend:
     """Filesystem store. Same key space as S3, so switching is transparent."""
 
-    def __init__(self, root: Path = STUDY_FILES_ROOT) -> None:
-        self.root = root
+    def __init__(self, root: Path | None = None) -> None:
+        self._root = root
+
+    @property
+    def root(self) -> Path:
+        # Resolved per access so a test that redirects the archive after this
+        # backend was built still writes to its temp directory.
+        return self._root or study_files_root()
 
     def _path(self, key: str) -> Path:
         p = (self.root / key).resolve()
@@ -218,7 +236,7 @@ def get_storage() -> StorageBackend:
         logger.info("Study storage: S3 bucket %s", bucket)
     else:
         _backend = LocalBackend()
-        logger.info("Study storage: local at %s", STUDY_FILES_ROOT)
+        logger.info("Study storage: local at %s", study_files_root())
     return _backend
 
 

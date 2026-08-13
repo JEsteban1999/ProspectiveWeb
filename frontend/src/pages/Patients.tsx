@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { api } from "../api/client";
-import type { PatientSummary, PatientSessionInfo, StudySummary } from "../api/types";
+import type { PatientSummary, PatientSessionInfo, StudyCard, StudySummary } from "../api/types";
 import { Badge, riskVariant } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
@@ -16,6 +16,7 @@ import { ErrorNote, Card } from "../components/PanelHead";
 import { useAuth } from "../store/auth";
 import { useNav } from "../store/nav";
 import { CasePatientPicker, NuevoEstudioSheet } from "./NuevoCaso";
+import { StudyGallery } from "./Studies";
 
 const STEP_LABELS = ["Carga", "Segmentación", "Detección", "Morfometría", "Decisión", "Dispositivos", "Informe"];
 
@@ -32,12 +33,18 @@ function PatientSheet({
   onClose,
   onSaved,
   onResume,
+  onPlanCase,
+  onOpenStudy,
 }: {
   open: boolean;
   patientId: number | null;   // null → create, otherwise edit
   onClose: () => void;
   onSaved: () => void;
   onResume?: (sessionId: string) => void;
+  /** Enter the pipeline for this clinical case (patient + case already known). */
+  onPlanCase?: (study: StudySummary) => void;
+  /** Open one archived imaging study of the case. */
+  onOpenStudy?: (img: StudyCard) => void;
 }) {
   const editing = patientId !== null;
   const [busy, setBusy] = useState(false);
@@ -186,6 +193,28 @@ function PatientSheet({
                         {mods && <><br />Imágenes: {mods}</>}
                         {st.angiographer && <> · Angiógrafo: {st.angiographer}</>}
                       </div>
+
+                      {/* Imaging studies of this case: a case can hold several
+                          acquisitions (CT + angiography + follow-up). */}
+                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)" }}>
+                        <StudyGallery
+                          caseId={st.id}
+                          compact
+                          emptyHint="Sin imágenes archivadas todavía."
+                          onOpen={(img) => { onClose(); onOpenStudy?.(img); }}
+                        />
+                        <div style={{ marginTop: 10 }}>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => { onClose(); onPlanCase?.(st); }}
+                            leadingIcon={<Icon name="STEP_PLAN" size={13} />}
+                          >
+                            Planificar este caso
+                          </Button>
+                        </div>
+                      </div>
                     </Card>
                   );
                 })}
@@ -333,10 +362,16 @@ function DeleteConfirm({
 export function Patients({
   onOpenPatient,
   onResume,
+  onPlanCase,
+  onOpenStudy,
   onOpenPending,
 }: {
   onOpenPatient: (p: PatientSummary) => void;
   onResume: (sessionId: string, patient: PatientSummary) => void;
+  /** Enter the pipeline for a clinical case (patient + case known upfront). */
+  onPlanCase: (study: StudySummary, patient: PatientSummary) => void;
+  /** Open an archived imaging study straight from the patient sheet. */
+  onOpenStudy: (img: StudyCard) => void;
   onOpenPending: () => void;
 }) {
   const [patients, setPatients] = useState<PatientSummary[]>([]);
@@ -552,6 +587,11 @@ export function Patients({
           const p = patients.find((x) => x.id === sheetPatientId);
           if (p) { setSheetOpen(false); onResume(sid, p); }
         }}
+        onPlanCase={(st) => {
+          const p = patients.find((x) => x.id === sheetPatientId);
+          if (p) onPlanCase(st, p);
+        }}
+        onOpenStudy={onOpenStudy}
       />
       {/* Nuevo caso = elegir paciente existente → formulario del caso para ese paciente. */}
       <CasePatientPicker

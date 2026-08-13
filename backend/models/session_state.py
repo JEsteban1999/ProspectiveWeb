@@ -9,6 +9,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from .dicom import SeriesInfo
+
 
 class SessionSaveRequest(BaseModel):
     """Request to persist the current session state."""
@@ -19,7 +21,10 @@ class SessionSaveRequest(BaseModel):
         None, description="Associate this session with a patient record"
     )
     study_id: int | None = Field(
-        None, description="Associate this session with a specific study"
+        None, description="Clinical case this session belongs to"
+    )
+    imaging_study_id: int | None = Field(
+        None, description="Imaging study (acquisition) this session analysed"
     )
     current_step: int = Field(
         0, ge=0, le=6,
@@ -52,7 +57,18 @@ class SessionRestoreResult(BaseModel):
     n_faces: int = Field(0, description="Face count of the restored mesh")
     modality: str = Field("", description="DICOM modality of the restored volume")
     patient_id: int | None = Field(None, description="Patient this session belongs to")
-    study_id: int | None = Field(None, description="Study this session belongs to")
+    study_id: int | None = Field(None, description="Clinical case this session belongs to")
+    study_label: str = Field("", description="Human label of that case, for the breadcrumb")
+    imaging_study_id: int | None = Field(
+        None, description="Imaging study this session was analysing"
+    )
+    series: SeriesInfo | None = Field(
+        None,
+        description=(
+            "Series of the restored volume. Without it the upload step shows an "
+            "empty drop zone even though the viewer is already rendering the MPR."
+        ),
+    )
 
 
 class SessionListItem(BaseModel):

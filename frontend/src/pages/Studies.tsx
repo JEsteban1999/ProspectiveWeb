@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { StudyCard } from "../api/types";
 import { Badge, riskVariant } from "../components/Badge";
+import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
 import { Input } from "../components/Input";
 import { Topbar } from "../components/Topbar";
@@ -56,13 +57,19 @@ function Thumbnail({ study }: { study: StudyCard }) {
 
 export function StudyGallery({
   patientId,
+  caseId,
   onOpen,
   compact = false,
+  emptyHint,
 }: {
   /** Restrict to one patient (used inside the patient sheet). */
   patientId?: number;
+  /** Restrict to one clinical case — a case can hold several acquisitions. */
+  caseId?: number;
   onOpen: (study: StudyCard) => void;
   compact?: boolean;
+  /** Message shown when this scope has no imaging studies yet. */
+  emptyHint?: string;
 }) {
   const [studies, setStudies] = useState<StudyCard[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,12 +79,12 @@ export function StudyGallery({
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    api.listStudies("", patientId)
+    api.listStudies("", patientId, caseId)
       .then((s) => { if (alive) setStudies(s); })
       .catch((e) => { if (alive) setError(e instanceof Error ? e.message : "Error cargando estudios"); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [patientId]);
+  }, [patientId, caseId]);
 
   // Filter on the client: the list is small and it keeps typing instant.
   const rows = useMemo(() => {
@@ -105,9 +112,9 @@ export function StudyGallery({
       {loading ? (
         <div style={{ color: "var(--muted-foreground)", fontSize: 13 }}>Cargando estudios…</div>
       ) : rows.length === 0 ? (
-        <div style={{ color: "var(--muted-foreground)", fontSize: 13, padding: "24px 0", textAlign: "center" }}>
+        <div style={{ color: "var(--muted-foreground)", fontSize: compact ? 11 : 13, padding: compact ? "6px 0" : "24px 0", textAlign: compact ? "left" : "center" }}>
           {studies.length === 0
-            ? "Aún no hay estudios archivados. Carga un DICOM en el pipeline y pulsa «Guardar estudio»."
+            ? (emptyHint ?? "Aún no hay estudios archivados. Carga un DICOM en el pipeline y pulsa «Guardar estudio».")
             : "Ningún estudio coincide con la búsqueda."}
         </div>
       ) : (
@@ -133,15 +140,32 @@ export function StudyGallery({
             >
               <Thumbnail study={s} />
               <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
-                <div className="truncate" style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>
-                  {s.patient_name || "—"}
-                </div>
-                <div className="truncate" style={{ fontSize: 11, color: "var(--muted-foreground)", fontFamily: "var(--font-mono)" }}>
-                  {s.hospital_id || "sin HC"}
-                </div>
-                <div className="truncate" style={{ fontSize: 11, color: "var(--muted-foreground)" }}>
-                  {s.description}
-                </div>
+                {/* Inside a case the patient is already known, so the card leads
+                    with what distinguishes one acquisition from another. */}
+                {compact ? (
+                  <>
+                    <div className="truncate" style={{ fontSize: 12, fontWeight: 700, color: "var(--foreground)" }}>
+                      {s.description}
+                    </div>
+                    {s.acquired_at && (
+                      <div className="truncate" style={{ fontSize: 10, color: "var(--muted-foreground)", fontFamily: "var(--font-mono)" }}>
+                        {s.acquired_at}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="truncate" style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>
+                      {s.patient_name || "—"}
+                    </div>
+                    <div className="truncate" style={{ fontSize: 11, color: "var(--muted-foreground)", fontFamily: "var(--font-mono)" }}>
+                      {s.hospital_id || "sin HC"}
+                    </div>
+                    <div className="truncate" style={{ fontSize: 11, color: "var(--muted-foreground)" }}>
+                      {s.description}
+                    </div>
+                  </>
+                )}
                 <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
                   {s.modality && <Badge variant="subtle">{s.modality}</Badge>}
                   {s.n_slices > 0 && (
@@ -167,10 +191,14 @@ export function StudyGallery({
   );
 }
 
-export function Studies({ onOpen }: { onOpen: (study: StudyCard) => void }) {
+export function Studies({ onOpen, onBack }: { onOpen: (study: StudyCard) => void; onBack: () => void }) {
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--canvas)" }}>
-      <Topbar />
+      <Topbar crumb="Pacientes / Estudios">
+        <Button variant="ghost" size="sm" onClick={onBack} leadingIcon={<Icon name="HOME" />}>
+          Pacientes
+        </Button>
+      </Topbar>
       <div style={{ flex: 1, overflowY: "auto" }}>
         <div style={{ maxWidth: 1320, margin: "0 auto", padding: "28px 24px 40px" }}>
           <div style={{ marginBottom: 18 }}>

@@ -74,11 +74,44 @@ def delete_session(session_id: str) -> None:
 
 # ── Durable save / resume ──────────────────────────────────────────────────── #
 
+def _clone_tree(src: Path, dst: Path) -> None:
+    """Replicate `src` into `dst`, hard-linking the DICOM instead of copying it.
+
+    A study is ~1.3 GB and every save used to duplicate it, which filled the disk
+    (WinError 112) and made "Guardar progreso" fail. Hard links are safe here
+    *only* for `dicom/`: those files are write-once (each upload creates a fresh
+    session and never overwrites an existing name), so the snapshot cannot be
+    mutated behind our back. Meshes and the volume cache ARE rewritten in place
+    when a step is re-run, so they are copied — a snapshot must be a point-in-time
+    image, not a live view.
+    """
+    dst.mkdir(parents=True, exist_ok=True)
+    for item in src.iterdir():
+        s, d = src / item.name, dst / item.name
+        if s.is_dir():
+            if item.name == "dicom":
+                d.mkdir(parents=True, exist_ok=True)
+                for f in s.iterdir():
+                    if not f.is_file():
+                        continue
+                    target = d / f.name
+                    if target.exists():
+                        target.unlink()
+                    try:
+                        os.link(f, target)
+                    except OSError:                       # cross-volume, or no link support
+                        shutil.copy2(f, target)
+            else:
+                shutil.copytree(s, d, dirs_exist_ok=True)
+        else:
+            shutil.copy2(s, d)
+
+
 def snapshot_session(session_id: str) -> float:
-    """Copy the live session dir into the durable saves store (overwrite).
+    """Replicate the live session dir into the durable saves store (overwrite).
 
     Returns the snapshot size in KB. This is what makes a saved session survive
-    the TTL purge: the copy lives under SAVES_ROOT, which the sweep never touches.
+    the TTL purge: it lives under SAVES_ROOT, which the sweep never touches.
     """
     src = SESSIONS_ROOT / session_id
     if not src.is_dir():
@@ -86,7 +119,7 @@ def snapshot_session(session_id: str) -> float:
     dst = SAVES_ROOT / session_id
     if dst.exists():
         shutil.rmtree(dst, ignore_errors=True)
-    shutil.copytree(src, dst)
+    _clone_tree(src, dst)
     total = sum(f.stat().st_size for f in dst.rglob("*") if f.is_file())
     return round(total / 1024, 1)
 
@@ -106,13 +139,7 @@ def rehydrate_session(saved_session_id: str) -> str:
     if not src.is_dir():
         raise FileNotFoundError(f"No saved session '{saved_session_id}' found")
     new_sid = create_session()  # creates the sub-dirs + .created_at
-    dst = SESSIONS_ROOT / new_sid
-    for item in src.iterdir():
-        s, d = src / item.name, dst / item.name
-        if s.is_dir():
-            shutil.copytree(s, d, dirs_exist_ok=True)
-        else:
-            shutil.copy2(s, d)
+    _clone_tree(src, SESSIONS_ROOT / new_sid)
     return new_sid
 
 

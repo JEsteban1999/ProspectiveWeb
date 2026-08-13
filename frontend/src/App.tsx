@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api } from "./api/client";
-import type { PatientSummary, StudyCard } from "./api/types";
+import type { PatientSummary, StudyCard, StudySummary } from "./api/types";
 import { Login } from "./pages/Login";
 import { Signup } from "./pages/Signup";
 import { Patients } from "./pages/Patients";
@@ -42,6 +42,17 @@ function Router() {
     setScreen("workspace");
   };
 
+  // Enter the pipeline for a clinical case: patient + case are known upfront, so
+  // the upload panel no longer has to ask which case the DICOM belongs to.
+  const planCase = (study: StudySummary, p: PatientSummary) => {
+    planning.reset();
+    planning.setPatient(p);
+    planning.setCase(study.id, study.dx_principal || study.description || `Caso ${study.id}`);
+    setPatient(p);
+    setResumeStep(0);
+    setScreen("workspace");
+  };
+
   // Open an archived study from the gallery: its DICOM is copied back into a
   // fresh session and the pipeline starts at step 1 with the volume loaded.
   const openStudy = async (study: StudyCard) => {
@@ -52,6 +63,8 @@ function Router() {
       const p = patients.find((x) => x.id === study.patient_id) ?? null;
       planning.reset();
       planning.setPatient(p);
+      planning.setCase(study.case_id || null, study.dx_principal || study.description);
+      planning.setImagingStudyId(study.id);
       setPatient(p);
       planning.setSession(r.session_id);
       // The backend already activated the best series; mirror it so step 1 shows
@@ -75,8 +88,15 @@ function Router() {
       const r = await api.restoreSession(sessionId);
       planning.reset();
       planning.setPatient(p);
+      // A resumed session keeps planning the same case and acquisition, so the
+      // breadcrumb and the next "Guardar progreso" don't lose that link.
+      planning.setCase(r.study_id, r.study_label);
+      planning.setImagingStudyId(r.imaging_study_id);
       setPatient(p);
       planning.setSession(r.session_id);
+      // The volume came back with the snapshot; mirror its series so step 1
+      // shows the study instead of an empty drop zone.
+      planning.setSeries(r.series);
       if (r.has_segmentation && r.mesh_url) {
         planning.setSegmentation({
           mesh_url: r.mesh_url, vertices: r.n_vertices, faces: r.n_faces,
@@ -130,8 +150,8 @@ function Router() {
       />
     );
   else if (effective === "patients")
-    view = <Patients onOpenPatient={openPatient} onResume={resumeSession} onOpenPending={() => setScreen("pending")} />;
-  else if (effective === "studies") view = <Studies onOpen={(s) => void openStudy(s)} />;
+    view = <Patients onOpenPatient={openPatient} onResume={resumeSession} onPlanCase={planCase} onOpenStudy={(s) => void openStudy(s)} onOpenPending={() => setScreen("pending")} />;
+  else if (effective === "studies") view = <Studies onOpen={(s) => void openStudy(s)} onBack={() => setScreen("patients")} />;
   else if (effective === "pending") view = <PendingRequests onBack={() => setScreen("patients")} />;
   else if (effective === "users") view = <UsersAdmin onBack={() => setScreen("patients")} />;
   else if (effective === "audit") view = <AuditTrail onBack={() => setScreen("patients")} />;

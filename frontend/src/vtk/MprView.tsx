@@ -27,6 +27,7 @@ export function MprView({
   wc,
   ww,
   showSlider = false,
+  showPlaneLabel = true,
   compact = false,
   index: controlledIndex,
   onIndexChange,
@@ -42,6 +43,9 @@ export function MprView({
   wc?: number;
   ww?: number;
   showSlider?: boolean;
+  /** Off when the parent already names the plane, so the two top-left overlays
+   *  don't print on top of each other. */
+  showPlaneLabel?: boolean;
   compact?: boolean;
   /** Threshold-preview band [lower, upper] HU — tints captured voxels live. */
   band?: [number, number] | null;
@@ -159,9 +163,11 @@ export function MprView({
         <SeedDotOverlay key={i} imgRef={imgRef} u={d.u} v={d.v} />
       ))}
 
-      <span style={{ position: "absolute", top: 8, left: 10, fontSize: compact ? 10 : 11, fontFamily: "var(--font-mono)", color: "rgba(168,184,198,0.85)", pointerEvents: "none" }}>
-        {PLANE_LABEL[plane]}
-      </span>
+      {showPlaneLabel && (
+        <span style={{ position: "absolute", top: 8, left: 10, fontSize: compact ? 10 : 11, fontFamily: "var(--font-mono)", color: "rgba(168,184,198,0.85)", pointerEvents: "none" }}>
+          {PLANE_LABEL[plane]}
+        </span>
+      )}
       <span style={{ position: "absolute", bottom: 8, left: 10, fontSize: compact ? 9 : 10, fontFamily: "var(--font-mono)", color: "rgba(168,184,198,0.7)", pointerEvents: "none" }}>
         {index + 1} / {count}
       </span>

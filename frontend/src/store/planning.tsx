@@ -14,6 +14,12 @@ import type {
 
 interface PlanningState {
   patient: PatientSummary | null;
+  /** Clinical case being planned (Study row). Known when the pipeline is
+   *  entered from a case, so the upload panel no longer has to ask. */
+  caseId: number | null;
+  caseLabel: string;
+  /** Imaging study (acquisition) loaded in this session, once archived. */
+  imagingStudyId: number | null;
   sessionId: string | null;
   series: SeriesInfo | null;
   /** Live threshold-preview band [lower, upper] HU set from the segmentation
@@ -64,6 +70,8 @@ interface PlanningState {
   captureViewport: (() => Promise<string | null>) | null;
 
   setPatient: (p: PatientSummary | null) => void;
+  setCase: (id: number | null, label?: string) => void;
+  setImagingStudyId: (id: number | null) => void;
   setSession: (id: string | null) => void;
   setSeries: (s: SeriesInfo | null) => void;
   setPreviewBand: (b: [number, number] | null) => void;
@@ -115,6 +123,10 @@ const PlanningContext = createContext<PlanningState | null>(null);
 
 export function PlanningProvider({ children }: { children: ReactNode }) {
   const [patient, setPatient] = useState<PatientSummary | null>(null);
+  const [caseId, setCaseId] = useState<number | null>(null);
+  const [caseLabel, setCaseLabel] = useState("");
+  const [imagingStudyId, setImagingStudyId] = useState<number | null>(null);
+  const setCase = (id: number | null, label = "") => { setCaseId(id); setCaseLabel(label); };
   const [sessionId, setSession] = useState<string | null>(null);
   const [series, setSeries] = useState<SeriesInfo | null>(null);
   const [previewBand, setPreviewBand] = useState<[number, number] | null>(null);
@@ -174,6 +186,8 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   };
 
   const reset = () => {
+    setCase(null);
+    setImagingStudyId(null);
     setSession(null);
     setSeries(null);
     resetDownstream();
@@ -182,11 +196,11 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   return (
     <PlanningContext.Provider
       value={{
-        patient, sessionId, series, previewBand, previewMeshUrl, segmentation, candidates,
+        patient, caseId, caseLabel, imagingStudyId, sessionId, series, previewBand, previewMeshUrl, segmentation, candidates,
         selectedCandidate, morphometry, treatment, deviceMesh,
         centerlineMesh, centerlineArcMm, pickMode, clSource, clTarget, neckOrigin, neckDome,
         measurements, measurePending, growSeeds, mprSeedMode, cropCenter, cropRadius, cropShape, cropInvert, trajEntry, trajTarget, morphoOverlay, captureViewport,
-        setPatient, setSession, setSeries, setPreviewBand, setPreviewMeshUrl, setSegmentation,
+        setPatient, setCase, setImagingStudyId, setSession, setSeries, setPreviewBand, setPreviewMeshUrl, setSegmentation,
         setCandidates, setSelectedCandidate, setMorphometry, setTreatment,
         setDeviceMesh, setCenterlineMesh, setCenterlineArcMm, setPickMode, setClSource, setClTarget,
         setNeckOrigin, setNeckDome,

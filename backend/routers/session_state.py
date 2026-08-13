@@ -1,6 +1,7 @@
 """Session save / restore router — real SQLite persistence (Session D)."""
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,7 +10,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from models import SessionSaveRequest, SessionSaveResult, SessionRestoreResult, SessionListItem
+from models import (
+    SessionSaveRequest, SessionSaveResult, SessionRestoreResult, SessionListItem,
+    SeriesInfo, SpacingXYZ,
+)
 from services.database import get_db
 from services.auth_service import get_current_user
 from services.db_models import PlanningSession, Patient, User
@@ -60,6 +64,46 @@ def _read_morpho(session_id: str) -> dict:
         "seg_n_faces":        None,
         "dicom_modality":     read_state(session_id, "dicom.modality", "") or None,
     }
+
+
+def _restored_series(session_id: str) -> "SeriesInfo | None":
+    """Rebuild the series card from the rehydrated volume cache.
+
+    Restoring copies `_volume.npy` + its meta, so everything the upload step
+    displays is already on disk — it just was never sent back, which made a
+    resumed session look like nothing had been loaded.
+    """
+    from services.mpr import _cache_paths
+
+    _npy, meta_path = _cache_paths(session_id)
+    if not meta_path.exists():
+        return None
+    try:
+        meta = json.loads(meta_path.read_text())
+        sz, sy, sx = meta["spacing"]
+        z, y, x = meta["shape"]
+        return SeriesInfo(
+            size_mb=round(z * y * x * 4 / (1024 * 1024), 1),   # float32 volume
+            session_id=session_id,
+            series_id=read_state(session_id, "dicom.series_id", "") or "",
+            description=read_state(session_id, "dicom.description", "") or "Serie restaurada",
+            modality=meta.get("modality") or read_state(session_id, "dicom.modality", "") or "",
+            slices=int(meta["shape"][0]),
+            spacing=SpacingXYZ(x=float(sx), y=float(sy), z=float(sz)),
+            window_center=float(meta.get("wc", 0.0)),
+            window_width=float(meta.get("ww", 0.0)),
+            is_projection=read_state(session_id, "dicom.is_projection", "0") == "1",
+        )
+    except (KeyError, ValueError, TypeError):
+        logger.warning("No se pudo reconstruir la serie de la sesión %s", session_id)
+        return None
+
+
+def _case_label(case) -> str:
+    """Short label for a clinical case — diagnosis first, as the UI shows it."""
+    if case is None:
+        return ""
+    return (case.dx_principal or case.description or f"Caso {case.id}").strip()
 
 
 def _restore_state(session_id: str, ps: PlanningSession) -> None:
@@ -121,6 +165,8 @@ async def save_session(
     ps.current_step         = req.current_step
     ps.study_id             = req.study_id   if req.study_id   is not None else ps.study_id
     ps.patient_id           = req.patient_id if req.patient_id is not None else ps.patient_id
+    ps.imaging_study_id     = (req.imaging_study_id if req.imaging_study_id is not None
+                               else ps.imaging_study_id)
     ps.max_diameter_mm      = morpho["max_diameter_mm"]
     ps.neck_mm              = morpho["neck_mm"]
     ps.dome_height_mm       = morpho["dome_height_mm"]
@@ -264,4 +310,10 @@ async def restore_session(
         modality=read_state(new_sid, "dicom.modality", "") or "",
         patient_id=ps.patient_id,
         study_id=ps.study_id,
+        # Carry the case and the acquisition through the resume, otherwise the
+        # rehydrated session forgets what it was planning and the next "Guardar
+        # progreso" would have to ask for the case again.
+        study_label=_case_label(ps.study),
+        imaging_study_id=ps.imaging_study_id,
+        series=_restored_series(new_sid),
     )

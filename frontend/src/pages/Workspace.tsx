@@ -43,26 +43,35 @@ export function Workspace({
   onBack: () => void;
   onFinish: () => void;
 }) {
-  const { morphometry, sessionId, setPickMode, setMprSeedMode } = usePlanning();
+  const { morphometry, sessionId, caseId, caseLabel, imagingStudyId, setPickMode, setMprSeedMode } = usePlanning();
   const [stepIdx, setStepIdx] = useState(initialStep);
   const [maxStep, setMaxStep] = useState(initialStep);
   const [saving, setSaving] = useState<"idle" | "saving" | "saved">("idle");
+  // A failed save used to reset the button to "Guardar progreso" with no notice,
+  // so the user believed their work was stored when it was not.
+  const [saveError, setSaveError] = useState<string | null>(null);
   const step = STEPS[stepIdx].key;
 
   const saveProgress = async () => {
     if (!sessionId) return;
     setSaving("saving");
+    setSaveError(null);
     try {
       await api.saveSession({
         session_id: sessionId,
         patient_id: patient?.id ?? null,
+        // Tie the session to the case and the imaging it analysed, so the
+        // gallery can show real progress instead of "Sin procesar".
+        study_id: caseId,
+        imaging_study_id: imagingStudyId,
         current_step: stepIdx,
         label: patient ? `${patient.full_name} · ${STEPS[stepIdx].label}` : STEPS[stepIdx].label,
       });
       setSaving("saved");
       setTimeout(() => setSaving("idle"), 1800);
-    } catch {
+    } catch (e) {
       setSaving("idle");
+      setSaveError(e instanceof Error ? e.message : "No se pudo guardar el progreso");
     }
   };
 
@@ -98,7 +107,7 @@ export function Workspace({
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--canvas)" }}>
-      <Topbar crumb={`Pacientes / ${patient ? patient.full_name : "Sesión"}`}>
+      <Topbar crumb={`Pacientes / ${patient ? patient.full_name : "Sesión"}${caseLabel ? ` / ${caseLabel}` : ""}`}>
         <Button
           variant="outline"
           size="sm"
@@ -113,6 +122,24 @@ export function Workspace({
           Pacientes
         </Button>
       </Topbar>
+
+      {saveError && (
+        <div
+          role="alert"
+          onClick={() => setSaveError(null)}
+          style={{
+            display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
+            padding: "8px 18px", fontSize: 12, fontWeight: 600,
+            background: "color-mix(in srgb, var(--destructive) 12%, transparent)",
+            color: "var(--destructive)",
+            borderBottom: "1px solid color-mix(in srgb, var(--destructive) 35%, transparent)",
+          }}
+        >
+          <Icon name="STATUS_WARN" size={14} color="var(--destructive)" />
+          <span style={{ flex: 1, minWidth: 0 }}>No se pudo guardar el progreso: {saveError}</span>
+          <span style={{ opacity: 0.7 }}>✕</span>
+        </div>
+      )}
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         {/* Rail de flujo — ancho fluido; en pantallas estrechas colapsa a iconos

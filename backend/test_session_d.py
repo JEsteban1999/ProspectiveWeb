@@ -326,6 +326,104 @@ class TestSessionState:
         resp = client.post("/api/sessions/nonexistent-session/restore")
         assert resp.status_code == 404
 
+    def test_snapshot_does_not_duplicate_the_dicom(self):
+        """Regression: every save copied the whole study (~1.3 GB), filling the
+        disk until "Guardar progreso" failed with WinError 112. The DICOM is
+        write-once inside a session, so the snapshot hard-links it; the mesh and
+        volume ARE rewritten by re-running a step, so those stay real copies.
+        """
+        import os
+        from services.sessions import (
+            create_session, session_subdir, snapshot_session, SAVES_ROOT,
+        )
+
+        sid = create_session()
+        (session_subdir(sid, "dicom") / "IM_0001").write_bytes(b"d" * 2048)
+        (session_subdir(sid, "meshes") / "vessel_tree.vtp").write_bytes(b"m" * 512)
+        snapshot_session(sid)
+
+        saved_dicom = SAVES_ROOT / sid / "dicom" / "IM_0001"
+        saved_mesh  = SAVES_ROOT / sid / "meshes" / "vessel_tree.vtp"
+        assert saved_dicom.read_bytes() == b"d" * 2048
+        assert saved_mesh.read_bytes() == b"m" * 512
+        if os.name == "nt":
+            assert saved_dicom.stat().st_nlink > 1, "el DICOM debería enlazarse, no copiarse"
+            assert saved_mesh.stat().st_nlink == 1, "la malla debe ser copia: se reescribe al rehacer un paso"
+
+        # Re-running segmentation overwrites the live mesh — the snapshot must
+        # keep the version that was saved.
+        (session_subdir(sid, "meshes") / "vessel_tree.vtp").write_bytes(b"NUEVA")
+        assert saved_mesh.read_bytes() == b"m" * 512
+
+    def test_restore_carries_case_and_imaging_link(self):
+        """Resuming must not forget WHAT was being planned.
+
+        The session is tied to a clinical case (study_id) and to the acquisition
+        it analysed (imaging_study_id). Without these in the restore payload the
+        rehydrated session loses its breadcrumb and the next save would have to
+        ask the user for the case again.
+        """
+        from services.database import SessionLocal
+        from services.db_models import Patient, Study, ImagingStudy
+
+        db = SessionLocal()
+        try:
+            p = Patient(surname="Reanuda", given_name="Caso",
+                        hospital_id=f"HC-RES-{uuid.uuid4().hex[:6]}")
+            db.add(p); db.commit(); db.refresh(p)
+            case = Study(patient_id=p.id, description="Angio control",
+                         dx_principal="Aneurisma de ACoA")
+            db.add(case); db.commit(); db.refresh(case)
+            img = ImagingStudy(case_id=case.id, patient_id=p.id, description="3D-RA")
+            db.add(img); db.commit(); db.refresh(img)
+            pid, case_id, img_id = p.id, case.id, img.id
+        finally:
+            db.close()
+
+        sid = _make_session()
+        r = client.post("/api/sessions/save", json={
+            "session_id": sid, "label": "Con caso", "current_step": 3,
+            "patient_id": pid, "study_id": case_id, "imaging_study_id": img_id,
+        })
+        assert r.status_code == 200, r.text
+
+        data = client.post(f"/api/sessions/{sid}/restore").json()
+        assert data["study_id"] == case_id
+        assert data["imaging_study_id"] == img_id
+        assert data["patient_id"] == pid
+        # Diagnosis first — that is what the breadcrumb shows.
+        assert data["study_label"] == "Aneurisma de ACoA"
+
+    def test_restore_returns_the_series_of_the_restored_volume(self):
+        """A resumed session must not look empty on the upload step.
+
+        The snapshot brings the volume cache back, and the viewer renders it —
+        but the series card stayed blank because the payload never carried it.
+        """
+        import numpy as np
+        from services import mpr as mprmod
+        from services.sessions import create_session, write_state
+
+        sid = create_session()
+        vol = np.zeros((12, 8, 6), np.float32)
+        npy, meta = mprmod._cache_paths(sid)
+        np.save(npy, vol)
+        meta.write_text('{"shape": [12,8,6], "spacing": [0.5,0.4,0.3], '
+                        '"wc": 300, "ww": 900, "modality": "XA"}')
+        write_state(sid, "dicom.series_id", "1.2.3.4")
+        write_state(sid, "dicom.description", "3D-RA Prop 4s")
+
+        assert client.post("/api/sessions/save",
+                           json={"session_id": sid, "current_step": 1}).status_code == 200
+        s = client.post(f"/api/sessions/{sid}/restore").json()["series"]
+        assert s is not None, "el restore debe devolver la serie"
+        assert s["modality"] == "XA"
+        assert s["slices"] == 12
+        assert s["description"] == "3D-RA Prop 4s"
+        # spacing is stored [z, y, x] and exposed as x/y/z — an easy place to
+        # silently transpose the voxel size.
+        assert (s["spacing"]["z"], s["spacing"]["y"], s["spacing"]["x"]) == (0.5, 0.4, 0.3)
+
     def test_durable_save_survives_ttl_purge_and_rehydrates_files(self):
         """The core of resumable sessions: a saved session's files (mesh + volume)
         survive deletion of the live dir (TTL purge) and are copied back into a

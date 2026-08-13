@@ -57,6 +57,9 @@ export function UploadPanel({ onNext }: { onNext: () => void }) {
   const [studyId, setStudyId] = useState<number | null>(null);
   const [archiving, setArchiving] = useState(false);
   const [archived, setArchived] = useState(false);
+  // Already in the permanent archive — either opened from the gallery or just
+  // saved. Offering "Guardar estudio" again would duplicate a ~1 GB study.
+  const alreadyArchived = planning.imagingStudyId != null || archived;
 
   // React strips the non-standard `webkitdirectory` attribute, so set the DOM
   // properties imperatively. All three variants for cross-browser folder pick.
@@ -107,11 +110,12 @@ export function UploadPanel({ onNext }: { onNext: () => void }) {
       .then((st) => {
         if (!alive) return;
         setStudies(st);
-        setStudyId((cur) => cur ?? (st.length > 0 ? st[0].id : null));
+        // Entering from a case fixes the target; otherwise fall back to the first.
+        setStudyId((cur) => planning.caseId ?? cur ?? (st.length > 0 ? st[0].id : null));
       })
       .catch(() => { if (alive) setStudies([]); });
     return () => { alive = false; };
-  }, [planning.patient?.id]);
+  }, [planning.patient?.id, planning.caseId]);
 
   // Copy this upload's DICOM into durable storage under the chosen case.
   const archiveStudy = async () => {
@@ -120,7 +124,11 @@ export function UploadPanel({ onNext }: { onNext: () => void }) {
     setArchiving(true);
     setError(null);
     try {
-      await api.archiveStudy(studyId, sid);
+      const card = await api.archiveStudy(studyId, sid);
+      // Remember which acquisition this session is analysing, so saving progress
+      // links the session to it (and the gallery shows the real progress).
+      planning.setImagingStudyId(card.id);
+      if (planning.caseId == null) planning.setCase(card.case_id, card.dx_principal || card.description);
       setArchived(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo guardar el estudio");
@@ -296,18 +304,37 @@ export function UploadPanel({ onNext }: { onNext: () => void }) {
         <Card style={{ marginTop: 12 }}>
           <SectionLabel>Guardar en el archivo de estudios</SectionLabel>
           <div style={{ fontSize: 11, color: "var(--muted-foreground)", margin: "6px 0 10px", lineHeight: 1.5 }}>
-            Guarda este DICOM de forma permanente como un estudio del caso clínico
-            elegido (un caso puede tener varios: TAC, angiografía, control) y genera
-            su vista previa. Si no lo guardas, se borrará automáticamente.
+            {alreadyArchived
+              ? "Este DICOM ya está en el archivo permanente; puedes seguir con el pipeline sin volver a guardarlo."
+              : "Guarda este DICOM de forma permanente como un estudio del caso clínico elegido (un caso puede tener varios: TAC, angiografía, control) y genera su vista previa. Si no lo guardas, se borrará automáticamente."}
           </div>
-          {studies.length === 0 ? (
+          {alreadyArchived ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--success)" }}>
+              <Icon name="STATUS_OK" size={14} color="var(--success)" />
+              <span className="truncate">
+                Archivado en «{planning.caseLabel || `Caso ${planning.caseId}`}»
+              </span>
+            </div>
+          ) : studies.length === 0 ? (
             <div style={{ fontSize: 12, color: "var(--warning)", display: "flex", gap: 6, alignItems: "flex-start" }}>
               <Icon name="STATUS_WARN" size={14} />
               Este paciente no tiene ningún caso. Crea uno desde «Pacientes → Nuevo caso».
             </div>
           ) : (
             <>
-              {studies.length > 1 && (
+              {/* Entered from a case → the target is fixed, just show which. */}
+              {planning.caseId != null ? (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
+                  padding: "8px 10px", borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--border)", background: "var(--brand-subtle)",
+                }}>
+                  <Icon name="STEP_PLAN" size={13} color="var(--brand-subtle-foreground)" />
+                  <span className="truncate" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand-subtle-foreground)" }}>
+                    {planning.caseLabel || `Caso ${planning.caseId}`}
+                  </span>
+                </div>
+              ) : studies.length > 1 && (
                 <select
                   value={studyId ?? ""}
                   onChange={(e) => setStudyId(Number(e.target.value))}

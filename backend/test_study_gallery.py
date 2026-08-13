@@ -13,6 +13,9 @@ _tmp = tempfile.mkdtemp(prefix="prospective_gallery_")
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{_tmp}/test.db")
 os.environ.setdefault("JWT_SECRET", "test-secret-key-do-not-use-in-production")
 os.environ["STORAGE_BACKEND"] = "local"
+# Isolate the archive: without this the tests write studies 1, 2, 3… into the
+# real store and overwrite a clinician's DICOM and preview.
+os.environ["STUDY_FILES_ROOT"] = f"{_tmp}/study_files"
 
 import numpy as np
 from fastapi.testclient import TestClient
@@ -245,8 +248,20 @@ class TestOpenDoesNotDuplicateData:
 class TestStorageIsolation:
     def test_study_files_are_not_under_public_data_dir(self):
         """DICOM carries PHI and `data/` is mounted as public StaticFiles."""
-        from services.storage import STUDY_FILES_ROOT
-        assert "data" not in STUDY_FILES_ROOT.parts[-2:], STUDY_FILES_ROOT
+        from services.storage import study_files_root
+        assert "data" not in study_files_root().parts[-2:], study_files_root()
+
+    def test_tests_do_not_write_into_the_real_archive(self):
+        """Regression: the suite archived studies 1, 2, 3… into the production
+        store and overwrote a real patient's DICOM and preview. The archive root
+        must be redirected by STUDY_FILES_ROOT while testing.
+        """
+        from services.storage import get_storage, study_files_root
+        assert str(study_files_root()).startswith(_tmp), (
+            f"los tests escribirían en el archivo real: {study_files_root()}"
+        )
+        # And the live backend must honour it too, not a path frozen at import.
+        assert str(get_storage().root).startswith(_tmp)
 
     def test_keys_cannot_escape_the_store(self):
         from services.storage import LocalBackend
