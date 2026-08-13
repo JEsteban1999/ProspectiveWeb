@@ -219,9 +219,12 @@ export function UploadPanel({ onNext }: { onNext: () => void }) {
                   borderRadius: "var(--radius-md)", cursor: switching ? "wait" : "pointer",
                 }}
               >
-                {result.series.map((s) => (
+                {/* A study often repeats the same protocol (e.g. four 3D-RA
+                    acquisitions): label each one so they can be told apart. */}
+                {result.series.map((s, i) => (
                   <option key={s.series_id} value={s.series_id}>
-                    {s.description} · {s.slices} cortes{s.is_projection ? " · ⚠ proyección 2D" : ""}
+                    {i + 1}. {s.description} · {s.slices} cortes · {s.spacing.z.toFixed(2)} mm
+                    {s.is_projection ? " · ⚠ proyección 2D" : ""}
                   </option>
                 ))}
               </select>
