@@ -129,3 +129,31 @@ def test_scan_series_zspacing_matches_load(rel):
     s = scan_series(d)[0]
     dcm = load_series(s["series_uid"], d)
     assert abs(s["spacing_z"] - dcm.spacing[0]) < 0.05
+
+
+# ── upload: the ACTIVE series must be the best 3-D volume, not series[0] ───── #
+
+def test_primary_series_prefers_real_volume_over_localiser():
+    """A study can carry a dozen series in arbitrary scan order (localisers,
+    2-D cines, several 3-D acquisitions). Taking series_list[0] blindly could
+    hand the pipeline a 2-slice scout; the ranking must put a real volume first
+    (no projections) and, among those, the one with most slices.
+    """
+    from models.dicom import SeriesInfo, SpacingXYZ
+
+    def mk(name: str, slices: int, is_proj: bool) -> SeriesInfo:
+        return SeriesInfo(
+            session_id="s", series_id=name, description=name, modality="XA",
+            slices=slices, spacing=SpacingXYZ(x=0.36, y=0.36, z=0.36),
+            window_center=0.0, window_width=200.0,
+            is_projection=is_proj, projection_warning=None, size_mb=1.0,
+        )
+
+    # Scan order deliberately hostile: localiser first, big volume last.
+    series = [mk("localiser", 2, True), mk("cine", 116, True),
+              mk("vol_small", 96, False), mk("vol_big", 384, False)]
+    series.sort(key=lambda s: (s.is_projection, -s.slices))
+
+    assert series[0].series_id == "vol_big"      # real volume, most slices
+    assert series[1].series_id == "vol_small"
+    assert all(s.is_projection for s in series[2:])   # projections pushed last

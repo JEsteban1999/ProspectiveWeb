@@ -225,7 +225,7 @@ export function Topbar({ crumb, children }: { crumb?: string; children?: ReactNo
       <button
         onClick={() => nav.go("patients")}
         title="Ir a pacientes"
-        style={{ display: "flex", alignItems: "center", gap: 12, background: "transparent", border: "none", cursor: "pointer", padding: 0 }}
+        style={{ display: "flex", alignItems: "center", gap: 12, background: "transparent", border: "none", cursor: "pointer", padding: 0, flexShrink: 0, whiteSpace: "nowrap" }}
       >
         <img className="logo-mark" src={logo} alt="SkullApp" style={{ height: 46 }} />
         <span style={{ fontWeight: 800, fontSize: 20, letterSpacing: "var(--tracking-title)", color: "var(--foreground)" }}>
@@ -237,8 +237,16 @@ export function Topbar({ crumb, children }: { crumb?: string; children?: ReactNo
       </button>
       {crumb && (
         <>
-          <span style={{ color: "var(--border)", fontSize: 18 }}>/</span>
-          <span style={{ fontSize: 13, color: "var(--muted-foreground)" }}>{crumb}</span>
+          <span style={{ color: "var(--border)", fontSize: 18, flexShrink: 0 }}>/</span>
+          {/* Truncate: the topbar has a fixed height, so a long patient name that
+              wraps would overflow it vertically on narrow screens. */}
+          <span
+            className="truncate"
+            title={crumb}
+            style={{ fontSize: 13, color: "var(--muted-foreground)", whiteSpace: "nowrap", minWidth: 0, maxWidth: "32vw" }}
+          >
+            {crumb}
+          </span>
         </>
       )}
       <div style={{ flex: 1 }} />

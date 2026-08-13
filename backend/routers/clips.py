@@ -83,13 +83,12 @@ async def get_clip_recommendations(session_id: str) -> list[ClipRecommendation]:
     neck_mm      = _load_float(session_id, "morpho.neck_mm", 0.0)
     aspect_ratio = _load_float(session_id, "morpho.ar",       0.0)
 
-    # No morphometry at all → no recommendations (UI prompts to run it first).
-    if neck_mm <= 0:
-        return []
-
-    # When neck detection was degenerate (< 1 mm, e.g. on a coarse mesh), fall
-    # back to a typical neck so the workflow stays usable instead of returning
-    # nothing. The recommendations are then general rather than case-specific.
+    # Without a usable neck (no morphometry yet, or an open detector cap where
+    # the neck can't be measured) we used to return NOTHING — which left the
+    # clip dropdown empty and the clinician unable to place any clip at all,
+    # while the coil catalogue stayed fully available. Fall back to a typical
+    # neck instead, so the catalogue is offered as a GENERAL (non case-specific)
+    # ranking that the clinician can override, keeping the workflow unblocked.
     eff_neck = neck_mm if neck_mm >= 1.0 else 4.0
     eff_ar   = aspect_ratio if aspect_ratio > 0 else 1.4
 

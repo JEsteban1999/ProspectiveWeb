@@ -219,12 +219,19 @@ class TestClipsAPI:
             assert item["length_mm"] > 0
 
     def test_recommendations_no_morpho(self):
-        """Session with neck_mm=0 → empty recommendations list."""
+        """Session with neck_mm=0 → GENERAL recommendations (typical 4 mm neck).
+
+        Regression: this used to return [], which left the clip dropdown empty
+        and blocked clip placement entirely on open meshes (where the neck can't
+        be measured) while the coil catalogue stayed available.
+        """
         from services.sessions import create_session
         sid  = create_session()
         resp = client.get(f"/api/clips/recommendations/{sid}")
         assert resp.status_code == 200
-        assert resp.json() == []
+        data = resp.json()
+        assert len(data) > 0, "sin morfometría debe ofrecer el catálogo genérico, no bloquear"
+        assert len(data) <= 8
 
     def test_recommendations_with_morpho(self):
         """Session with neck measurement → up to 8 ranked recommendations."""

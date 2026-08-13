@@ -165,8 +165,12 @@ async def upload_dicom(request: Request) -> UploadResult:
         series_list.append(info)
 
     # ── 5. Write primary series metadata to session state ─────────────────── #
-    # Use the first (or only) series as the "active" series.
-    # Downstream routers read these keys from session state.
+    # Rank the series so the ACTIVE one is the best candidate for 3-D work: a
+    # real volume first (never a localiser/projection), then the one with most
+    # slices. A study can carry a dozen series (localisers, 2-D cines, several
+    # 3-D acquisitions) and the scan order is arbitrary, so taking series[0]
+    # blindly could hand the pipeline a 2-slice scout.
+    series_list.sort(key=lambda s: (s.is_projection, -s.slices))
     primary = series_list[0]
     write_state(session_id, "dicom.series_id",     primary.series_id)
     write_state(session_id, "dicom.modality",      primary.modality)
