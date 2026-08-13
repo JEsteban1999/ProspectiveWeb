@@ -129,6 +129,15 @@ class Study(Base):
     mod_rm       = Column(Boolean, nullable=False, default=False)
     mod_pangio   = Column(Boolean, nullable=False, default=False)
 
+    # ── Durable archive (study gallery) ───────────────────────────────────── #
+    # `storage_prefix` points into services/storage.py (local dir or S3 prefix),
+    # NEVER under data/ — that path is served publicly and DICOM carries PHI.
+    storage_prefix = Column(String(300), nullable=False, default="")
+    thumb_key      = Column(String(300), nullable=False, default="")
+    n_files        = Column(Integer, nullable=False, default=0)
+    n_slices       = Column(Integer, nullable=False, default=0)
+    size_mb        = Column(Float,   nullable=False, default=0.0)
+
     patient  = relationship("Patient", back_populates="studies")
     sessions = relationship("PlanningSession", back_populates="study")
 

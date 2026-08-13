@@ -441,6 +441,9 @@ export function Patients({
                 </Button>
               </>
             )}
+            <Button variant="outline" leadingIcon={<Icon name="FOLDER" />} onClick={() => nav.go("studies")} style={{ marginRight: 10 }}>
+              Estudios
+            </Button>
             <Button variant="outline" leadingIcon={<Icon name="STEP_PATIENT" />} onClick={openCreate} style={{ marginRight: 10 }}>
               Nuevo paciente
             </Button>

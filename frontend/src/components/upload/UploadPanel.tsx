@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
-import type { UploadResult } from "../../api/types";
+import type { StudySummary, UploadResult } from "../../api/types";
 import { Badge } from "../Badge";
 import { Button } from "../Button";
 import { Icon } from "../Icon";
@@ -52,6 +52,11 @@ export function UploadPanel({ onNext }: { onNext: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<UploadResult | null>(null);
   const [switching, setSwitching] = useState(false);
+  // Durable archive: which case (Study) this upload belongs to.
+  const [studies, setStudies] = useState<StudySummary[]>([]);
+  const [studyId, setStudyId] = useState<number | null>(null);
+  const [archiving, setArchiving] = useState(false);
+  const [archived, setArchived] = useState(false);
 
   // React strips the non-standard `webkitdirectory` attribute, so set the DOM
   // properties imperatively. All three variants for cross-browser folder pick.
@@ -89,6 +94,38 @@ export function UploadPanel({ onNext }: { onNext: () => void }) {
       setError(err instanceof Error ? err.message : "Error al subir los archivos");
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Cases (Study rows) of the active patient — an upload is archived under one
+  // of them so it survives the session TTL and shows up in the gallery.
+  useEffect(() => {
+    const pid = planning.patient?.id;
+    if (!pid) { setStudies([]); setStudyId(null); return; }
+    let alive = true;
+    api.patientStudies(pid)
+      .then((st) => {
+        if (!alive) return;
+        setStudies(st);
+        setStudyId((cur) => cur ?? (st.length > 0 ? st[0].id : null));
+      })
+      .catch(() => { if (alive) setStudies([]); });
+    return () => { alive = false; };
+  }, [planning.patient?.id]);
+
+  // Copy this upload's DICOM into durable storage under the chosen case.
+  const archiveStudy = async () => {
+    const sid = planning.sessionId;
+    if (!sid || studyId == null) return;
+    setArchiving(true);
+    setError(null);
+    try {
+      await api.archiveStudy(studyId, sid);
+      setArchived(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo guardar el estudio");
+    } finally {
+      setArchiving(false);
     }
   };
 
@@ -249,6 +286,55 @@ export function UploadPanel({ onNext }: { onNext: () => void }) {
               <Icon name="STATUS_WARN" size={14} />
               {series.projection_warning}
             </div>
+          )}
+        </Card>
+      )}
+
+      {/* Durable archive — without this the DICOM is deleted by the session TTL
+          and the study never appears in the gallery. */}
+      {series && (
+        <Card style={{ marginTop: 12 }}>
+          <SectionLabel>Guardar en el archivo de estudios</SectionLabel>
+          <div style={{ fontSize: 11, color: "var(--muted-foreground)", margin: "6px 0 10px", lineHeight: 1.5 }}>
+            Guarda este DICOM de forma permanente y genera su vista previa para la
+            galería de estudios. Si no lo guardas, se borrará automáticamente.
+          </div>
+          {studies.length === 0 ? (
+            <div style={{ fontSize: 12, color: "var(--warning)", display: "flex", gap: 6, alignItems: "flex-start" }}>
+              <Icon name="STATUS_WARN" size={14} />
+              Este paciente no tiene ningún caso. Crea uno desde «Pacientes → Nuevo caso».
+            </div>
+          ) : (
+            <>
+              {studies.length > 1 && (
+                <select
+                  value={studyId ?? ""}
+                  onChange={(e) => setStudyId(Number(e.target.value))}
+                  style={{
+                    width: "100%", padding: "8px 10px", fontSize: 12, marginBottom: 10,
+                    fontFamily: "var(--font-sans)", color: "var(--foreground)",
+                    background: "var(--card)", border: "1px solid var(--border)",
+                    borderRadius: "var(--radius-md)", cursor: "pointer",
+                  }}
+                >
+                  {studies.map((st) => (
+                    <option key={st.id} value={st.id}>
+                      {st.dx_principal || st.description || `Caso ${st.id}`}
+                      {st.acquired_at ? ` · ${st.acquired_at}` : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <Button
+                variant="outline"
+                style={{ width: "100%" }}
+                onClick={() => void archiveStudy()}
+                disabled={archiving || studyId == null}
+                leadingIcon={<Icon name={archived ? "STATUS_OK" : "SAVE"} size={14} />}
+              >
+                {archiving ? "Guardando…" : archived ? "Estudio guardado ✓" : "Guardar estudio"}
+              </Button>
+            </>
           )}
         </Card>
       )}

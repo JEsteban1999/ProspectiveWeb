@@ -126,6 +126,13 @@ def _migrate_study_columns() -> None:
         "mod_angio":             "BOOLEAN NOT NULL DEFAULT 0",
         "mod_rm":                "BOOLEAN NOT NULL DEFAULT 0",
         "mod_pangio":            "BOOLEAN NOT NULL DEFAULT 0",
+        # Durable study archive (study gallery): where the DICOM lives and a
+        # preview thumbnail, so the gallery never touches the DICOM itself.
+        "storage_prefix":        "VARCHAR(300) NOT NULL DEFAULT ''",
+        "thumb_key":             "VARCHAR(300) NOT NULL DEFAULT ''",
+        "n_files":               "INTEGER NOT NULL DEFAULT 0",
+        "n_slices":              "INTEGER NOT NULL DEFAULT 0",
+        "size_mb":               "FLOAT NOT NULL DEFAULT 0",
     }
     with engine.begin() as conn:
         existing = {row[1] for row in conn.execute(text("PRAGMA table_info(studies)"))}

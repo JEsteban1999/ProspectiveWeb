@@ -65,6 +65,8 @@ import type {
   TreatmentDecisionResult,
   UploadResult,
   SeriesInfo,
+  StudyCard,
+  OpenStudyResult,
   UserAdminInfo,
   UserInfo,
   UserUpdate,
@@ -284,6 +286,24 @@ export const api = {
   /** Switch which DICOM series of the study the session works on. */
   setActiveSeries: (sessionId: string, seriesId: string) =>
     post<SeriesInfo>(`/api/upload/${sessionId}/series/${encodeURIComponent(seriesId)}`),
+
+  /* study gallery */
+  listStudies: (q = "", patientId?: number) => {
+    const p = new URLSearchParams();
+    if (q) p.set("q", q);
+    if (patientId != null) p.set("patient_id", String(patientId));
+    const qs = p.toString();
+    return get<StudyCard[]>(`/api/studies${qs ? `?${qs}` : ""}`);
+  },
+  /** Preview image; needs the JWT, so fetch as a blob and use an object URL. */
+  studyThumbnailObjectUrl: async (studyId: number) =>
+    URL.createObjectURL(await getBlob(`/api/studies/${studyId}/thumbnail`)),
+  /** Copy the session's DICOM into durable storage under this study. */
+  archiveStudy: (studyId: number, sessionId: string) =>
+    post<StudyCard>(`/api/studies/${studyId}/archive?session_id=${encodeURIComponent(sessionId)}`),
+  /** Restore an archived study into a fresh working session. */
+  openStudy: (studyId: number) =>
+    post<OpenStudyResult>(`/api/studies/${studyId}/open`),
 
   /* audit (SkullChain) */
   auditBlocks: () => get<AuditBlock[]>("/api/audit/blocks"),

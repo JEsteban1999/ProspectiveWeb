@@ -76,6 +76,9 @@ DICOM/
 **/DICOMDIR
 # Foto de perfil / CV subidos en el registro (datos personales).
 backend/user_files/
+# Archivo duradero de estudios: DICOM de pacientes (nombre, cédula, fecha de
+# nacimiento en las cabeceras). NUNCA debe entrar al repositorio.
+backend/study_files/
 # Comprimidos de estudios (pueden contener datos de paciente).
 *.zip
 

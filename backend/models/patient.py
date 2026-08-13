@@ -151,3 +151,34 @@ class PlanningSessionSummary(BaseModel):
     created_at: datetime
     updated_at: datetime
     label: str = Field("", description="Optional user-assigned label for this session")
+
+
+class StudyCard(BaseModel):
+    """One study as shown in the study gallery (preview + who it belongs to).
+
+    Carries the patient identity the gallery filters on (name / national ID) and
+    the archive state, so the grid renders without extra requests per card.
+    """
+
+    id: int
+    patient_id: int
+    patient_name: str = ""
+    hospital_id: str = Field("", description="Cédula / N.º de historia clínica")
+    description: str = ""
+    modality: str = ""
+    acquired_at: str = Field("", description="Fecha del caso YYYY-MM-DD")
+    dx_principal: str = ""
+    created_at: datetime
+
+    # Archive / preview
+    archived: bool = Field(False, description="Whether the DICOM is in durable storage")
+    has_thumbnail: bool = False
+    n_files: int = 0
+    n_slices: int = 0
+    size_mb: float = 0.0
+
+    # Pipeline progress (latest saved session for this study)
+    session_count: int = 0
+    last_step: int | None = Field(None, description="Step of the most recent session")
+    max_diameter_mm: float | None = None
+    rupture_risk_label: str | None = None

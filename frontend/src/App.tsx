@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { api } from "./api/client";
-import type { PatientSummary } from "./api/types";
+import type { PatientSummary, StudyCard } from "./api/types";
 import { Login } from "./pages/Login";
 import { Signup } from "./pages/Signup";
 import { Patients } from "./pages/Patients";
+import { Studies } from "./pages/Studies";
 import { Workspace } from "./pages/Workspace";
 import { PendingRequests } from "./pages/PendingRequests";
 import { UsersAdmin } from "./pages/UsersAdmin";
@@ -39,6 +40,27 @@ function Router() {
     setPatient(p);
     setResumeStep(0);
     setScreen("workspace");
+  };
+
+  // Open an archived study from the gallery: its DICOM is copied back into a
+  // fresh session and the pipeline starts at step 1 with the volume loaded.
+  const openStudy = async (study: StudyCard) => {
+    setToast("Abriendo estudio…");
+    try {
+      const r = await api.openStudy(study.id);
+      const patients = await api.listPatients();
+      const p = patients.find((x) => x.id === study.patient_id) ?? null;
+      planning.reset();
+      planning.setPatient(p);
+      setPatient(p);
+      planning.setSession(r.session_id);
+      setResumeStep(0);
+      setToast(null);
+      setScreen("workspace");
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : "No se pudo abrir el estudio");
+      setTimeout(() => setToast(null), 3000);
+    }
   };
 
   // Resume a saved study session: restore its files into a fresh live session,
@@ -106,6 +128,7 @@ function Router() {
     );
   else if (effective === "patients")
     view = <Patients onOpenPatient={openPatient} onResume={resumeSession} onOpenPending={() => setScreen("pending")} />;
+  else if (effective === "studies") view = <Studies onOpen={(s) => void openStudy(s)} />;
   else if (effective === "pending") view = <PendingRequests onBack={() => setScreen("patients")} />;
   else if (effective === "users") view = <UsersAdmin onBack={() => setScreen("patients")} />;
   else if (effective === "audit") view = <AuditTrail onBack={() => setScreen("patients")} />;

@@ -23,7 +23,7 @@ from routers import (
     upload, segment, detect, perforators, plan, progress,
     auth, patients, treatment, clips, coils, longitudinal,
     report, session_state, mpr, phases, centerline, audit,
-    mesh_edit, print_prep, preprocess,
+    mesh_edit, print_prep, preprocess, studies,
 )
 
 logger = logging.getLogger(__name__)
@@ -128,6 +128,7 @@ app.mount(
 
 app.include_router(auth.router)
 app.include_router(patients.router)
+app.include_router(studies.router)
 app.include_router(upload.router)
 app.include_router(segment.router)
 app.include_router(detect.router)

@@ -770,3 +770,31 @@ export interface LongitudinalResult {
   growth_alert: boolean;
   growth_alert_message: string | null;
 }
+
+/* ── study gallery ─────────────────────────────────────────────────────── */
+export interface StudyCard {
+  id: number;
+  patient_id: number;
+  patient_name: string;
+  hospital_id: string;
+  description: string;
+  modality: string;
+  acquired_at: string;
+  dx_principal: string;
+  created_at: string;
+  archived: boolean;
+  has_thumbnail: boolean;
+  n_files: number;
+  n_slices: number;
+  size_mb: number;
+  session_count: number;
+  last_step: number | null;
+  max_diameter_mm: number | null;
+  rupture_risk_label: string | null;
+}
+
+export interface OpenStudyResult {
+  session_id: string;
+  study_id: number;
+  n_files: number;
+}
