@@ -9,7 +9,7 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 from starlette.formparsers import MultiPartException
 
 from models import SeriesInfo, SpacingXYZ, UploadResult
-from services.sessions     import create_session, session_subdir, write_state
+from services.sessions     import create_session, session_exists, session_subdir, write_state
 from services.dicom_loader import scan_series
 
 logger = logging.getLogger(__name__)
@@ -125,6 +125,25 @@ async def upload_dicom(request: Request) -> UploadResult:
         )
 
     # ── 4. Build SeriesInfo objects ───────────────────────────────────────── #
+    series_list = _build_series_list(session_id, raw_series)
+
+    # ── 5. Write primary series metadata to session state ─────────────────── #
+    primary = series_list[0]
+    _activate_series(session_id, primary)
+
+    logger.info(
+        "Upload complete — session %s: %d files, %d series, primary=%s (%d slices)",
+        session_id, len(saved), len(series_list), primary.description, primary.slices,
+    )
+    return UploadResult(
+        session_id=session_id,
+        series=series_list,
+        total_files=len(saved),
+    )
+
+
+def _build_series_list(session_id: str, raw_series: list[dict]) -> list[SeriesInfo]:
+    """Map raw scan dicts → SeriesInfo, ranked best-3D-volume first."""
     series_list: list[SeriesInfo] = []
     for raw in raw_series:
         uid   = raw.get("series_uid", "unknown")
@@ -164,31 +183,78 @@ async def upload_dicom(request: Request) -> UploadResult:
         )
         series_list.append(info)
 
-    # ── 5. Write primary series metadata to session state ─────────────────── #
     # Rank the series so the ACTIVE one is the best candidate for 3-D work: a
     # real volume first (never a localiser/projection), then the one with most
     # slices. A study can carry a dozen series (localisers, 2-D cines, several
     # 3-D acquisitions) and the scan order is arbitrary, so taking series[0]
     # blindly could hand the pipeline a 2-slice scout.
     series_list.sort(key=lambda s: (s.is_projection, -s.slices))
-    primary = series_list[0]
-    write_state(session_id, "dicom.series_id",     primary.series_id)
-    write_state(session_id, "dicom.modality",      primary.modality)
-    write_state(session_id, "dicom.window_center", str(primary.window_center))
-    write_state(session_id, "dicom.window_width",  str(primary.window_width))
-    write_state(session_id, "dicom.spacing_x",     str(primary.spacing.x))
-    write_state(session_id, "dicom.spacing_y",     str(primary.spacing.y))
-    write_state(session_id, "dicom.spacing_z",     str(primary.spacing.z))
-    write_state(session_id, "dicom.n_slices",      str(primary.slices))
-    write_state(session_id, "dicom.is_projection", "1" if primary.is_projection else "0")
+    return series_list
+
+
+def _activate_series(session_id: str, s: SeriesInfo) -> None:
+    """Make `s` the session's active series (downstream routers read this state)."""
+    write_state(session_id, "dicom.series_id",     s.series_id)
+    write_state(session_id, "dicom.modality",      s.modality)
+    write_state(session_id, "dicom.window_center", str(s.window_center))
+    write_state(session_id, "dicom.window_width",  str(s.window_width))
+    write_state(session_id, "dicom.spacing_x",     str(s.spacing.x))
+    write_state(session_id, "dicom.spacing_y",     str(s.spacing.y))
+    write_state(session_id, "dicom.spacing_z",     str(s.spacing.z))
+    write_state(session_id, "dicom.n_slices",      str(s.slices))
+    write_state(session_id, "dicom.is_projection", "1" if s.is_projection else "0")
+
+
+@router.post(
+    "/upload/{session_id}/series/{series_id}",
+    response_model=SeriesInfo,
+    summary="Switch the session's active DICOM series",
+    description=(
+        "A study often carries several series (localisers, 2-D cines and more "
+        "than one 3-D acquisition). Upload activates the best 3-D volume, but the "
+        "clinician may want a different acquisition. This re-points the session at "
+        "`series_id` and drops the cached volume so MPR/segmentation reload it.\n\n"
+        "Everything derived from the previous series (mesh, detection, morphometry) "
+        "becomes stale — the client must reset those steps."
+    ),
+)
+async def set_active_series(session_id: str, series_id: str) -> SeriesInfo:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    dicom_dir = session_subdir(session_id, "dicom")
+    try:
+        raw_series = scan_series(dicom_dir)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"No se pudieron leer las series: {exc}")
+
+    series_list = _build_series_list(session_id, raw_series)
+    chosen = next((s for s in series_list if s.series_id == series_id), None)
+    if chosen is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"La serie '{series_id}' no existe en esta sesión.",
+        )
+
+    _activate_series(session_id, chosen)
+
+    # Drop the cached volume (it belongs to the previous series). The memmap
+    # keeps the file open on Windows, so clear the caches and collect first.
+    import gc
+    from services.mpr import _cache_paths, _load_memmap, _downsampled_volume
+    _load_memmap.cache_clear()
+    _downsampled_volume.cache_clear()
+    gc.collect()
+    npy_path, meta_path = _cache_paths(session_id)
+    for p in (npy_path, meta_path):
+        try:
+            if p.exists():
+                p.unlink()
+        except OSError as exc:
+            logger.warning("Could not drop cached volume %s: %s", p, exc)
 
     logger.info(
-        "Upload complete — session=%s  series=%d  primary=%s (%s)  %d slices",
-        session_id, len(series_list), primary.series_id[:12], primary.modality, primary.slices,
+        "Active series switched — session=%s  series=%s (%s)  %d slices",
+        session_id, chosen.series_id[:12], chosen.modality, chosen.slices,
     )
-
-    return UploadResult(
-        session_id=session_id,
-        series=series_list,
-        total_files=len(saved),
-    )
+    return chosen

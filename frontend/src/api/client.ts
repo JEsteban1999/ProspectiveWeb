@@ -64,6 +64,7 @@ import type {
   TreatmentDecisionRequest,
   TreatmentDecisionResult,
   UploadResult,
+  SeriesInfo,
   UserAdminInfo,
   UserInfo,
   UserUpdate,
@@ -280,6 +281,9 @@ export const api = {
     post<SessionSaveResult>("/api/sessions/save", req),
   restoreSession: (sessionId: string) =>
     post<SessionRestoreResult>(`/api/sessions/${sessionId}/restore`),
+  /** Switch which DICOM series of the study the session works on. */
+  setActiveSeries: (sessionId: string, seriesId: string) =>
+    post<SeriesInfo>(`/api/upload/${sessionId}/series/${encodeURIComponent(seriesId)}`),
 
   /* audit (SkullChain) */
   auditBlocks: () => get<AuditBlock[]>("/api/audit/blocks"),

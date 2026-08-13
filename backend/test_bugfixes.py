@@ -157,3 +157,49 @@ def test_primary_series_prefers_real_volume_over_localiser():
     assert series[0].series_id == "vol_big"      # real volume, most slices
     assert series[1].series_id == "vol_small"
     assert all(s.is_projection for s in series[2:])   # projections pushed last
+
+
+# ── upload: the clinician can switch which series the session works on ─────── #
+
+def test_switch_active_series_repoints_session_and_drops_volume_cache():
+    """A study carries several series; upload activates the best 3-D volume but
+    the clinician must be able to work on a different acquisition. Switching must
+    re-point the session state AND drop the cached volume (it belongs to the old
+    series), otherwise MPR/segmentation would keep showing the previous one.
+    """
+    import shutil
+    from services.sessions import create_session, session_subdir, read_state
+    from services.dicom_loader import scan_series
+    from services.mpr import _cache_paths
+
+    src = _CORPUS.parent / "DICOM-20260714T160737Z-1-001" / "DICOM"
+    if not src.exists():
+        pytest.skip("missing DICOM-2026 corpus")
+
+    sid = create_session()
+    dicom_dir = session_subdir(sid, "dicom")
+    # A few small single-series files → at least two distinct series.
+    for name in ("IM_0001", "IM_0002", "IM_0016"):   # IM_0016 is a different series
+        f = src / name
+        if f.exists():
+            shutil.copy2(f, dicom_dir / name)
+
+    series = scan_series(dicom_dir)
+    if len(series) < 2:
+        pytest.skip("need ≥2 series to test switching")
+
+    # Pretend a volume was already cached for the current series.
+    npy_path, meta_path = _cache_paths(sid)
+    npy_path.write_bytes(b"stale volume")
+    meta_path.write_text("{}")
+
+    target = series[-1]["series_uid"]
+    r = client.post(f"/api/upload/{sid}/series/{target}")
+    assert r.status_code == 200, r.text
+    assert r.json()["series_id"] == target
+
+    assert read_state(sid, "dicom.series_id") == target      # session re-pointed
+    assert not npy_path.exists(), "el volumen cacheado de la serie anterior debe borrarse"
+
+    # Unknown series → 404, not a silent no-op.
+    assert client.post(f"/api/upload/{sid}/series/does-not-exist").status_code == 404

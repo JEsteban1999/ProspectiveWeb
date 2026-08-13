@@ -51,6 +51,7 @@ export function UploadPanel({ onNext }: { onNext: () => void }) {
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<UploadResult | null>(null);
+  const [switching, setSwitching] = useState(false);
 
   // React strips the non-standard `webkitdirectory` attribute, so set the DOM
   // properties imperatively. All three variants for cross-browser folder pick.
@@ -77,6 +78,8 @@ export function UploadPanel({ onNext }: { onNext: () => void }) {
       const res = await api.upload(files);
       setResult(res);
       planning.setSession(res.session_id);
+      // The backend ranks the series (real 3-D volume first, most slices) and
+      // activates series[0]; mirror that choice here.
       const primary = res.series[0] ?? null;
       planning.setSeries(primary);
       if (!primary) {
@@ -86,6 +89,25 @@ export function UploadPanel({ onNext }: { onNext: () => void }) {
       setError(err instanceof Error ? err.message : "Error al subir los archivos");
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Switch which series of the study we work on. Everything derived from the
+  // previous series (mesh, candidates, morphometry) becomes stale, so reset it.
+  const switchSeries = async (seriesId: string) => {
+    const sid = planning.sessionId;
+    if (!sid || seriesId === planning.series?.series_id) return;
+    setSwitching(true);
+    setError(null);
+    try {
+      const s = await api.setActiveSeries(sid, seriesId);
+      planning.resetDownstream();
+      planning.setSegmentation(null);
+      planning.setSeries(s);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo cambiar de serie");
+    } finally {
+      setSwitching(false);
     }
   };
 
@@ -179,8 +201,37 @@ export function UploadPanel({ onNext }: { onNext: () => void }) {
       {series && (
         <Card style={{ marginTop: 16 }}>
           <SectionLabel>
-            Serie detectada{result && result.series.length > 1 ? ` (1 de ${result.series.length})` : ""}
+            Serie del estudio{result && result.series.length > 1 ? ` (${result.series.length} disponibles)` : ""}
           </SectionLabel>
+          {/* A study usually carries several series (localisers, 2-D cines and
+              more than one 3-D acquisition). We activate the best 3-D volume,
+              but the clinician must be able to pick a different acquisition. */}
+          {result && result.series.length > 1 && (
+            <div style={{ marginBottom: 12 }}>
+              <select
+                value={series.series_id}
+                disabled={switching}
+                onChange={(e) => void switchSeries(e.target.value)}
+                style={{
+                  width: "100%", padding: "8px 10px", fontSize: 12,
+                  fontFamily: "var(--font-sans)", color: "var(--foreground)",
+                  background: "var(--card)", border: "1px solid var(--border)",
+                  borderRadius: "var(--radius-md)", cursor: switching ? "wait" : "pointer",
+                }}
+              >
+                {result.series.map((s) => (
+                  <option key={s.series_id} value={s.series_id}>
+                    {s.description} · {s.slices} cortes{s.is_projection ? " · ⚠ proyección 2D" : ""}
+                  </option>
+                ))}
+              </select>
+              <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 6 }}>
+                {switching
+                  ? "Cambiando de serie…"
+                  : "Se activa el volumen 3D con más cortes. Cambiar de serie reinicia segmentación y pasos posteriores."}
+              </div>
+            </div>
+          )}
           <Metric label="Modalidad" value={series.modality} />
           <Metric label="Cortes" value={series.slices} />
           <Metric
