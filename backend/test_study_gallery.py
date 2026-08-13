@@ -81,12 +81,14 @@ def _session_with_dicom_and_volume(real_dicom: bool = False) -> str:
 
 class TestArchiveAndGallery:
     def test_archive_then_listed_with_preview(self):
-        _pid, study_id = _patient_with_study()
+        _pid, case_id = _patient_with_study()
         sid = _session_with_dicom_and_volume()
 
-        r = client.post(f"/api/studies/{study_id}/archive", params={"session_id": sid})
+        r = client.post(f"/api/studies/cases/{case_id}/archive", params={"session_id": sid})
         assert r.status_code == 200, r.text
         card = r.json()
+        img_id = card["id"]                       # id of the new imaging study
+        assert card["case_id"] == case_id         # hangs off the clinical case
         assert card["archived"] is True
         assert card["n_files"] == 2
         assert card["has_thumbnail"] is True
@@ -95,11 +97,11 @@ class TestArchiveAndGallery:
 
         # The gallery lists it with the patient identity used for filtering.
         cards = client.get("/api/studies").json()
-        mine = [c for c in cards if c["id"] == study_id]
+        mine = [c for c in cards if c["id"] == img_id]
         assert mine and mine[0]["hospital_id"] == "HC-GAL-1"
 
         # Preview is a real PNG served by an authenticated endpoint (not /data).
-        t = client.get(f"/api/studies/{study_id}/thumbnail")
+        t = client.get(f"/api/studies/{img_id}/thumbnail")
         assert t.status_code == 200
         assert t.headers["content-type"] == "image/png"
         assert t.content[:8] == b"\x89PNG\r\n\x1a\n"
@@ -108,13 +110,15 @@ class TestArchiveAndGallery:
         """The point of archiving: the study outlives its working session."""
         from services.sessions import delete_session, session_subdir as sub
 
-        _pid, study_id = _patient_with_study(name="Purga", hc="HC-GAL-2")
+        _pid, case_id = _patient_with_study(name="Purga", hc="HC-GAL-2")
         sid = _session_with_dicom_and_volume(real_dicom=True)
-        assert client.post(f"/api/studies/{study_id}/archive", params={"session_id": sid}).status_code == 200
+        a = client.post(f"/api/studies/cases/{case_id}/archive", params={"session_id": sid})
+        assert a.status_code == 200, a.text
+        img_id = a.json()["id"]
 
         delete_session(sid)                       # simulate the TTL sweep
 
-        r = client.post(f"/api/studies/{study_id}/open")
+        r = client.post(f"/api/studies/{img_id}/open")
         assert r.status_code == 200, r.text
         body = r.json()
         new_sid = body["session_id"]
@@ -127,7 +131,10 @@ class TestArchiveAndGallery:
         assert restored == ["IM_0001", "IM_0002"]
 
     def test_filter_by_name_and_hospital_id(self):
-        _patient_with_study(name="Filtrable", hc="HC-UNICO-77")
+        # The gallery lists IMAGING studies, so the case needs one archived.
+        _pid, case_id = _patient_with_study(name="Filtrable", hc="HC-UNICO-77")
+        client.post(f"/api/studies/cases/{case_id}/archive",
+                    params={"session_id": _session_with_dicom_and_volume()})
         by_name = client.get("/api/studies", params={"q": "filtrable"}).json()
         by_hc   = client.get("/api/studies", params={"q": "UNICO-77"}).json()
         assert len(by_name) >= 1 and len(by_hc) >= 1
@@ -135,13 +142,53 @@ class TestArchiveAndGallery:
         assert client.get("/api/studies", params={"q": "no-existe-xyz"}).json() == []
 
     def test_open_unarchived_study_conflicts(self):
-        _pid, study_id = _patient_with_study(name="SinArchivo", hc="HC-GAL-3")
-        r = client.post(f"/api/studies/{study_id}/open")
+        """An imaging study row without a durable archive → actionable 409."""
+        from services.db_models import ImagingStudy
+
+        pid, case_id = _patient_with_study(name="SinArchivo", hc="HC-GAL-3")
+        db = SessionLocal()
+        try:
+            img = ImagingStudy(case_id=case_id, patient_id=pid, description="Sin archivar")
+            db.add(img); db.commit(); db.refresh(img)
+            img_id = img.id
+        finally:
+            db.close()
+
+        r = client.post(f"/api/studies/{img_id}/open")
         assert r.status_code == 409          # actionable, not a silent empty session
 
     def test_unknown_study_404(self):
         assert client.get("/api/studies/999999/thumbnail").status_code == 404
         assert client.post("/api/studies/999999/open").status_code == 404
+
+
+class TestCaseHoldsSeveralImagingStudies:
+    def test_second_archive_adds_a_study_instead_of_overwriting(self):
+        """The whole point of splitting case from imaging: one clinical episode
+        can carry a CT *and* an angiography *and* a follow-up, without inventing
+        duplicate cases and without the second upload replacing the first.
+        """
+        _pid, case_id = _patient_with_study(name="MultiImagen", hc="HC-MULTI-1")
+
+        first  = client.post(f"/api/studies/cases/{case_id}/archive",
+                             params={"session_id": _session_with_dicom_and_volume()})
+        second = client.post(f"/api/studies/cases/{case_id}/archive",
+                             params={"session_id": _session_with_dicom_and_volume()})
+        assert first.status_code == 200 and second.status_code == 200, second.text
+
+        a, b = first.json(), second.json()
+        assert a["id"] != b["id"], "el segundo estudio no debe sobrescribir al primero"
+        assert a["case_id"] == b["case_id"] == case_id
+
+        # Both are listed for that case, each with its own archive.
+        of_case = client.get("/api/studies", params={"case_id": case_id}).json()
+        assert len(of_case) == 2
+        assert len({c["id"] for c in of_case}) == 2
+        assert all(c["archived"] for c in of_case)
+
+        # And each keeps its own preview.
+        for c in of_case:
+            assert client.get(f"/api/studies/{c['id']}/thumbnail").status_code == 200
 
 
 class TestThumbnailQuality:

@@ -288,19 +288,20 @@ export const api = {
     post<SeriesInfo>(`/api/upload/${sessionId}/series/${encodeURIComponent(seriesId)}`),
 
   /* study gallery */
-  listStudies: (q = "", patientId?: number) => {
+  listStudies: (q = "", patientId?: number, caseId?: number) => {
     const p = new URLSearchParams();
     if (q) p.set("q", q);
     if (patientId != null) p.set("patient_id", String(patientId));
+    if (caseId != null) p.set("case_id", String(caseId));
     const qs = p.toString();
     return get<StudyCard[]>(`/api/studies${qs ? `?${qs}` : ""}`);
   },
   /** Preview image; needs the JWT, so fetch as a blob and use an object URL. */
   studyThumbnailObjectUrl: async (studyId: number) =>
     URL.createObjectURL(await getBlob(`/api/studies/${studyId}/thumbnail`)),
-  /** Copy the session's DICOM into durable storage under this study. */
-  archiveStudy: (studyId: number, sessionId: string) =>
-    post<StudyCard>(`/api/studies/${studyId}/archive?session_id=${encodeURIComponent(sessionId)}`),
+  /** Archive the session's DICOM as a NEW imaging study of this clinical case. */
+  archiveStudy: (caseId: number, sessionId: string) =>
+    post<StudyCard>(`/api/studies/cases/${caseId}/archive?session_id=${encodeURIComponent(sessionId)}`),
   /** Restore an archived study into a fresh working session, series already
    *  scanned and activated — same payload shape as `upload`. */
   openStudy: (studyId: number) =>

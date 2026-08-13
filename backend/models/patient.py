@@ -160,7 +160,8 @@ class StudyCard(BaseModel):
     the archive state, so the grid renders without extra requests per card.
     """
 
-    id: int
+    id: int = Field(..., description="ImagingStudy id")
+    case_id: int = Field(0, description="Clinical case this imaging belongs to")
     patient_id: int
     patient_name: str = ""
     hospital_id: str = Field("", description="Cédula / N.º de historia clínica")

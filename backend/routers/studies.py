@@ -19,7 +19,7 @@ from models.dicom import UploadResult
 from models.patient import StudyCard
 from services.auth_service import get_current_user
 from services.database import get_db
-from services.db_models import PlanningSession, Patient, Study, User
+from services.db_models import ImagingStudy, PlanningSession, Patient, Study, User
 from services.sessions import create_session, session_subdir
 from services.storage import get_storage
 from services.study_archive import archive_session_dicom, restore_study_to_session
@@ -28,23 +28,27 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/studies", tags=["studies"])
 
 
-def _to_card(s: Study, p: Patient | None, latest: PlanningSession | None) -> StudyCard:
+def _to_card(img: ImagingStudy, latest: PlanningSession | None) -> StudyCard:
+    """One imaging study as a gallery card, carrying its case + patient context."""
+    case: Study | None = img.case
+    p: Patient | None = img.patient or (case.patient if case else None)
     return StudyCard(
-        id=s.id,
-        patient_id=s.patient_id,
+        id=img.id,
+        case_id=img.case_id,
+        patient_id=img.patient_id,
         patient_name=(p.full_name if p else ""),
         hospital_id=(p.hospital_id if p else ""),
-        description=s.description or s.dx_principal or "Estudio",
-        modality=s.modality or "",
-        acquired_at=s.acquired_at or "",
-        dx_principal=s.dx_principal or "",
-        created_at=s.created_at,
-        archived=bool(s.storage_prefix),
-        has_thumbnail=bool(s.thumb_key),
-        n_files=s.n_files or 0,
-        n_slices=s.n_slices or 0,
-        size_mb=s.size_mb or 0.0,
-        session_count=len(s.sessions or []),
+        description=img.description or (case.dx_principal if case else "") or "Estudio",
+        modality=img.modality or "",
+        acquired_at=img.acquired_at or (case.acquired_at if case else "") or "",
+        dx_principal=(case.dx_principal if case else "") or "",
+        created_at=img.created_at,
+        archived=img.archived,
+        has_thumbnail=bool(img.thumb_key),
+        n_files=img.n_files or 0,
+        n_slices=img.n_slices or 0,
+        size_mb=img.size_mb or 0.0,
+        session_count=len(img.sessions or []),
         last_step=(latest.current_step if latest else None),
         max_diameter_mm=(latest.max_diameter_mm if latest else None),
         rupture_risk_label=(latest.rupture_risk_label if latest else None),
@@ -65,25 +69,32 @@ async def list_studies(
     db: Annotated[Session, Depends(get_db)],
     q: str = Query("", description="Filtro por nombre de paciente o cédula/HC"),
     patient_id: int | None = Query(None, description="Solo los estudios de este paciente"),
+    case_id: int | None = Query(None, description="Solo los estudios de este caso clínico"),
     limit: int = Query(200, ge=1, le=1000),
 ) -> list[StudyCard]:
-    query = db.query(Study)
+    query = db.query(ImagingStudy)
     if patient_id is not None:
-        query = query.filter(Study.patient_id == patient_id)
-    studies = query.order_by(Study.created_at.desc()).limit(limit).all()
+        query = query.filter(ImagingStudy.patient_id == patient_id)
+    if case_id is not None:
+        query = query.filter(ImagingStudy.case_id == case_id)
+    images = query.order_by(ImagingStudy.created_at.desc()).limit(limit).all()
 
     needle = q.strip().lower()
     cards: list[StudyCard] = []
-    for s in studies:
-        p = s.patient
+    for img in images:
+        p = img.patient
         if needle:
-            hay = f"{p.full_name if p else ''} {p.hospital_id if p else ''}".lower()
+            case = img.case
+            hay = (
+                f"{p.full_name if p else ''} {p.hospital_id if p else ''} "
+                f"{img.description} {case.dx_principal if case else ''}"
+            ).lower()
             if needle not in hay:
                 continue
         latest = None
-        if s.sessions:
-            latest = max(s.sessions, key=lambda x: x.updated_at or x.created_at)
-        cards.append(_to_card(s, p, latest))
+        if img.sessions:
+            latest = max(img.sessions, key=lambda x: x.updated_at or x.created_at)
+        cards.append(_to_card(img, latest))
     return cards
 
 
@@ -98,13 +109,13 @@ async def get_thumbnail(
     db: Annotated[Session, Depends(get_db)],
     _user: Annotated[User | None, Depends(get_current_user)] = None,
 ) -> Response:
-    s = db.query(Study).filter_by(id=study_id).first()
-    if s is None:
+    img = db.query(ImagingStudy).filter_by(id=study_id).first()
+    if img is None:
         raise HTTPException(status_code=404, detail=f"Estudio {study_id} no encontrado")
-    if not s.thumb_key:
+    if not img.thumb_key:
         raise HTTPException(status_code=404, detail="Este estudio no tiene vista previa")
     try:
-        data = get_storage().get_bytes(s.thumb_key)
+        data = get_storage().get_bytes(img.thumb_key)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=404, detail=f"Vista previa no disponible: {exc}")
     # Private: it is patient imaging, so never let a shared cache keep it.
@@ -113,50 +124,78 @@ async def get_thumbnail(
 
 
 @router.post(
-    "/{study_id}/archive",
+    "/cases/{case_id}/archive",
     response_model=StudyCard,
-    summary="Archive a session's DICOM into durable storage",
+    summary="Archive a session's DICOM as a new imaging study of a case",
     description=(
-        "Copies the DICOM of `session_id` into the durable store under this "
-        "study and renders its preview thumbnail, so the study survives the "
-        "session TTL and shows up in the gallery."
+        "Copies the DICOM of `session_id` into durable storage as a NEW imaging "
+        "study of this clinical case and renders its preview, so it survives the "
+        "session TTL and appears in the gallery. A case can hold several imaging "
+        "studies (CT + angiography + follow-up), so archiving never overwrites a "
+        "previous one."
     ),
 )
 async def archive_study(
-    study_id: int,
+    case_id: int,
     session_id: str,
     db: Annotated[Session, Depends(get_db)],
     _user: Annotated[User | None, Depends(get_current_user)] = None,
 ) -> StudyCard:
-    s = db.query(Study).filter_by(id=study_id).first()
-    if s is None:
-        raise HTTPException(status_code=404, detail=f"Estudio {study_id} no encontrado")
+    case = db.query(Study).filter_by(id=case_id).first()
+    if case is None:
+        raise HTTPException(status_code=404, detail=f"Caso {case_id} no encontrado")
+
+    from services.sessions import read_state
+    modality = read_state(session_id, "dicom.modality", "") or ""
+    try:
+        n_slices = int(float(read_state(session_id, "dicom.n_slices", "0") or 0))
+    except ValueError:
+        n_slices = 0
+
+    # Create the row first: the archive lives under the imaging study's own id,
+    # so several acquisitions of one case never share a storage prefix.
+    img = ImagingStudy(
+        case_id=case.id,
+        patient_id=case.patient_id,
+        description=read_state(session_id, "dicom.series_description", "") or (modality and f"Estudio {modality}") or "Estudio",
+        modality=modality,
+        acquired_at=case.acquired_at or "",
+        n_slices=n_slices,
+    )
+    db.add(img)
+    db.commit()
+    db.refresh(img)
 
     try:
-        info = archive_session_dicom(session_id, study_id)
+        info = archive_session_dicom(session_id, img.id)
     except ValueError as exc:
+        db.delete(img); db.commit()
         raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
+        db.delete(img); db.commit()
         logger.exception("Archive failed")
         raise HTTPException(status_code=500, detail=f"No se pudo archivar el estudio: {exc}")
 
-    from services.sessions import read_state
-    s.storage_prefix = info["storage_prefix"]
-    s.thumb_key      = info["thumb_key"]
-    s.n_files        = info["n_files"]
-    s.size_mb        = info["size_mb"]
-    s.dicom_path     = info["storage_prefix"]     # legacy field now points at the archive
-    if not s.modality:
-        s.modality = read_state(session_id, "dicom.modality", "") or ""
-    try:
-        s.n_slices = int(float(read_state(session_id, "dicom.n_slices", "0") or 0))
-    except ValueError:
-        s.n_slices = 0
-    db.commit()
-    db.refresh(s)
+    img.storage_prefix = info["storage_prefix"]
+    img.thumb_key      = info["thumb_key"]
+    img.n_files        = info["n_files"]
+    img.size_mb        = info["size_mb"]
+    if not case.modality:
+        case.modality = modality
+    case.dicom_path = info["storage_prefix"]      # legacy pointer, keeps old code happy
 
-    latest = max(s.sessions, key=lambda x: x.updated_at or x.created_at) if s.sessions else None
-    return _to_card(s, s.patient, latest)
+    # Link the session that produced it, so the gallery shows real progress.
+    ps = db.query(PlanningSession).filter_by(session_id=session_id).first()
+    if ps is not None:
+        ps.imaging_study_id = img.id
+        ps.study_id = case.id
+        ps.patient_id = case.patient_id
+
+    db.commit()
+    db.refresh(img)
+
+    latest = max(img.sessions, key=lambda x: x.updated_at or x.created_at) if img.sessions else None
+    return _to_card(img, latest)
 
 
 @router.post(
@@ -175,10 +214,10 @@ async def open_study(
     db: Annotated[Session, Depends(get_db)],
     _user: Annotated[User | None, Depends(get_current_user)] = None,
 ) -> UploadResult:
-    s = db.query(Study).filter_by(id=study_id).first()
-    if s is None:
+    img = db.query(ImagingStudy).filter_by(id=study_id).first()
+    if img is None:
         raise HTTPException(status_code=404, detail=f"Estudio {study_id} no encontrado")
-    if not s.storage_prefix:
+    if not img.storage_prefix:
         raise HTTPException(
             status_code=409,
             detail="Este estudio no tiene DICOM archivado. Cárgalo y pulsa «Guardar estudio».",

@@ -296,8 +296,9 @@ export function UploadPanel({ onNext }: { onNext: () => void }) {
         <Card style={{ marginTop: 12 }}>
           <SectionLabel>Guardar en el archivo de estudios</SectionLabel>
           <div style={{ fontSize: 11, color: "var(--muted-foreground)", margin: "6px 0 10px", lineHeight: 1.5 }}>
-            Guarda este DICOM de forma permanente y genera su vista previa para la
-            galería de estudios. Si no lo guardas, se borrará automáticamente.
+            Guarda este DICOM de forma permanente como un estudio del caso clínico
+            elegido (un caso puede tener varios: TAC, angiografía, control) y genera
+            su vista previa. Si no lo guardas, se borrará automáticamente.
           </div>
           {studies.length === 0 ? (
             <div style={{ fontSize: 12, color: "var(--warning)", display: "flex", gap: 6, alignItems: "flex-start" }}>

@@ -773,7 +773,8 @@ export interface LongitudinalResult {
 
 /* ── study gallery ─────────────────────────────────────────────────────── */
 export interface StudyCard {
-  id: number;
+  id: number;            // ImagingStudy id
+  case_id: number;       // clinical case it belongs to
   patient_id: number;
   patient_name: string;
   hospital_id: string;

@@ -76,6 +76,8 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _migrate_user_columns()
     _migrate_study_columns()
+    _migrate_session_columns()
+    _migrate_imaging_studies()
     logger.info("Database initialised at %s", DATA_DIR / "prospective.db")
 
 
@@ -140,3 +142,59 @@ def _migrate_study_columns() -> None:
             if col not in existing:
                 conn.execute(text(f"ALTER TABLE studies ADD COLUMN {col} {ddl}"))
                 logger.info("Migrated studies table: added column %s", col)
+
+
+def _migrate_session_columns() -> None:
+    """Link planning sessions to the imaging study they actually analysed."""
+    from sqlalchemy import text
+
+    with engine.begin() as conn:
+        existing = {row[1] for row in conn.execute(text("PRAGMA table_info(planning_sessions)"))}
+        if "imaging_study_id" not in existing:
+            conn.execute(text("ALTER TABLE planning_sessions ADD COLUMN imaging_study_id INTEGER"))
+            logger.info("Migrated planning_sessions: added column imaging_study_id")
+
+
+def _migrate_imaging_studies() -> None:
+    """Move each case's archived DICOM into its own imaging_studies row.
+
+    The archive used to hang off the clinical case (one image per case). Now a
+    case can hold several acquisitions, so every already-archived case gets one
+    imaging study carrying its archive, and its sessions are pointed at it.
+    Idempotent: a case that already has imaging rows is skipped.
+    """
+    from sqlalchemy import text
+
+    with engine.begin() as conn:
+        tables = {r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))}
+        if "imaging_studies" not in tables or "studies" not in tables:
+            return
+        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(studies)"))}
+        if "storage_prefix" not in cols:
+            return
+
+        rows = conn.execute(text(
+            "SELECT s.id, s.patient_id, s.description, s.modality, s.acquired_at, "
+            "       s.storage_prefix, s.thumb_key, s.n_files, s.n_slices, s.size_mb "
+            "FROM studies s "
+            "WHERE s.storage_prefix != '' "
+            "  AND NOT EXISTS (SELECT 1 FROM imaging_studies i WHERE i.case_id = s.id)"
+        )).fetchall()
+
+        for r in rows:
+            conn.execute(text(
+                "INSERT INTO imaging_studies "
+                "(case_id, patient_id, description, modality, acquired_at, "
+                " storage_prefix, thumb_key, n_files, n_slices, size_mb, created_at) "
+                "VALUES (:cid, :pid, :desc, :mod, :acq, :pref, :thumb, :nf, :ns, :mb, CURRENT_TIMESTAMP)"
+            ), {
+                "cid": r[0], "pid": r[1], "desc": r[2] or "Estudio", "mod": r[3] or "",
+                "acq": r[4] or "", "pref": r[5], "thumb": r[6], "nf": r[7], "ns": r[8], "mb": r[9],
+            })
+            new_id = conn.execute(text("SELECT last_insert_rowid()")).scalar()
+            # Sessions of that case were analysing these very images.
+            conn.execute(text(
+                "UPDATE planning_sessions SET imaging_study_id = :iid "
+                "WHERE study_id = :cid AND imaging_study_id IS NULL"
+            ), {"iid": new_id, "cid": r[0]})
+            logger.info("Migrated case %s archive into imaging study %s", r[0], new_id)
