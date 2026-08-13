@@ -23,31 +23,24 @@ _THUMB_MAX_PX = 320
 def build_thumbnail_png(session_id: str) -> bytes | None:
     """Render the mid axial slice of the session volume as a small PNG.
 
-    Uses the volume MPR already cached on upload, so no DICOM re-read. Returns
-    None when there is no usable volume (e.g. a 2-D projection-only study).
+    Delegates the windowing to `render_slice_png` — the very function the MPR
+    viewer uses — so the preview looks exactly like the study does in the app.
+    (Re-implementing the normalisation here produced near-black previews on
+    3D-RA, whose wide display window leaves soft tissue at the bottom of the
+    range.) Uses the cached volume, so no DICOM re-read. Returns None when there
+    is no usable volume, e.g. a 2-D projection-only study.
     """
     try:
         from PIL import Image
-        from services.mpr import ensure_volume_cached, _get_volume, _display_window
+        from services.mpr import ensure_volume_cached, _get_volume, render_slice_png
 
-        meta = ensure_volume_cached(session_id)
+        ensure_volume_cached(session_id)
         vol = np.asarray(_get_volume(session_id))
         if vol.ndim != 3 or min(vol.shape) < 1:
             return None
 
-        mid = vol.shape[0] // 2
-        sl = np.asarray(vol[mid], dtype=np.float32)
-
-        # Same windowing the MPR viewer uses, so the preview looks like the app.
-        try:
-            lo, hi = _display_window(vol, float(meta.get("wc", 0)), float(meta.get("ww", 0)))
-        except Exception:  # noqa: BLE001 — fall back to a robust percentile window
-            lo, hi = float(np.percentile(sl, 1)), float(np.percentile(sl, 99))
-        if hi <= lo:
-            lo, hi = float(sl.min()), float(sl.max() or 1.0)
-
-        u8 = np.clip((sl - lo) / (hi - lo) * 255.0, 0, 255).astype(np.uint8)
-        img = Image.fromarray(u8, mode="L")
+        png = render_slice_png(session_id, "axial", vol.shape[0] // 2)
+        img = Image.open(io.BytesIO(png))
         img.thumbnail((_THUMB_MAX_PX, _THUMB_MAX_PX))
         buf = io.BytesIO()
         img.save(buf, format="PNG", optimize=True)

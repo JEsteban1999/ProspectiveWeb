@@ -108,11 +108,23 @@ class LocalBackend:
             shutil.rmtree(base, ignore_errors=True)
 
     def download_prefix(self, prefix: str, dest_dir: Path) -> int:
-        """Copy every object under `prefix` into `dest_dir`. Returns file count."""
+        """Materialise every object under `prefix` into `dest_dir`.
+
+        Tries a hard link first: a study is often >1 GB and copying it into every
+        working session filled the disk (and DICOM is read-only here, so sharing
+        the data is safe). Falls back to a real copy across volumes or on any
+        filesystem that refuses links.
+        """
         dest_dir.mkdir(parents=True, exist_ok=True)
         n = 0
         for key in self.list_prefix(prefix):
-            shutil.copy2(self._path(key), dest_dir / Path(key).name)
+            src, dst = self._path(key), dest_dir / Path(key).name
+            if dst.exists():
+                dst.unlink()
+            try:
+                os.link(src, dst)
+            except OSError:
+                shutil.copy2(src, dst)
             n += 1
         return n
 

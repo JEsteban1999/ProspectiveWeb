@@ -119,6 +119,57 @@ class TestArchiveAndGallery:
         assert client.post("/api/studies/999999/open").status_code == 404
 
 
+class TestThumbnailQuality:
+    def test_preview_is_not_a_black_image(self):
+        """Regression: the first implementation re-did the windowing by hand and
+        produced near-black previews on wide-window studies (3D-RA). It now
+        delegates to render_slice_png — the same path the MPR viewer uses.
+        """
+        import io
+        import numpy as np
+        from PIL import Image
+        from services.study_archive import build_thumbnail_png
+
+        sid = _session_with_dicom_and_volume()
+        png = build_thumbnail_png(sid)
+        assert png, "debe generar una vista previa"
+
+        arr = np.asarray(Image.open(io.BytesIO(png)).convert("L"), dtype=float)
+        assert arr.mean() > 10, f"vista previa casi negra (media {arr.mean():.1f}/255)"
+        assert arr.max() - arr.min() > 40, "vista previa sin contraste (imagen plana)"
+
+
+class TestOpenDoesNotDuplicateData:
+    def test_restore_hardlinks_instead_of_copying(self):
+        """Opening a study must not duplicate it on disk.
+
+        Regression: studies are ~1 GB, so copying one into every working session
+        filled the disk (WinError 112). The local backend hard-links instead —
+        same data, no extra space — since the archived DICOM is read-only here.
+        """
+        import os
+        from services.sessions import create_session, session_subdir
+        from services.storage import get_storage, dicom_key
+
+        storage = get_storage()
+        study_id = 987654
+        src_session = create_session()
+        f = session_subdir(src_session, "dicom") / "IM_BIG"
+        f.write_bytes(b"x" * 4096)
+        storage.put_file(dicom_key(study_id, "IM_BIG"), f)
+
+        dest = session_subdir(create_session(), "dicom")
+        assert storage.download_prefix(f"studies/{study_id}/dicom", dest) == 1
+
+        out = dest / "IM_BIG"
+        assert out.read_bytes() == b"x" * 4096
+        # Same inode ⇒ the bytes are shared, not duplicated.
+        if hasattr(os, "stat") and os.name == "nt":
+            assert out.stat().st_nlink > 1, "debería ser un enlace duro, no una copia"
+
+        storage.delete_prefix(f"studies/{study_id}")
+
+
 class TestStorageIsolation:
     def test_study_files_are_not_under_public_data_dir(self):
         """DICOM carries PHI and `data/` is mounted as public StaticFiles."""
