@@ -53,6 +53,10 @@ _C = {
     "COIL_MODEL":  ("99PRP060",  "99PRP", "Coil Model"),
     "COIL_TYPE":   ("99PRP061",  "99PRP", "Coil Type"),
     "COIL_DIAM":   ("99PRP062",  "99PRP", "Coil Nominal Diameter"),
+    "PHASES":       ("99PRP070", "99PRP", "PHASES Score Assessment"),
+    "PHASES_TOTAL": ("99PRP071", "99PRP", "PHASES Total Score"),
+    "PHASES_RISK":  ("99PRP072", "99PRP", "PHASES 5-Year Rupture Risk"),
+    "PHASES_BAND":  ("99PRP073", "99PRP", "PHASES Risk Band"),
 }
 
 _U = {
@@ -62,6 +66,7 @@ _U = {
     "cm":    ("cm",  "UCUM", "cm"),
     "deg":   ("deg", "UCUM", "deg"),
     "ratio": ("1",   "UCUM", "no units"),
+    "pct":   ("%",   "UCUM", "percent"),
 }
 
 _RISK_CODES = {
@@ -137,6 +142,7 @@ class DicomSRGenerator:
         stents: list[dict[str, Any]] | None = None,
         coils: list[dict[str, Any]] | None = None,
         risk_label: str = "",
+        phases: dict[str, Any] | None = None,
     ) -> None:
         self._meta = series_meta
         self._morpho = morphometrics
@@ -145,6 +151,7 @@ class DicomSRGenerator:
         self._stents = stents or []
         self._coils = coils or []
         self._risk = risk_label
+        self._phases = phases or {}
 
     def generate(self, output_path: str | Path) -> Path:
         p = Path(output_path)
@@ -213,6 +220,8 @@ class DicomSRGenerator:
             root_items.append(self._build_coil_plan_container())
         if self._traj:
             root_items.append(self._build_trajectory_container())
+        if self._phases:
+            root_items.append(self._build_phases_container())
 
         ds.ContentSequence = Sequence(root_items)
         return ds
@@ -278,6 +287,18 @@ class DicomSRGenerator:
                 children.append(_num_item("COIL_DIAM", float(c["diameter_mm"]), "mm"))
             items.append(_container("COIL", children))
         return _container("COIL_PLAN", items)
+
+    def _build_phases_container(self) -> Dataset:
+        """PHASES 5-year rupture risk (Greving 2014), as recorded in the session."""
+        ph = self._phases
+        band = str(ph.get("risk_band", ""))
+        children = [
+            _num_item("PHASES_TOTAL", float(ph.get("total_score", 0)), "ratio"),
+            _num_item("PHASES_RISK", float(ph.get("risk_5yr_pct", 0.0)), "pct"),
+        ]
+        if band:
+            children.append(_text_item("PHASES_BAND", band))
+        return _container("PHASES", children)
 
     def _build_trajectory_container(self) -> Dataset:
         tr = self._traj

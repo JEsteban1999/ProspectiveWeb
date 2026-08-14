@@ -288,7 +288,14 @@ async def restore_session(
         except ValueError:
             return 0
 
-    mesh_url = f"{mesh_url_for(new_sid, 'vessel_tree.vtp')}?v={int(datetime.now().timestamp() * 1000)}" if has_seg else ""
+    stamp = int(datetime.now().timestamp() * 1000)
+    mesh_url = f"{mesh_url_for(new_sid, 'vessel_tree.vtp')}?v={stamp}" if has_seg else ""
+
+    # The centreline files travel in the snapshot, but the frontend store starts
+    # empty — without this the «Stent CL» tab keeps asking to extract a
+    # centreline that is already on disk. Arc length is recomputed from the
+    # points so sessions saved before this existed restore correctly too.
+    cl_url, cl_arc = _restored_centerline(new_sid, stamp)
 
     logger.info(
         "Session restored — original=%s  new=%s  step=%d  has_seg=%s",
@@ -316,4 +323,26 @@ async def restore_session(
         study_label=_case_label(ps.study),
         imaging_study_id=ps.imaging_study_id,
         series=_restored_series(new_sid),
+        centerline_mesh_url=cl_url,
+        centerline_arc_mm=cl_arc,
     )
+
+
+def _restored_centerline(session_id: str, stamp: int) -> tuple[str, float]:
+    """(url, arc_length_mm) of a restored centreline, or ("", 0.0) if there is none."""
+    meshes = session_subdir(session_id, "meshes")
+    if not (meshes / "centerline.vtp").exists():
+        return "", 0.0
+
+    arc = 0.0
+    points_path = meshes / "centerline_points.npz"
+    if points_path.exists():
+        try:
+            import numpy as np
+            pts = np.load(points_path)["points"].astype(float)
+            if pts.shape[0] > 1:
+                arc = float(np.linalg.norm(np.diff(pts, axis=0), axis=1).sum())
+        except Exception as exc:  # noqa: BLE001 — a bad npz must not break the restore
+            logger.warning("Could not read centreline points for %s: %s", session_id, exc)
+
+    return f"{mesh_url_for(session_id, 'centerline.vtp')}?v={stamp}", round(arc, 1)

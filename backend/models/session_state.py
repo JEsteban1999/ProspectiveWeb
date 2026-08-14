@@ -69,6 +69,17 @@ class SessionRestoreResult(BaseModel):
             "empty drop zone even though the viewer is already rendering the MPR."
         ),
     )
+    centerline_mesh_url: str = Field(
+        "",
+        description=(
+            "URL of the restored centreline (empty if the session had none). "
+            "Without it the centreline-guided stent stays unavailable even "
+            "though its geometry came back with the snapshot."
+        ),
+    )
+    centerline_arc_mm: float = Field(
+        0.0, description="Total arc length of the restored centreline (mm)"
+    )
 
 
 class SessionListItem(BaseModel):

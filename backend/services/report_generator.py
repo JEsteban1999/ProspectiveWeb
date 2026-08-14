@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -75,15 +76,38 @@ class CoilEntry:
 
 
 @dataclass
+class StentEntry:
+    """A deployed stent / flow diverter.
+
+    `kind` distinguishes the two planners, and matters for reading `coverage_pct`:
+    - "straight"   → percentage of the aneurysm neck covered by the device
+    - "centerline" → stent/vessel diameter ratio ×100 (≈100 % is a good fit)
+    """
+    name: str
+    kind: str = "straight"
+    manufacturer: str = ""
+    diameter_mm: float = 0.0
+    length_mm: float = 0.0
+    coverage_pct: float = 0.0
+
+
+@dataclass
 class ReportData:
     patient: PatientInfo = field(default_factory=PatientInfo)
     morphometrics: dict[str, Any] = field(default_factory=dict)
     clips: list[ClipEntry] = field(default_factory=list)
     coils: list[CoilEntry] = field(default_factory=list)
+    stent: StentEntry | None = None
     trajectory: dict[str, Any] = field(default_factory=dict)
     screenshot_png: bytes | None = None
     risk_label: str = ""
     treatment: dict[str, Any] = field(default_factory=dict)
+    # Clinical context recorded on the decision step but deliberately not
+    # scored: {"patient_age": int | None, "has_comorbidities": bool | None}
+    clinical: dict[str, Any] = field(default_factory=dict)
+    # PHASES 5-year rupture risk, as recorded by POST /api/phases (score,
+    # per-factor points and the inputs it was computed from). {} when not run.
+    phases: dict[str, Any] = field(default_factory=dict)
 
 
 # ──────────────────────────────────────────────────────────────────────────── #
@@ -150,7 +174,6 @@ def build_report_data_from_session(
             "notes":              [],
         }
         # Deserialise factors (stored as JSON string)
-        import json
         factors_raw = _rs("treatment.factors_json", "")
         if factors_raw:
             try:
@@ -196,7 +219,7 @@ def build_report_data_from_session(
     trajectory = read_trajectory_state(session_id)
 
     # ── 6. Placed devices (persisted by the clip/coil/stent planners) ─── #
-    from services.device_state import read_clips, read_coils
+    from services.device_state import read_clips, read_coils, read_stent
 
     def _pos(v, n=3):
         v = list(v or [])
@@ -225,11 +248,47 @@ def build_report_data_from_session(
         for i, c in enumerate(read_coils(session_id))
     ]
 
+    # Both stent planners (straight catalogue device and centreline-guided)
+    # write the same shape; an empty dict means none was deployed.
+    raw_stent = read_stent(session_id)
+    stent = None
+    if raw_stent and raw_stent.get("name"):
+        stent = StentEntry(
+            name         = str(raw_stent.get("name", "Stent")),
+            kind         = str(raw_stent.get("kind", "straight")),
+            manufacturer = str(raw_stent.get("manufacturer", "")),
+            diameter_mm  = float(raw_stent.get("diameter_mm", 0.0) or 0.0),
+            length_mm    = float(raw_stent.get("length_mm", 0.0) or 0.0),
+            coverage_pct = float(raw_stent.get("coverage_pct", 0.0) or 0.0),
+        )
+
+    # ── 7. Clinical context (recorded on the decision step, not scored) ── #
+    raw_age  = _rs("clinical.patient_age")
+    raw_comb = _rs("clinical.has_comorbidities")
+    clinical = {
+        "patient_age":       int(raw_age) if raw_age.isdigit() else None,
+        "has_comorbidities": (raw_comb == "1") if raw_comb else None,
+    }
+
+    # ── 8. PHASES score (recorded by POST /api/phases) ─────────────────── #
+    phases: dict[str, Any] = {}
+    raw_phases = _rs("phases.json")
+    if raw_phases:
+        try:
+            loaded = json.loads(raw_phases)
+            if isinstance(loaded, dict):
+                phases = loaded
+        except (ValueError, TypeError):
+            logger.warning("Could not parse phases.json for session %s", session_id)
+
     return ReportData(
         patient      = patient,
         morphometrics= morpho,
         clips        = clips,
         coils        = coils,
+        stent        = stent,
+        clinical     = clinical,
+        phases       = phases,
         trajectory   = trajectory,
         screenshot_png = screenshot_bytes,
         risk_label   = risk_label,
@@ -327,6 +386,29 @@ class ReportGenerator:
     # Public                                                               #
     # ------------------------------------------------------------------ #
 
+    def _build_story(self) -> list:
+        """Assemble the flowables of the whole document, in order.
+
+        Split out of generate() so tests can assert a section actually reaches
+        the document — writing a _section_* method and forgetting to add it
+        here would otherwise pass unnoticed.
+        """
+        story: list = []
+        story += self._section_header()
+        story += self._section_patient()
+        story += self._section_screenshot()
+        story += self._section_morphometrics()
+        story += self._section_treatment_decision()
+        story += self._section_clips()
+        story += self._section_coils()
+        story += self._section_stent()
+        story += self._section_trajectory()
+        story += self._section_risk()
+        story += self._section_phases()
+        story += self._section_notes()
+        story += self._section_footer()
+        return story
+
     def generate(self, output_path: str | Path) -> Path:
         """Write the PDF to *output_path* and return the resolved Path."""
         p = Path(output_path)
@@ -343,18 +425,7 @@ class ReportGenerator:
             author=self._data.patient.surgeon or "PROSPECTIVE",
         )
 
-        story: list = []
-        story += self._section_header()
-        story += self._section_patient()
-        story += self._section_screenshot()
-        story += self._section_morphometrics()
-        story += self._section_treatment_decision()
-        story += self._section_clips()
-        story += self._section_coils()
-        story += self._section_trajectory()
-        story += self._section_risk()
-        story += self._section_notes()
-        story += self._section_footer()
+        story = self._build_story()
 
         doc.build(
             story,
@@ -700,6 +771,17 @@ class ReportGenerator:
             elems.append(Spacer(1, 0.1*cm))
             elems.append(Paragraph(f"<i>Nota:</i> {note}", self._style_td_note))
 
+        # Clinical context the engine does not weight. It belongs next to the
+        # recommendation because it is exactly what the multidisciplinary
+        # session weighs on top of the morphometric score.
+        ctx = self._clinical_context_text()
+        if ctx:
+            elems.append(Spacer(1, 0.1*cm))
+            elems.append(Paragraph(
+                f"<i>Contexto clínico registrado (no ponderado en el cálculo):</i> {ctx}",
+                self._style_td_note,
+            ))
+
         elems.append(Spacer(1, 0.15*cm))
         elems.append(Paragraph(
             "(*) Recomendación generada por algoritmo de soporte de decisión basado en "
@@ -708,6 +790,19 @@ class ReportGenerator:
             self._style_td_disclaimer,
         ))
         return elems
+
+    def _clinical_context_text(self) -> str:
+        """Age / surgical comorbidity as a sentence, or "" when neither is known."""
+        c = self._data.clinical
+        parts: list[str] = []
+        age = c.get("patient_age")
+        if age:
+            parts.append(f"{age} años")
+        if c.get("has_comorbidities") is True:
+            parts.append("con comorbilidad quirúrgica")
+        elif c.get("has_comorbidities") is False and parts:
+            parts.append("sin comorbilidad quirúrgica reseñada")
+        return ", ".join(parts) + "." if parts else ""
 
     def _section_clips(self) -> list:
         clips = self._data.clips
@@ -788,6 +883,49 @@ class ReportGenerator:
         elems.append(tbl)
         return elems
 
+    def _section_stent(self) -> list:
+        st = self._data.stent
+        if st is None:
+            return []
+
+        # The two planners report different quantities under `coverage_pct`;
+        # labelling them identically would misread a 101 % fit ratio as neck
+        # coverage. See StentEntry.
+        if st.kind == "centerline":
+            title        = "Stent guiado por línea central"
+            length_label = "Longitud desplegada"
+            cov_label    = "Cobertura (Ø stent / Ø vaso)"
+            cov_value    = f"{st.coverage_pct / 100.0:.2f}"
+            cov_ref      = "0.90 – 1.15 = buen ajuste"
+        else:
+            title        = "Stent / desviador de flujo planificado"
+            length_label = "Longitud nominal"
+            cov_label    = "Cobertura del cuello"
+            cov_value    = f"{st.coverage_pct:.1f} %"
+            cov_ref      = "≥ 30 % recomendado"
+
+        elems = [Paragraph(title, self._style_h2)]
+        rows = [
+            ["Modelo",        st.name,                        "—"],
+            ["Fabricante",    st.manufacturer or "—",         "—"],
+            ["Diámetro nominal", f"{st.diameter_mm:.2f} mm",  "—"],
+            [length_label,    f"{st.length_mm:.1f} mm",       "—"],
+            [cov_label,       cov_value,                      cov_ref],
+        ]
+        tbl = Table(rows, colWidths=[5.5*cm, 4.0*cm, 8.4*cm])
+        ts  = TableStyle([
+            ("BACKGROUND",    (0, 0), (0, -1), self._GREY_LIGHT),
+            ("FONTNAME",      (0, 0), (0, -1), "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, -1), 8.5),
+            ("GRID",          (0, 0), (-1, -1), 0.4, self._GREY_MED),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING",    (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ])
+        tbl.setStyle(ts)
+        elems.append(tbl)
+        return elems
+
     def _section_trajectory(self) -> list:
         tr = self._data.trajectory
         if not tr:
@@ -840,6 +978,76 @@ class ReportGenerator:
         elems.append(Paragraph(f"RIESGO: {risk.upper()}", style))
         elems.append(Spacer(1, 0.1*cm))
         elems.append(Paragraph(detail, self._style_body))
+        return elems
+
+    _PHASES_POP  = {"other": "Otra población", "japan": "Japón", "finland": "Finlandia"}
+    _PHASES_SITE = {"ica": "ACI (carótida interna)", "mca": "ACM (cerebral media)",
+                    "aca_pcom_posterior": "ACA / ACoP / Posterior"}
+    _PHASES_BAND = {"low": "Riesgo bajo", "moderate": "Riesgo moderado",
+                    "high": "Riesgo alto"}
+
+    def _section_phases(self) -> list:
+        ph = self._data.phases
+        if not ph:
+            return []
+
+        band  = str(ph.get("risk_band", "low"))
+        pts   = ph.get("points", {}) or {}
+        inp   = ph.get("inputs", {}) or {}
+        style = {"high": self._style_risk_high, "moderate": self._style_risk_mod}.get(
+            band, self._style_risk_low
+        )
+
+        elems = [Paragraph("PHASES — riesgo de rotura a 5 años", self._style_h2)]
+        elems.append(Paragraph(
+            f"PHASES {ph.get('total_score', 0)} — "
+            f"{float(ph.get('risk_5yr_pct', 0.0)):.1f} % · "
+            f"{self._PHASES_BAND.get(band, band)}",
+            style,
+        ))
+        elems.append(Spacer(1, 0.1*cm))
+
+        # The inputs are printed next to their points so the score is auditable:
+        # size auto-fills from the morphometry and can be re-measured later.
+        rows = [
+            ["Factor", "Valor introducido", "Pts"],
+            ["Población (P)",      self._PHASES_POP.get(str(inp.get("population", "")), "—"),
+             f"+{pts.get('population', 0)}"],
+            ["Hipertensión (H)",   "Sí" if inp.get("hypertension") else "No",
+             f"+{pts.get('hypertension', 0)}"],
+            ["Edad (A)",           f"{inp.get('age_years', '—')} años",
+             f"+{pts.get('age', 0)}"],
+            ["Tamaño (S)",         f"{float(inp.get('size_mm', 0.0)):.1f} mm",
+             f"+{pts.get('size', 0)}"],
+            ["HSA previa (E)",     "Sí" if inp.get("earlier_sah") else "No",
+             f"+{pts.get('sah', 0)}"],
+            ["Localización (S)",   self._PHASES_SITE.get(str(inp.get("site", "")), "—"),
+             f"+{pts.get('site', 0)}"],
+        ]
+        tbl = Table(rows, colWidths=[5.5*cm, 8.4*cm, 4.0*cm])
+        ts  = TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), self._BLUE_DARK),
+            ("TEXTCOLOR",  (0, 0), (-1, 0), colors.white),
+            ("FONTNAME",   (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE",   (0, 0), (-1, -1), 8),
+            ("GRID",       (0, 0), (-1, -1), 0.4, self._GREY_MED),
+            ("VALIGN",     (0, 0), (-1, -1), "MIDDLE"),
+            ("ALIGN",      (2, 0), (2, -1), "CENTER"),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ])
+        for i in range(1, len(rows)):
+            ts.add("BACKGROUND", (0, i), (-1, i),
+                   colors.white if i % 2 else self._GREY_LIGHT)
+        tbl.setStyle(ts)
+        elems.append(tbl)
+        elems.append(Spacer(1, 0.1*cm))
+        elems.append(Paragraph(
+            "(*) PHASES (Greving et al., <i>Lancet Neurology</i> 2014) estima el riesgo "
+            "de rotura a 5 años de un aneurisma <b>no roto</b>; no es aplicable a un "
+            "aneurisma ya roto ni sustituye el juicio clínico.",
+            self._style_td_disclaimer,
+        ))
         return elems
 
     def _section_notes(self) -> list:

@@ -75,4 +75,12 @@ async def compute_treatment_decision(
     ]
     write_state(req.session_id, "treatment.factors_json", json.dumps(factors_for_json))
 
+    # Clinical context the engine does NOT score (see TreatmentDecisionRequest):
+    # persisted so the report can print it alongside the recommendation, which
+    # is where it actually matters — the multidisciplinary discussion.
+    write_state(req.session_id, "clinical.patient_age",
+                "" if req.patient_age is None else str(req.patient_age))
+    write_state(req.session_id, "clinical.has_comorbidities",
+                "1" if req.has_comorbidities else "0")
+
     return TreatmentDecisionResult(**result)

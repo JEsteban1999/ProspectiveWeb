@@ -50,12 +50,24 @@ class TreatmentDecisionRequest(BaseModel):
     is_ruptured: bool = Field(
         False, description="True if the aneurysm is acutely ruptured (SAH)"
     )
+    # Recorded context, NOT scored. The engine is an 8-factor port of the
+    # desktop app (ISAT 2002 / BRAT 2013 / AHA-ASA 2015), and those references
+    # establish the *direction* of age and comorbidity but no point weight.
+    # Inventing one would be indistinguishable from the sourced thresholds, so
+    # both fields are stored and printed in the report instead of scored.
     patient_age: int | None = Field(
         None, ge=0, le=120,
-        description="Patient age in years — older patients may favour endovascular",
+        description=(
+            "Patient age in years. Clinical context only — recorded in the report, "
+            "not weighted by the decision engine."
+        ),
     )
     has_comorbidities: bool = Field(
-        False, description="True if significant surgical comorbidities are present"
+        False,
+        description=(
+            "True if significant surgical comorbidities are present. Clinical "
+            "context only — recorded in the report, not weighted by the engine."
+        ),
     )
 
 

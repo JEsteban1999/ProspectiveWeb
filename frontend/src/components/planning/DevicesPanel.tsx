@@ -28,20 +28,30 @@ import { usePlanning } from "../../store/planning";
 const TABS = ["Clips", "Coils", "Stents", "Stent CL"] as const;
 const ORIGIN: Position3D = { x: 0, y: 0, z: 0 };
 
-/** Approximate neck placement from morphometry: neck ≈ centroid − axis·(dome/2),
-    with the principal axis as the neck-plane normal. Puts a clip/stent across
-    the neck (not inside the dome, which would always collide). */
+/** Where to place a clip/stent: the neck centre the backend measured, with the
+    principal axis as the neck-plane normal.
+
+    The backend already knows this point exactly (it is the same one the
+    perforator analysis uses). Approximating it here as centroid − axis·(dome/2)
+    landed on the parent vessel instead — 0 % neck coverage — and collapsed onto
+    the centroid, inside the dome, whenever the dome height was not measured.
+    The approximation survives only as a fallback for older sessions whose
+    morphometry predates `neck_origin`. */
 function neckPlacement(m: MorphometryResult | null): { position: Position3D; normal: number[] } {
-  const c = m?.centroid;
   const ax = m?.principal_axis;
+  const normal = ax && ax.length === 3 ? ax : [0, 0, 1];
+
+  if (m?.neck_origin) return { position: { ...m.neck_origin }, normal };
+
+  const c = m?.centroid;
   const dh = m?.dome_height_mm ?? 0;
   if (c && ax && ax.length === 3) {
     return {
       position: { x: c.x - (ax[0] * dh) / 2, y: c.y - (ax[1] * dh) / 2, z: c.z - (ax[2] * dh) / 2 },
-      normal: ax,
+      normal,
     };
   }
-  return { position: ORIGIN, normal: [0, 0, 1] };
+  return { position: ORIGIN, normal };
 }
 
 /* ── Clips ─────────────────────────────────────────────────────────────── */

@@ -26,13 +26,26 @@ function ScoreBar({ label, pct, fill }: { label: string; pct: number; fill: stri
   );
 }
 
+/** Whole years from an ISO date of birth to today ("" when unknown/invalid). */
+function ageFromDob(dob?: string | null): string {
+  if (!dob) return "";
+  const born = new Date(dob);
+  if (Number.isNaN(born.getTime())) return "";
+  const today = new Date();
+  let years = today.getFullYear() - born.getFullYear();
+  const m = today.getMonth() - born.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < born.getDate())) years -= 1;
+  return years >= 0 && years <= 120 ? String(years) : "";
+}
+
 export function TreatmentPanel({ onNext }: { onNext: () => void }) {
   const planning = usePlanning();
-  const { sessionId, treatment } = planning;
+  const { sessionId, treatment, patient } = planning;
 
   const [location, setLocation] = useState<AneurysmLocation>(ANEURYSM_LOCATIONS[0]);
   const [ruptured, setRuptured] = useState(false);
-  const [age, setAge] = useState<string>("");
+  // Pre-filled from the patient record — no reason to re-type what we know.
+  const [age, setAge] = useState<string>(() => ageFromDob(patient?.dob));
   const [comorbid, setComorbid] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,12 +93,23 @@ export function TreatmentPanel({ onNext }: { onNext: () => void }) {
           onChange={(e) => setRuptured(e.target.value === "si")}
         />
       </div>
+      <SectionLabel style={{ marginTop: 14 }}>Contexto clínico</SectionLabel>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "end" }}>
         <Input label="Edad del paciente" type="number" min={0} max={120} placeholder="—" value={age} onChange={(e) => setAge(e.target.value)} />
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--foreground)", height: "var(--control-md)", cursor: "pointer" }}>
           <input type="checkbox" checked={comorbid} onChange={(e) => setComorbid(e.target.checked)} />
           Comorbilidad quirúrgica
         </label>
+      </div>
+      {/* These two are recorded, not scored — saying so prevents reading the
+          recommendation as if it had already accounted for them. */}
+      <div style={{ display: "flex", gap: 6, marginTop: 6, fontSize: 11, color: "var(--muted-foreground)", lineHeight: 1.45 }}>
+        <Icon name="INFO" size={13} color="var(--muted-foreground)" />
+        <span>
+          No se ponderan en el cálculo: la evidencia citada (ISAT, AHA/ASA) fija su
+          dirección pero no una puntuación. Se registran y aparecen en el informe
+          junto a la recomendación.
+        </span>
       </div>
 
       <Button style={{ marginTop: 14, width: "100%" }} variant={t ? "outline" : "default"} onClick={() => void run()} disabled={busy || !sessionId}>

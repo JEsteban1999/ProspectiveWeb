@@ -8,6 +8,7 @@ Uses synthetic VTK meshes so it runs without the DICOM corpus:
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import vtk
 
 from services.morphometrics import MorphometricAnalyzer
@@ -164,3 +165,136 @@ def test_volumetric_isolation_is_watertight_with_valid_neck():
     assert mr.reliable is True
     assert mr.volume_mm3 > 0.0
     assert mr.max_diameter_mm > 6.0                    # ≈ sphere Ø 8 mm
+
+
+# ── Tier 2 persistence: the manual plane must survive re-measure + restore ── #
+
+def _session_with_synthetic_tree():
+    """A live session holding the sphere-on-cylinder tree + a candidate cap."""
+    from fastapi.testclient import TestClient
+    from main import app
+    from services.sessions import create_session, session_subdir, write_state
+    from services.segmentation import write_vtp
+
+    sid = create_session()
+    meshes = session_subdir(sid, "meshes")
+    write_vtp(_vessel_tree(), meshes / "vessel_tree.vtp")
+    write_vtp(_open_cap(), meshes / "cand_001.vtp")     # detector output: open cap
+    write_state(sid, "detect.best_vtp_name", "cand_001.vtp")
+    return TestClient(app, raise_server_exceptions=True), sid
+
+
+_NECK_PLANE_BODY = {
+    "origin":    {"x": 0.0, "y": 3.0, "z": 0.0},
+    "normal":    [0.0, 1.0, 0.0],
+    "dome_seed": {"x": 0.0, "y": 7.0, "z": 0.0},
+}
+
+
+def test_manual_neck_plane_is_persisted_and_replayed_by_get_morphometry():
+    """GET /morphometry must not silently downgrade a manual measurement.
+
+    Regression: the automatic analysis of the detector cap is unreliable
+    (neck 0), so re-running it — which is exactly what «Reanudar» does —
+    used to wipe the clinician's closed-sac measurement.
+    """
+    from services.sessions import read_state
+
+    client, sid = _session_with_synthetic_tree()
+
+    auto = client.get(f"/api/morphometry/{sid}").json()
+    assert auto["neck_source"] == "auto"
+    assert auto["reliable"] is False                  # open cap → degenerate
+
+    manual = client.post(f"/api/morphometry/{sid}/neck-plane", json=_NECK_PLANE_BODY)
+    assert manual.status_code == 200, manual.text
+    manual = manual.json()
+    assert manual["neck_source"] == "manual"
+    assert manual["reliable"] is True
+    assert 2.0 < manual["neck_mm"] < 4.0
+
+    # The plane itself is on record, not just the numbers it produced.
+    assert read_state(sid, "morpho.neck_source") == "manual"
+    assert float(read_state(sid, "morpho.plane_origin_y")) == 3.0
+    assert float(read_state(sid, "morpho.plane_normal_y")) == 1.0
+    assert float(read_state(sid, "morpho.plane_seed_y")) == 7.0
+
+    # Re-measuring the session replays the plane instead of falling back.
+    again = client.get(f"/api/morphometry/{sid}").json()
+    assert again["neck_source"] == "manual"
+    assert again["reliable"] is True
+    assert again["neck_mm"] == manual["neck_mm"]
+    assert again["max_diameter_mm"] == manual["max_diameter_mm"]
+
+
+def test_manual_neck_plane_survives_save_and_restore():
+    """Save → restore (the «Reanudar» path) must come back with the manual sac."""
+    from services.sessions import rehydrate_session, snapshot_session
+
+    client, sid = _session_with_synthetic_tree()
+    manual = client.post(f"/api/morphometry/{sid}/neck-plane", json=_NECK_PLANE_BODY).json()
+
+    snapshot_session(sid)
+    restored = rehydrate_session(sid)
+
+    after = client.get(f"/api/morphometry/{restored}").json()
+    assert after["neck_source"] == "manual"
+    assert after["reliable"] is True
+    assert after["neck_mm"] == manual["neck_mm"]
+    assert after["volume_mm3"] == manual["volume_mm3"]
+
+
+def test_morphometry_persists_every_field_the_report_reads():
+    """The PDF/DICOM-SR read morphometry from session state, not from the API.
+
+    Regression: `surface_area_mm2` and `compactness` were never written, so the
+    report silently printed «0.00 mm²» and «0.000» — next to a "1.0 = esfera
+    perfecta" reference — while the UI showed the real values.
+    """
+    from services.report_generator import build_report_data_from_session
+
+    client, sid = _session_with_synthetic_tree()
+    api = client.post(f"/api/morphometry/{sid}/neck-plane", json=_NECK_PLANE_BODY).json()
+
+    morpho = build_report_data_from_session(session_id=sid).morphometrics
+    for field in (
+        "volume_mm3", "surface_area_mm2", "max_diameter_mm", "neck_diameter_mm",
+        "dome_height_mm", "dome_to_neck_ratio", "aspect_ratio", "compactness",
+    ):
+        assert morpho[field] > 0.0, f"el informe leería {field} como 0"
+
+    # …and the numbers must be the ones the clinician saw on screen.
+    assert morpho["surface_area_mm2"] == pytest.approx(api["surface_area_mm2"], abs=0.01)
+    assert morpho["compactness"] == pytest.approx(api["compactness"], abs=1e-4)
+    assert 0.0 <= morpho["compactness"] <= 1.0     # PDF prints it as "1.0 = esfera"
+
+
+def test_neck_origin_is_exposed_and_sits_on_the_neck_plane():
+    """Device planning needs the neck centre, and must not re-derive it.
+
+    Regression: the API exposed only `centroid` and `principal_axis`, so the
+    frontend approximated the neck as centroid − axis·(dome/2). That landed on
+    the parent vessel (0 % neck coverage) and collapsed onto the centroid —
+    inside the dome — whenever the dome height was not measured.
+    """
+    from services.sessions import read_state
+
+    client, sid = _session_with_synthetic_tree()
+
+    # Automatic run: still has to publish a neck origin for the planners.
+    auto = client.get(f"/api/morphometry/{sid}").json()
+    assert auto["neck_origin"] is not None
+
+    manual = client.post(f"/api/morphometry/{sid}/neck-plane", json=_NECK_PLANE_BODY).json()
+    no = manual["neck_origin"]
+    assert no is not None
+
+    # Same point the perforator analysis uses — one source of truth.
+    assert no["x"] == pytest.approx(float(read_state(sid, "morpho.neck_origin_x")), abs=1e-6)
+    assert no["y"] == pytest.approx(float(read_state(sid, "morpho.neck_origin_y")), abs=1e-6)
+    assert no["z"] == pytest.approx(float(read_state(sid, "morpho.neck_origin_z")), abs=1e-6)
+
+    # The neck plane sits at y = 3 with normal +Y (see _NECK_PLANE_BODY), so a
+    # point *on the neck* projects onto the plane, not up inside the dome.
+    assert no["y"] == pytest.approx(3.0, abs=1.5), \
+        f"el punto de colocación no cae en el plano del cuello: {no}"

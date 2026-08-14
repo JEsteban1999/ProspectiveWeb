@@ -186,6 +186,69 @@ class TestTreatmentDecision:
         )
         assert read_state(sid, "treatment.factors_json") != ""
 
+    def test_age_and_comorbidity_are_recorded_but_never_scored(self):
+        """They are clinical context, not factors.
+
+        Regression: both fields were accepted by the API and shown in the UI
+        while `compute_decision()` never received them, so a clinician could
+        enter «85 años, con comorbilidad» and read a recommendation that had
+        silently ignored it. They must now change nothing in the score and be
+        persisted for the report instead.
+        """
+        from services.sessions import read_state
+        from services.treatment import LOCATIONS
+
+        sid = _make_session()
+        base = client.post(self._URL, json={
+            "session_id": sid, "location": LOCATIONS[1], "is_ruptured": False,
+        }).json()
+
+        sid2 = _make_session()
+        ctx = client.post(self._URL, json={
+            "session_id": sid2, "location": LOCATIONS[1], "is_ruptured": False,
+            "patient_age": 85, "has_comorbidities": True,
+        }).json()
+
+        # Same score, same recommendation, no extra factor.
+        assert ctx["clip_pct"] == base["clip_pct"]
+        assert ctx["endo_pct"] == base["endo_pct"]
+        assert ctx["recommendation_key"] == base["recommendation_key"]
+        assert len(ctx["factors"]) == len(base["factors"])
+        names = " ".join(f["name"].lower() for f in ctx["factors"])
+        assert "edad" not in names and "comorbil" not in names
+
+        # …but recorded, so the report can print them.
+        assert read_state(sid2, "clinical.patient_age") == "85"
+        assert read_state(sid2, "clinical.has_comorbidities") == "1"
+
+    def test_clinical_context_reaches_the_report(self):
+        from services.report_generator import build_report_data_from_session, ReportGenerator
+        from services.treatment import LOCATIONS
+
+        sid = _make_session()
+        client.post(self._URL, json={
+            "session_id": sid, "location": LOCATIONS[1],
+            "patient_age": 72, "has_comorbidities": True,
+        })
+
+        data = build_report_data_from_session(sid)
+        assert data.clinical["patient_age"] == 72
+        assert data.clinical["has_comorbidities"] is True
+
+        gen = ReportGenerator(data)
+        assert gen._clinical_context_text() == "72 años, con comorbilidad quirúrgica."
+        texts = [f.text for f in gen._build_story() if hasattr(f, "text")]
+        assert any("no ponderado" in t and "72 años" in t for t in texts),             "el contexto clínico no llega al informe"
+
+    def test_clinical_context_omitted_when_unknown(self):
+        from services.report_generator import build_report_data_from_session, ReportGenerator
+        from services.treatment import LOCATIONS
+
+        sid = _make_session()
+        client.post(self._URL, json={"session_id": sid, "location": LOCATIONS[1]})
+        gen = ReportGenerator(build_report_data_from_session(sid))
+        assert gen._clinical_context_text() == ""
+
     def test_all_locations_accepted(self):
         """Every valid AneurysmLocation enum value must return 200."""
         from services.treatment import LOCATIONS

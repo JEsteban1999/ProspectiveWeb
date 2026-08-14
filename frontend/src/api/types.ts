@@ -78,6 +78,8 @@ export type PhasesPopulation = "other" | "japan" | "finland";
 export type PhasesSite = "ica" | "mca" | "aca_pcom_posterior";
 
 export interface PhasesRequest {
+  /** Records the score in the session so it reaches the report and the DICOM SR. */
+  session_id?: string | null;
   population: PhasesPopulation;
   hypertension: boolean;
   age_years: number;
@@ -509,6 +511,8 @@ export interface MorphometryResult {
   warning: string | null;
   centroid: Position3D | null;
   principal_axis: number[] | null;
+  /** Centre of the neck — where a clip/stent goes. Do not re-derive it. */
+  neck_origin: Position3D | null;
 }
 
 /** User-defined neck plane for semi-automatic closed-sac morphometry. */
@@ -742,6 +746,8 @@ export interface SessionRestoreResult {
   study_label: string;
   imaging_study_id: number | null;  // acquisition being analysed
   series: SeriesInfo | null;        // so step 1 shows the restored series
+  centerline_mesh_url: string;      // "" when the session had no centreline
+  centerline_arc_mm: number;
 }
 
 /* ── longitudinal ──────────────────────────────────────────────────────── */

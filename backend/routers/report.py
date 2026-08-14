@@ -171,11 +171,30 @@ async def generate_dicom_sr(
             "study_date":        data.patient.study_date,
             "study_description": "PROSPECTIVE Surgical Plan",
         }
+        # The SR builder already models clip/coil/stent containers, but nothing
+        # was feeding them — the planned devices only existed in the PDF.
+        stent = data.stent
         gen = DicomSRGenerator(
             series_meta   = series_meta,
             morphometrics = data.morphometrics,
             risk_label    = data.risk_label,
             trajectory    = data.trajectory or None,
+            clips = [
+                {"name": c.name, "is_custom": c.is_custom, "position_mm": c.position_mm}
+                for c in data.clips
+            ] or None,
+            coils = [
+                {"name": c.name, "coil_type": c.coil_type, "diameter_mm": c.diameter_mm}
+                for c in data.coils
+            ] or None,
+            phases = data.phases or None,
+            stents = [{
+                "name":        stent.name,
+                "stent_type":  "Guiado por línea central" if stent.kind == "centerline"
+                               else "Recto / catálogo",
+                "diameter_mm": stent.diameter_mm,
+                "length_mm":   stent.length_mm,
+            }] if stent is not None else None,
         )
         out_dir = session_subdir(req.session_id, "reports")
         return gen.generate(out_dir / f"{req.session_id}_sr.dcm")

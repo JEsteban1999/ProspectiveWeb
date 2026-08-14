@@ -103,6 +103,13 @@ function Router() {
           voxel_fraction: null, strategy: "restaurada", is_dsa: false,
         });
       }
+      // The centreline geometry comes back with the snapshot; without this the
+      // store stays empty and the centreline-guided stent asks to extract one
+      // that already exists (a ~30 s recomputation for nothing).
+      if (r.centerline_mesh_url) {
+        planning.setCenterlineMesh(r.centerline_mesh_url);
+        planning.setCenterlineArcMm(r.centerline_arc_mm || null);
+      }
       // Replay downstream so the saved step shows its results (deterministic on
       // the restored mesh). Failures are non-fatal — the user can re-run a step.
       if (r.current_step >= 2) {

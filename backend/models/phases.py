@@ -15,6 +15,14 @@ Site = Literal["ica", "mca", "aca_pcom_posterior"]
 class PhasesRequest(BaseModel):
     """Clinical inputs for the PHASES score. Size auto-fills from morphometry."""
 
+    session_id: str | None = Field(
+        None,
+        description=(
+            "Planning session to record the score in. When given, the result and "
+            "the inputs it was computed from are persisted so the score reaches "
+            "the PDF report and the DICOM SR. Omit for a throw-away calculation."
+        ),
+    )
     population: Population = Field("other", description="Patient population")
     hypertension: bool = Field(False, description="History of hypertension")
     age_years: int = Field(60, ge=0, le=120, description="Patient age in years")

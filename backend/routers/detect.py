@@ -35,6 +35,11 @@ _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="det-worker")
 _XA_MODALITIES = {"XA", "RF", "DX", "CR", "DR"}
 
 
+def _clamp01(v: float) -> float:
+    """Clamp a shape index to the [0, 1] the API contract (and the PDF) assume."""
+    return min(1.0, max(0.0, v))
+
+
 def _detector_for_modality(modality: str) -> AneurysmDetector:
     """Build the detector with the desktop app's modality preset.
 
@@ -225,6 +230,11 @@ async def get_morphometry(session_id: str) -> MorphometryResult:
             detail=f"Candidate mesh '{best_vtp_name}' not found on disk. Re-run detection.",
         )
 
+    # A neck plane the user defined earlier is sticky: re-measuring the session
+    # (e.g. after «Reanudar», which replays this endpoint) must reproduce the
+    # manual closed-sac result, not fall back to the unreliable automatic one.
+    saved_plane = _read_saved_neck_plane(session_id)
+
     loop = asyncio.get_event_loop()
     try:
         result = await loop.run_in_executor(
@@ -233,15 +243,56 @@ async def get_morphometry(session_id: str) -> MorphometryResult:
                 _run_morphometry_sync,
                 session_id=session_id,
                 vtp_path=vtp_path,
+                neck_plane=saved_plane,
             ),
         )
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if saved_plane is None:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        # The stored plane no longer isolates a sac (mesh re-segmented, say).
+        # Keep it on record — the user may just need to re-mark — but answer
+        # with the automatic analysis instead of failing the whole step.
+        logger.warning("Stored neck plane no longer valid for %s (%s) — using auto",
+                       session_id, exc)
+        result = await loop.run_in_executor(
+            _executor,
+            partial(_run_morphometry_sync, session_id=session_id, vtp_path=vtp_path),
+        )
     except Exception as exc:
         logger.error("Morphometry failed for session %s: %s", session_id, exc, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Morphometry error: {exc}") from exc
 
     return result
+
+
+def _read_saved_neck_plane(session_id: str) -> NeckPlaneRequest | None:
+    """Rebuild the user's neck plane from session state, or None if never set.
+
+    Written by `_run_morphometry_sync` on every manual (Tier-2) run and copied
+    verbatim into session snapshots, so it survives save → restore.
+    """
+    def _f(key: str) -> float | None:
+        raw = read_state(session_id, key, "")
+        try:
+            return float(raw) if raw != "" else None
+        except ValueError:
+            return None
+
+    ox, oy, oz = _f("morpho.plane_origin_x"), _f("morpho.plane_origin_y"), _f("morpho.plane_origin_z")
+    nx, ny, nz = _f("morpho.plane_normal_x"), _f("morpho.plane_normal_y"), _f("morpho.plane_normal_z")
+    if None in (ox, oy, oz, nx, ny, nz):
+        return None
+    if nx == 0.0 and ny == 0.0 and nz == 0.0:
+        return None
+
+    sx, sy, sz = _f("morpho.plane_seed_x"), _f("morpho.plane_seed_y"), _f("morpho.plane_seed_z")
+    seed = None if None in (sx, sy, sz) else Position3D(x=sx, y=sy, z=sz)
+
+    return NeckPlaneRequest(
+        origin=Position3D(x=ox, y=oy, z=oz),
+        normal=[nx, ny, nz],
+        dome_seed=seed,
+    )
 
 
 @router.post(
@@ -374,6 +425,20 @@ def _run_morphometry_sync(
         poly        = sac_mesh
         plane_arg   = (origin, normal, neck_diam)
         neck_source = "manual"
+
+        # Persist the plane ITSELF (not just the numbers it produced) so the
+        # measurement is reproducible: GET /morphometry replays it, which is
+        # what makes a restored session come back with the manual sac instead
+        # of the unreliable automatic cap.
+        write_state(session_id, "morpho.plane_origin_x", str(origin[0]))
+        write_state(session_id, "morpho.plane_origin_y", str(origin[1]))
+        write_state(session_id, "morpho.plane_origin_z", str(origin[2]))
+        write_state(session_id, "morpho.plane_normal_x", str(normal[0]))
+        write_state(session_id, "morpho.plane_normal_y", str(normal[1]))
+        write_state(session_id, "morpho.plane_normal_z", str(normal[2]))
+        write_state(session_id, "morpho.plane_seed_x",   str(seed[0]))
+        write_state(session_id, "morpho.plane_seed_y",   str(seed[1]))
+        write_state(session_id, "morpho.plane_seed_z",   str(seed[2]))
     else:
         poly = read_vtp(vtp_path)
 
@@ -411,16 +476,24 @@ def _run_morphometry_sync(
     write_state(session_id, "morpho.axis_y", str(axis[1]))
     write_state(session_id, "morpho.axis_z", str(axis[2]))
 
-    # ── Persist key morphometry for longitudinal comparison ───────────── #
-    write_state(session_id, "morpho.max_diameter_mm", str(mr.max_diameter_mm))
-    write_state(session_id, "morpho.neck_mm",         str(mr.neck_diameter_mm))
-    write_state(session_id, "morpho.dome_height_mm",  str(mr.dome_height_mm))
-    write_state(session_id, "morpho.volume_mm3",      str(mr.volume_mm3))
-    write_state(session_id, "morpho.ar",              str(mr.aspect_ratio))
-    write_state(session_id, "morpho.dnr",             str(mr.dome_to_neck_ratio))
-    write_state(session_id, "morpho.bf",              str(mr.bottleneck_factor))
-    write_state(session_id, "morpho.ui",              str(mr.undulation_index))
-    write_state(session_id, "morpho.rupture_risk",    mr.rupture_risk_label)
+    # ── Persist key morphometry ───────────────────────────────────────── #
+    # Consumed by the longitudinal comparison, the treatment engine and the
+    # report/DICOM-SR builders — every field those read must be written here,
+    # or it silently renders as 0 in the PDF.
+    write_state(session_id, "morpho.max_diameter_mm",  str(mr.max_diameter_mm))
+    write_state(session_id, "morpho.neck_mm",          str(mr.neck_diameter_mm))
+    write_state(session_id, "morpho.dome_height_mm",   str(mr.dome_height_mm))
+    write_state(session_id, "morpho.volume_mm3",       str(mr.volume_mm3))
+    write_state(session_id, "morpho.surface_area_mm2", str(mr.surface_area_mm2))
+    write_state(session_id, "morpho.ar",               str(mr.aspect_ratio))
+    write_state(session_id, "morpho.dnr",              str(mr.dome_to_neck_ratio))
+    write_state(session_id, "morpho.bf",               str(mr.bottleneck_factor))
+    write_state(session_id, "morpho.ui",               str(mr.undulation_index))
+    # Clamped like the API response: an open mesh can yield sphericity > 1, and
+    # the report prints this against a "1.0 = esfera perfecta" reference.
+    write_state(session_id, "morpho.compactness",      str(_clamp01(mr.compactness)))
+    write_state(session_id, "morpho.rupture_risk",     mr.rupture_risk_label)
+    write_state(session_id, "morpho.neck_source",      neck_source)
 
     # ── Reliability guard (Tier 1) ────────────────────────────────────── #
     # analyze() nulls volume/neck metrics when the mesh is an open patch or the
@@ -442,10 +515,8 @@ def _run_morphometry_sync(
     # Candidate domes are open surface patches, not closed volumes;
     # vtkMassProperties on an open mesh can yield sphericity > 1 or EI < 0.
     # The desktop dataclass shows these raw values; our API contract enforces
-    # [0, 1], so clamp and flag the mesh as unreliable instead of erroring.
-    def _clamp01(v: float) -> float:
-        return min(1.0, max(0.0, v))
-
+    # [0, 1], so clamp (see _clamp01) and flag the mesh as unreliable instead
+    # of erroring.
     indices_out_of_range = (
         not (0.0 <= mr.compactness <= 1.0)
         or not (0.0 <= mr.ellipticity_index <= 1.0)
@@ -485,4 +556,7 @@ def _run_morphometry_sync(
             x=mr.centroid[0], y=mr.centroid[1], z=mr.centroid[2]
         ),
         principal_axis    = list(mr.principal_axis),
+        neck_origin       = Position3D(
+            x=neck_origin[0], y=neck_origin[1], z=neck_origin[2]
+        ),
     )

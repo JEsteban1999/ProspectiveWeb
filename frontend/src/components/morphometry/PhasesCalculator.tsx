@@ -35,7 +35,13 @@ const BAND_LABEL: Record<PhasesResult["risk_band"], string> = {
   low: "Riesgo bajo", moderate: "Riesgo moderado", high: "Riesgo alto",
 };
 
-export function PhasesCalculator({ maxDiameterMm }: { maxDiameterMm: number }) {
+export function PhasesCalculator({
+  maxDiameterMm,
+  sessionId,
+}: {
+  maxDiameterMm: number;
+  sessionId: string | null;
+}) {
   const [population, setPopulation] = useState<PhasesPopulation>("other");
   const [hypertension, setHypertension] = useState(false);
   const [age, setAge] = useState("60");
@@ -51,6 +57,7 @@ export function PhasesCalculator({ maxDiameterMm }: { maxDiameterMm: number }) {
     setError(null);
     try {
       const res = await api.phases({
+        session_id: sessionId,
         population,
         hypertension,
         age_years: Number(age) || 0,

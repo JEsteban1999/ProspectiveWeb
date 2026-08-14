@@ -163,6 +163,14 @@ class MorphometryResult(BaseModel):
     principal_axis: list[float] | None = Field(
         None, description="Principal PCA axis as [x, y, z] unit vector"
     )
+    neck_origin: Position3D | None = Field(
+        None,
+        description=(
+            "Centre of the aneurysm neck in patient space (mm). This is the point "
+            "a clip or stent must be placed on — do not re-derive it from the "
+            "centroid and the dome height, which lands off the neck."
+        ),
+    )
 
 
 class NeckPlaneRequest(BaseModel):

@@ -307,6 +307,42 @@ class TestSessionState:
         assert data["current_step"] == 2
         assert data["label"] == "To restore"
 
+    def test_restore_brings_the_centerline_back(self):
+        """The centreline files travel in the snapshot, so the restore must hand
+        the frontend enough to rehydrate them.
+
+        Regression: it did not, so «Stent CL» kept asking to extract a
+        centreline that was already sitting in the session directory — a ~30 s
+        recomputation for nothing.
+        """
+        import numpy as np
+        from services.sessions import session_subdir
+
+        sid = _make_session()
+        meshes = session_subdir(sid, "meshes")
+        meshes.mkdir(parents=True, exist_ok=True)
+        # A 3-4-5 triangle path: arc = 5 + 5 = 10 mm, chord = 8 mm.
+        pts = np.array([[0, 0, 0], [3, 4, 0], [6, 0, 0]], dtype=np.float32)
+        np.savez(meshes / "centerline_points.npz",
+                 points=pts, radii=np.full(3, 1.5, dtype=np.float32))
+        (meshes / "centerline.vtp").write_bytes(b"<VTKFile/>")
+
+        client.post("/api/sessions/save",
+                    json={"session_id": sid, "label": "With centerline", "current_step": 3})
+        data = client.post(f"/api/sessions/{sid}/restore").json()
+
+        assert data["centerline_mesh_url"], "el frontend no puede rehidratar la línea central"
+        assert "centerline.vtp" in data["centerline_mesh_url"]
+        assert data["centerline_arc_mm"] == pytest.approx(10.0, abs=0.05)
+
+    def test_restore_without_centerline_reports_none(self):
+        sid = _make_session()
+        client.post("/api/sessions/save",
+                    json={"session_id": sid, "label": "No centerline", "current_step": 2})
+        data = client.post(f"/api/sessions/{sid}/restore").json()
+        assert data["centerline_mesh_url"] == ""
+        assert data["centerline_arc_mm"] == 0.0
+
     def test_restore_session_morpho_state(self):
         """Restored session should have morphometry written to session state."""
         sid = _make_session()

@@ -189,7 +189,9 @@ export function MorphometryPanel({ onNext }: { onNext: () => void }) {
                 <Metric label="Ø esfera equivalente" value={m.eq_sphere_diam_mm.toFixed(1)} unit=" mm" />
               </div>
             )}
-            {tab === "PHASES" && <PhasesCalculator maxDiameterMm={m.max_diameter_mm} />}
+            {tab === "PHASES" && (
+              <PhasesCalculator maxDiameterMm={m.max_diameter_mm} sessionId={sessionId} />
+            )}
             {tab === "Seguimiento" && (
               <div>
                 {longi?.growth_alert && (
