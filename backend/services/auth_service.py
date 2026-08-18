@@ -34,7 +34,12 @@ logger = logging.getLogger(__name__)
 ALGORITHM               = "HS256"
 ACCESS_TOKEN_EXPIRE_MIN = 60 * 24   # 24 hours
 
-_SECRET_FILE = Path(__file__).resolve().parents[1] / "data" / "jwt_secret.txt"
+# NEVER under data/: main.py mounts that directory as public StaticFiles, so a
+# secret stored there was downloadable at /data/jwt_secret.txt — enough for
+# anyone to mint a valid admin token. Kept beside the private user_files/ and
+# study_files/ stores instead.
+_SECRET_FILE     = Path(__file__).resolve().parents[1] / "secrets" / "jwt_secret.txt"
+_LEGACY_SECRET_FILE = Path(__file__).resolve().parents[1] / "data" / "jwt_secret.txt"
 
 
 def _load_or_generate_secret() -> str:
@@ -42,8 +47,22 @@ def _load_or_generate_secret() -> str:
         return env
     if _SECRET_FILE.exists():
         return _SECRET_FILE.read_text().strip()
-    key = secrets.token_hex(32)
+
     _SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if _LEGACY_SECRET_FILE.exists():
+        # Migrate the previously public key out of data/ and remove the exposed
+        # copy. Reusing the same value keeps existing tokens and logins valid.
+        key = _LEGACY_SECRET_FILE.read_text().strip()
+        _SECRET_FILE.write_text(key)
+        try:
+            _LEGACY_SECRET_FILE.unlink()
+            logger.warning("Moved JWT secret out of the public data/ directory")
+        except OSError:
+            logger.error("Could not delete the public JWT secret at %s — remove it by hand",
+                         _LEGACY_SECRET_FILE)
+        return key
+
+    key = secrets.token_hex(32)
     _SECRET_FILE.write_text(key)
     logger.info("Generated new JWT secret key at %s", _SECRET_FILE)
     return key

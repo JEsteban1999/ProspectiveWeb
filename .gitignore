@@ -88,3 +88,6 @@ backend/study_files/
 *.vtp
 *.vts
 *.vtk
+
+# JWT signing key — moved out of the public data/ mount (see auth_service.py)
+backend/secrets/

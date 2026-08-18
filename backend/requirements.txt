@@ -12,6 +12,7 @@ SimpleITK>=2.3                  # DICOM loading, morphological operations
 vtk>=9.3                        # Marching Cubes, mesh smoothing, decimation
 pydicom>=2.4                    # DICOM tag extraction
 scipy>=1.12                     # connected-component filtering, gaussian smoothing
+Pillow>=10.0                    # PNG encoding for MPR slices and study thumbnails
 
 # ── Auth & database (Session D) ───────────────────────────────────────────── #
 sqlalchemy>=2.0
@@ -26,3 +27,6 @@ reportlab>=4.0                  # PDF report generation
 pytest>=8.0
 httpx>=0.27                     # async HTTP client for FastAPI TestClient
 pytest-asyncio>=0.23
+
+# ── Optional: S3 study archive (STORAGE_BACKEND=s3) ──────────────────────── #
+# boto3>=1.34                   # only needed when archiving studies to AWS S3
