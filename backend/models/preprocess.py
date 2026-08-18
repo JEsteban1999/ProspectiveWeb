@@ -5,7 +5,14 @@ from pydantic import BaseModel, Field
 
 
 class PreprocessRequest(BaseModel):
-    clip_hu: bool = Field(True, description="Clamp HU outliers to [-1000, 3000]")
+    clip_hu: bool = Field(
+        True,
+        description=(
+            "Clamp HU outliers to [-1000, 3000]. Ignored on modalities that are "
+            "not in Hounsfield units (XA/3DRA, MRA), where the same clamp would "
+            "flatten the contrast column instead of removing outliers."
+        ),
+    )
     resample_isotropic: bool = Field(False, description="Resample to cubic voxels")
     target_spacing_mm: float = Field(0.5, ge=0.2, le=2.0, description="Isotropic voxel size (mm)")
     smooth: bool = Field(False, description="Mild Gaussian denoising")

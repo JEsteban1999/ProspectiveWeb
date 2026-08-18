@@ -229,3 +229,88 @@ class TestAutoBand:
         b = [0.0] * 6
         m.GetBounds(b)
         assert b[2] > 30 and b[3] < 50          # stayed in the vessel, not the block
+
+
+# ── Regression: grow-from-seeds on standard 512-axis volumes ────────────────── #
+
+def _session_with_thin_vessel(nz=24, ny=512, nx=512) -> str:
+    """Session whose volume holds a 2-voxel-wide bright line — a thin vessel.
+
+    512 on purpose: the old cap (max_axis=400) subsampled exactly this size,
+    which is what made thin vessels fall between samples.
+    """
+    sid = create_session()
+    meshes = session_subdir(sid, "meshes")
+    (session_subdir(sid, "dicom") / "dummy.txt").write_text("x")
+    vol = np.full((nz, ny, nx), -1000.0, dtype=np.float32)
+    vol[10:14, 300:304, 100:400] = 4000.0
+    vol[10:14, 300:304, 240:260] = 9000.0      # brighter core, like contrast
+    np.save(meshes / "_volume.npy", vol)
+    (meshes / "_volume_meta.json").write_text(json.dumps({
+        "shape": [nz, ny, nx], "spacing": [1.0, 1.0, 1.0],
+        "wc": 150.0, "ww": 700.0, "modality": "XA",
+    }))
+    from services.mpr import _downsampled_volume
+    _downsampled_volume.cache_clear()
+    return sid
+
+
+class TestGrowBandRegression:
+    def test_band_always_contains_the_seed_value(self):
+        """ConnectedThreshold yields nothing when the seed sits outside the band.
+
+        Regression: the window was centred on the 75th percentile of the seed's
+        neighbourhood, which for a bright vessel core lands well below the seed
+        itself — the band came back excluding the very voxel it grew from.
+        """
+        from routers.mesh_edit import _band_from_seeds
+
+        vol = np.full((20, 40, 40), -1000.0, dtype=np.float32)
+        vol[10, 20, 18:23] = 3000.0
+        vol[10, 20, 20] = 9000.0            # bright core, the clicked voxel
+        lower, upper = _band_from_seeds(vol, [(10, 20, 20)])
+        assert lower <= 9000.0 <= upper, f"la semilla queda fuera de [{lower}, {upper}]"
+
+    def test_band_is_sampled_at_full_resolution(self):
+        """The band must not be read off a subsampled grid.
+
+        Regression: a thin vessel falls between samples, so the neighbourhood
+        came back as air and the band was computed around background.
+        """
+        from routers.mesh_edit import _band_from_seeds
+        from routers.segment import _maybe_downsample
+
+        # One voxel thick at ODD indices, so a [::2] subsample never samples it.
+        vol = np.full((24, 520, 520), -1000.0, dtype=np.float32)
+        vol[11, 301, 100:400] = 4000.0
+        seed_full = (11, 301, 200)
+
+        lo_full, hi_full = _band_from_seeds(vol, [seed_full])
+        assert lo_full <= 4000.0 <= hi_full, "a resolución completa la banda debe ver el vaso"
+
+        ds, _sp, factor = _maybe_downsample(vol, (1.0, 1.0, 1.0), max_axis=400)
+        assert factor == 2, "el volumen de prueba debe activar el submuestreo antiguo"
+        lo_ds, hi_ds = _band_from_seeds(
+            ds, [(seed_full[0] // 2, seed_full[1] // 2, seed_full[2] // 2)]
+        )
+        assert not (lo_ds <= 4000.0 <= hi_ds), "el caso de prueba ya no reproduce el fallo"
+
+    def test_standard_512_volume_is_not_downsampled(self):
+        from routers.segment import _maybe_downsample
+
+        vol = np.zeros((8, 512, 512), dtype=np.float32)
+        _ds, _sp, factor = _maybe_downsample(vol, (1.0, 1.0, 1.0), max_axis=512)
+        assert factor == 1, "un volumen 512 estándar no debe submuestrearse para el grow"
+
+    def test_grow_endpoint_reaches_a_thin_vessel_on_a_512_volume(self):
+        sid = _session_with_thin_vessel()
+        r = client.post(f"/api/segment/grow/{sid}", json={
+            "seeds": [{"x": 200.0, "y": 301.0, "z": 11.0}],   # world mm, spacing 1
+            "lower": 0.0, "upper": 0.0, "auto_band": True, "smoothing": 3,
+        })
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["vertices"] > 0
+        # The whole 300-voxel-long vessel is connected, so the band has to span
+        # the bright core too — not stop at the value under the click.
+        assert d["n_voxels"] > 500, f"solo creció {d['n_voxels']} vóxeles"

@@ -78,3 +78,63 @@ class TestEndpoint:
     def test_unknown_session_404(self):
         r = client.post("/api/preprocess/nope", json={"clip_hu": True})
         assert r.status_code == 404
+
+
+# ── Regression: the HU clamp is a Hounsfield-only operation ─────────────────── #
+
+def _session_with_xa_volume(nz=24, ny=48, nx=48) -> str:
+    """A 3DRA/XA-like volume: contrast runs far past the CT HU ceiling."""
+    sid = create_session()
+    vol = np.full((nz, ny, nx), -1000.0, dtype=np.float32)
+    vol[10:14, 20:28, 20:28] = 9000.0          # contrast column, way over 3000
+    npy, meta = mprmod._cache_paths(sid)
+    np.save(npy, vol)
+    meta.write_text(json.dumps({
+        "shape": [nz, ny, nx], "spacing": [1.0, 1.0, 1.0],
+        "wc": 150, "ww": 700, "modality": "XA",
+    }))
+    mprmod._downsampled_volume.cache_clear()
+    return sid
+
+
+class TestHuClipIsHounsfieldOnly:
+    """Regression: «Recorte de HU (−1000…3000)» shipped ticked by default and
+    was applied to any modality. On a 3DRA/XA study — where intensities are not
+    Hounsfield units and routinely exceed 3000 — it flattened the whole contrast
+    column to a single value.
+    """
+
+    def test_modality_predicate(self):
+        from services.preprocess import is_hounsfield
+        assert is_hounsfield("CT") and is_hounsfield("cta")
+        assert not is_hounsfield("XA")
+        assert not is_hounsfield("MR")
+        assert not is_hounsfield(None)
+
+    def test_clip_alone_is_rejected_on_xa(self):
+        sid = _session_with_xa_volume()
+        r = client.post(f"/api/preprocess/{sid}", json={"clip_hu": True})
+        assert r.status_code == 422
+        assert "Hounsfield" in r.json()["detail"]
+
+    def test_xa_contrast_survives_when_other_ops_run(self):
+        sid = _session_with_xa_volume()
+        r = client.post(f"/api/preprocess/{sid}", json={"clip_hu": True, "smooth": True})
+        assert r.status_code == 200, r.text
+        assert "omitido" in r.json()["note"]
+
+        npy, _meta = mprmod._cache_paths(sid)
+        mprmod._downsampled_volume.cache_clear()
+        out = np.load(npy)
+        assert out.max() > 3000.0, "el recorte aplanó el contraste de un volumen XA"
+
+    def test_ct_volume_is_still_clipped(self):
+        sid = _session_with_volume()
+        r = client.post(f"/api/preprocess/{sid}", json={"clip_hu": True})
+        assert r.status_code == 200, r.text
+        assert "omitido" not in r.json()["note"]
+
+        npy, _meta = mprmod._cache_paths(sid)
+        mprmod._downsampled_volume.cache_clear()
+        out = np.load(npy)
+        assert out.max() <= 3000.0 and out.min() >= -1000.0

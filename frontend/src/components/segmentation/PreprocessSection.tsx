@@ -10,10 +10,16 @@ import { SectionLabel, ErrorNote } from "../PanelHead";
 import { Slider } from "../Slider";
 import { usePlanning } from "../../store/planning";
 
+/** Modalities whose voxels are true Hounsfield units (mirrors the backend). */
+const HU_MODALITIES = ["CT", "CTA", "CTPA"];
+
 export function PreprocessSection() {
-  const { sessionId, resetDownstream } = usePlanning();
+  const { sessionId, series, resetDownstream } = usePlanning();
+  const isHu = HU_MODALITIES.includes((series?.modality ?? "").trim().toUpperCase());
   const [open, setOpen] = useState(false);
-  const [clip, setClip] = useState(true);
+  // Only offered pre-ticked where it means something: on a 3DRA/XA volume the
+  // HU clamp flattens everything above 3000, which is where the contrast is.
+  const [clip, setClip] = useState(isHu);
   const [iso, setIso] = useState(false);
   const [target, setTarget] = useState(0.5);
   const [smooth, setSmooth] = useState(false);
@@ -55,9 +61,19 @@ export function PreprocessSection() {
           <div style={{ fontSize: 12, color: "var(--muted-foreground)", marginBottom: 10 }}>
             Ajusta el volumen antes de segmentar. Al aplicar se reinicia la segmentación.
           </div>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", marginBottom: 8 }}>
-            <input type="checkbox" checked={clip} onChange={(e) => setClip(e.target.checked)} /> Recorte de HU (−1000…3000)
+          <label
+            title={isHu ? undefined : "Solo aplicable a volúmenes en unidades Hounsfield (TAC)"}
+            style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: isHu ? "pointer" : "not-allowed", marginBottom: isHu ? 8 : 4, opacity: isHu ? 1 : 0.55 }}
+          >
+            <input type="checkbox" checked={clip} disabled={!isHu} onChange={(e) => setClip(e.target.checked)} /> Recorte de HU (−1000…3000)
           </label>
+          {!isHu && (
+            <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginBottom: 8, lineHeight: 1.45 }}>
+              No aplicable a {series?.modality || "esta modalidad"}: sus intensidades no son
+              unidades Hounsfield y el recorte aplanaría todo lo que supere 3000, que es
+              justo donde está el contraste.
+            </div>
+          )}
           <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", marginBottom: iso ? 8 : 8 }}>
             <input type="checkbox" checked={iso} onChange={(e) => setIso(e.target.checked)} /> Remuestreo isotrópico
           </label>

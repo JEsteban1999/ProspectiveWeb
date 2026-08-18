@@ -30,15 +30,29 @@ def _run(session_id: str, req: PreprocessRequest) -> PreprocessResult:
     if not (req.clip_hu or req.resample_isotropic or req.smooth):
         raise ValueError("Selecciona al menos una operación de preprocesamiento.")
 
+    from services.preprocess import is_hounsfield
+
     meta = ensure_volume_cached(session_id)
     # Copy the volume into RAM so we can release the memmap that keeps the .npy
     # file open (Windows forbids overwriting a memory-mapped file).
     volume = np.array(_get_volume(session_id), dtype=np.float32)
     spacing = tuple(float(s) for s in meta["spacing"])  # (sz, sy, sx)
 
+    # The HU clamp is a Hounsfield operation: applying it to a 3DRA/XA volume
+    # silently flattens everything above 3000, which on those studies is where
+    # the contrast column lives. Skip it rather than damage the volume.
+    modality = str(meta.get("modality", "") or "")
+    clip_hu = req.clip_hu and is_hounsfield(modality)
+    clip_skipped = req.clip_hu and not clip_hu
+    if clip_skipped and not (req.resample_isotropic or req.smooth):
+        raise ValueError(
+            f"El recorte de HU no aplica a un volumen {modality or 'no-TAC'}: sus "
+            "intensidades no son unidades Hounsfield. Selecciona otra operación."
+        )
+
     new_vol, new_spacing = preprocess_volume(
         volume, spacing,
-        clip_hu=req.clip_hu,
+        clip_hu=clip_hu,
         resample_isotropic=req.resample_isotropic,
         target_spacing_mm=req.target_spacing_mm,
         smooth=req.smooth,
@@ -68,18 +82,24 @@ def _run(session_id: str, req: PreprocessRequest) -> PreprocessResult:
     meta_path.write_text(json.dumps(new_meta))
 
     ops = []
-    if req.clip_hu:
+    if clip_hu:
         ops.append("recorte HU")
     if req.resample_isotropic:
         ops.append(f"remuestreo isotrópico {req.target_spacing_mm} mm")
     if req.smooth:
         ops.append(f"suavizado σ={req.smooth_sigma}")
+    note = f"Aplicado: {', '.join(ops)}. Vuelve a segmentar para usar el volumen preprocesado."
+    if clip_skipped:
+        note = (
+            f"Recorte de HU omitido: un volumen {modality or 'no-TAC'} no está en "
+            f"unidades Hounsfield. {note}"
+        )
     return PreprocessResult(
         shape_before=[int(x) for x in volume.shape],
         shape_after=[int(x) for x in new_vol.shape],
         spacing_before=[round(float(s), 3) for s in spacing],
         spacing_after=[round(float(s), 3) for s in new_spacing],
-        note=f"Aplicado: {', '.join(ops)}. Vuelve a segmentar para usar el volumen preprocesado.",
+        note=note,
     )
 
 

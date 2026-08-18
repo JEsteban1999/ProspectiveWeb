@@ -38,6 +38,11 @@ interface PlanningState {
   centerlineMesh: string | null;
   /** Total arc length (mm) of the extracted centreline — feeds the cl-stent range sliders. */
   centerlineArcMm: number | null;
+  /** Window/level shared by every MPR view (strip, main preview and oblique).
+      Null until the volume metadata arrives, then seeded from the DICOM. */
+  mprWl: { wc: number; ww: number } | null;
+  /** Crosshair voxel shared by every MPR view, so navigating in one moves all. */
+  mprVoxel: { x: number; y: number; z: number };
   /** Active 3D-pick mode: centreline endpoints, a measurement, or the neck plane. */
   pickMode: PickMode;
   clSource: Vec3 | null;
@@ -84,6 +89,8 @@ interface PlanningState {
   setDeviceMesh: (url: string | null) => void;
   setCenterlineMesh: (url: string | null) => void;
   setCenterlineArcMm: (v: number | null) => void;
+  setMprWl: (w: { wc: number; ww: number } | null) => void;
+  setMprVoxel: (v: { x: number; y: number; z: number }) => void;
   setPickMode: (m: PickMode) => void;
   setClSource: (p: Vec3 | null) => void;
   setClTarget: (p: Vec3 | null) => void;
@@ -139,6 +146,8 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   const [deviceMesh, setDeviceMesh] = useState<string | null>(null);
   const [centerlineMesh, setCenterlineMesh] = useState<string | null>(null);
   const [centerlineArcMm, setCenterlineArcMm] = useState<number | null>(null);
+  const [mprWl, setMprWl] = useState<{ wc: number; ww: number } | null>(null);
+  const [mprVoxel, setMprVoxel] = useState({ x: 0, y: 0, z: 0 });
   const [pickMode, setPickMode] = useState<PickMode>(null);
   const [clSource, setClSource] = useState<Vec3 | null>(null);
   const [clTarget, setClTarget] = useState<Vec3 | null>(null);
@@ -198,11 +207,12 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
       value={{
         patient, caseId, caseLabel, imagingStudyId, sessionId, series, previewBand, previewMeshUrl, segmentation, candidates,
         selectedCandidate, morphometry, treatment, deviceMesh,
-        centerlineMesh, centerlineArcMm, pickMode, clSource, clTarget, neckOrigin, neckDome,
+        centerlineMesh, centerlineArcMm, mprWl, mprVoxel, pickMode, clSource, clTarget, neckOrigin, neckDome,
         measurements, measurePending, growSeeds, mprSeedMode, cropCenter, cropRadius, cropShape, cropInvert, trajEntry, trajTarget, morphoOverlay, captureViewport,
         setPatient, setCase, setImagingStudyId, setSession, setSeries, setPreviewBand, setPreviewMeshUrl, setSegmentation,
         setCandidates, setSelectedCandidate, setMorphometry, setTreatment,
-        setDeviceMesh, setCenterlineMesh, setCenterlineArcMm, setPickMode, setClSource, setClTarget,
+        setDeviceMesh, setCenterlineMesh, setCenterlineArcMm, setMprWl, setMprVoxel,
+        setPickMode, setClSource, setClTarget,
         setNeckOrigin, setNeckDome,
         setMeasurements, setMeasurePending, setGrowSeeds, setMprSeedMode, setCropCenter, setCropRadius, setCropShape, setCropInvert, setTrajEntry, setTrajTarget, setMorphoOverlay,
         setCaptureViewport,

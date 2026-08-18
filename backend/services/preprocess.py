@@ -20,6 +20,16 @@ logger = logging.getLogger(__name__)
 HU_MIN = -1000.0
 HU_MAX = 3000.0
 
+# Modalities whose voxels are true Hounsfield units. Only on those does clamping
+# to [HU_MIN, HU_MAX] mean "drop physically impossible outliers" — a 3DRA/XA
+# reconstruction carries arbitrary intensities that routinely run past 3000, so
+# the same clamp there flattens the contrast column instead of cleaning it.
+HU_MODALITIES = {"CT", "CTA", "CTPA"}
+
+
+def is_hounsfield(modality: str | None) -> bool:
+    return (modality or "").strip().upper() in HU_MODALITIES
+
 
 def preprocess_volume(
     volume: np.ndarray,

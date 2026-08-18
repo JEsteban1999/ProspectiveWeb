@@ -122,13 +122,19 @@ def _band_from_seeds(volume: np.ndarray, seed_voxels: list[tuple[int, int, int]]
     """
     nz, ny, nx = volume.shape
     seed_vals: list[float] = []
+    bright_vals: list[float] = []
+    exact_vals: list[float] = []
     for (z, y, x) in seed_voxels:
+        if not (0 <= z < nz and 0 <= y < ny and 0 <= x < nx):
+            continue
         z0, z1 = max(0, z - 2), min(nz, z + 3)
         y0, y1 = max(0, y - 2), min(ny, y + 3)
         x0, x1 = max(0, x - 2), min(nx, x + 3)
         nb = volume[z0:z1, y0:y1, x0:x1]
         if nb.size:
             seed_vals.append(float(np.percentile(nb, 75)))
+            bright_vals.append(float(nb.max()))
+            exact_vals.append(float(volume[z, y, x]))
     if not seed_vals:
         return 80.0, 600.0
     v_lo = float(np.min(seed_vals))
@@ -136,7 +142,20 @@ def _band_from_seeds(volume: np.ndarray, seed_voxels: list[tuple[int, int, int]]
     center = 0.5 * (v_lo + v_hi)
     spread = max(v_hi - v_lo, abs(center) * 0.35)   # at least ±35% of the value
     lower = v_lo - spread * 0.6
-    upper = v_hi + spread * 0.6
+
+    # Upper bound: the brightest voxel actually seen at the seeds, not a fixed
+    # fraction of the median. Its job is to exclude material BRIGHTER than the
+    # vessel (bone on CT); a bound below the vessel's own core instead chokes
+    # the growth — and on 3DRA/XA, where the contrast column spans a far wider
+    # range than CT HU, it stopped the region at a few hundred voxels.
+    upper = max(v_hi + spread * 0.6, max(bright_vals))
+
+    # ConnectedThreshold returns an EMPTY region unless every seed's own value
+    # is inside the band, so make sure the window brackets the seeds themselves.
+    lo_seed, hi_seed = min(exact_vals), max(exact_vals)
+    pad = max(1.0, 0.05 * max(abs(lo_seed), abs(hi_seed)))
+    lower = min(lower, lo_seed - pad)
+    upper = max(upper, hi_seed + pad)
     return round(lower, 1), round(upper, 1)
 
 
@@ -151,9 +170,11 @@ def _run_grow(session_id: str, meshes_dir: Path, req: GrowRequest) -> GrowResult
 
     # Grow at FULL resolution: thin vessels are only a few voxels wide, so the
     # downsample used for global thresholding would break their connectivity and
-    # drop distal branches. The grown region is small, so this stays fast.
-    # (Cap only very large volumes to keep marching cubes bounded.)
-    seg_volume, seg_spacing, _factor = _maybe_downsample(volume, spacing, max_axis=400)
+    # drop distal branches. The grown region is small, so this stays fast
+    # (measured ~15 s on 198×512×512). The cap is only for volumes bigger than
+    # the 512³ that reconstructions produce — at 400 it fired on every standard
+    # study, which is exactly what this comment says must not happen.
+    seg_volume, seg_spacing, _factor = _maybe_downsample(volume, spacing, max_axis=512)
     sz, sy, sx = seg_spacing
 
     # World (mm) → voxel index. Mesh space has origin 0 and axis-aligned spacing.
@@ -168,9 +189,16 @@ def _run_grow(session_id: str, meshes_dir: Path, req: GrowRequest) -> GrowResult
     # Band: either the user's sliders, or derived from the vessel intensity at the
     # seeds — a narrow window that excludes bone (brighter) and tissue (dimmer),
     # so a single click on a vessel gives a clean tree without tuning thresholds.
+    # Sample it from the FULL-RES volume: on a downsampled grid a thin vessel
+    # falls between samples and the band comes back centred on air.
     lower, upper = req.lower, req.upper
     if req.auto_band:
-        lower, upper = _band_from_seeds(seg_volume, seeds)
+        fz, fy, fx = spacing
+        full_seeds = [
+            (int(round(p.z / fz)), int(round(p.y / fy)), int(round(p.x / fx)))
+            for p in req.seeds
+        ]
+        lower, upper = _band_from_seeds(volume, full_seeds)
 
     result = grow_from_seeds(
         seg_volume, seg_spacing, seeds,

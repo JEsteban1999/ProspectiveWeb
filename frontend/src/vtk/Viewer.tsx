@@ -113,6 +113,7 @@ export function Viewer({ step }: { step: string }) {
     cropRadius, cropShape, cropInvert,
     trajEntry, trajTarget, setTrajEntry, setTrajTarget,
     morphometry, morphoOverlay, setCaptureViewport,
+    mprWl, mprVoxel, setMprWl, setMprVoxel, mprSeedMode,
   } = usePlanning();
 
   // 3D morphometric overlay: neck ring + dome-height & max-diameter spans + apex.
@@ -174,6 +175,11 @@ export function Viewer({ step }: { step: string }) {
       ? candidate.dome_mesh_url
       : undefined;
   const meta = useVolumeMeta(sessionId);
+  // Crosshair for the main axial preview (axial has no Z flip, unlike the
+  // coronal/sagital views in the strip).
+  const mprCrosshair = meta
+    ? { u: fracIdx(meta.shape[2], mprVoxel.x), v: fracIdx(meta.shape[1], mprVoxel.y) }
+    : null;
   const [viewMode, setViewMode] = useState<"default" | "volume" | "oblique">("default");
   // Transient "you clicked outside the mesh" hint — without it a missed pick is
   // silent and the tool feels broken.
@@ -268,13 +274,43 @@ export function Viewer({ step }: { step: string }) {
           <VolumeView sessionId={sessionId} />
         </Suspense>
       ) : viewMode === "oblique" && sessionId && meta ? (
-        <ObliqueMprView sessionId={sessionId} wc={meta.wc} ww={meta.ww} />
+        <ObliqueMprView sessionId={sessionId} wc={mprWl?.wc ?? meta.wc} ww={mprWl?.ww ?? meta.ww} />
       ) : meshVisible ? (
         <Suspense fallback={<ViewerLoading label="Cargando visor 3D…" />}>
           <MeshView layers={layers} markers={markers} lines={lines} cropPreview={cropPreview} pickMode={pickMode !== null} onPick={onPick} onPickMiss={onPickMiss} focusUrl={focusUrl} registerCapture={setCaptureViewport} />
         </Suspense>
       ) : sessionId && meta ? (
-        <MprView sessionId={sessionId} meta={meta} plane="axial" showSlider showPlaneLabel={false} band={previewActive ? previewBand : null} />
+        <MprView
+          sessionId={sessionId} meta={meta} plane="axial" showSlider showPlaneLabel={false}
+          band={previewActive ? previewBand : null}
+          // Same shared state as the strip below: the window preset, the
+          // window/level drag and the crosshair all reach this view too.
+          wc={mprWl?.wc} ww={mprWl?.ww}
+          onWindowLevel={(wc, ww) => setMprWl({ wc, ww })}
+          index={mprVoxel.z}
+          onIndexChange={(z) => setMprVoxel({ ...mprVoxel, z })}
+          crosshair={mprCrosshair}
+          onPlaneClick={(u, v) => {
+            const x = clampIdx(meta.shape[2], u), y = clampIdx(meta.shape[1], v);
+            setMprVoxel({ ...mprVoxel, x, y });
+            // Seeding must behave the same here as in the strip below, or a
+            // click on the big image would silently just move the crosshair.
+            if (mprSeedMode) {
+              const sp = meta.spacing;
+              setGrowSeeds([...growSeeds, [x * sp[2], y * sp[1], mprVoxel.z * sp[0]] as V3]);
+            }
+          }}
+          seedDots={mprSeedMode
+            ? growSeeds
+                .map((s) => ({
+                  vx: Math.round(s[0] / meta.spacing[2]),
+                  vy: Math.round(s[1] / meta.spacing[1]),
+                  vz: Math.round(s[2] / meta.spacing[0]),
+                }))
+                .filter((s) => Math.abs(s.vz - mprVoxel.z) <= 1)
+                .map((s) => ({ u: fracIdx(meta.shape[2], s.vx), v: fracIdx(meta.shape[1], s.vy) }))
+            : []}
+        />
       ) : (
         <div
           style={{
@@ -401,22 +437,34 @@ export function Viewer({ step }: { step: string }) {
   );
 }
 
+/** Fractional position (0–1) of voxel index *i* along an axis of *n* slices. */
+const fracIdx = (n: number, i: number) => (n > 1 ? i / (n - 1) : 0.5);
+/** Inverse of fracIdx: a 0–1 click position back to a clamped voxel index. */
+const clampIdx = (n: number, u: number) => Math.max(0, Math.min(n - 1, Math.round(u * (n - 1))));
+
 /* MprStrip — franja inferior con los tres planos reales, crosshairs
    sincronizados y window/level por arrastre compartido. */
 export function MprStrip() {
-  const { sessionId, series, previewBand, mprSeedMode, growSeeds, setGrowSeeds } = usePlanning();
+  const {
+    sessionId, series, previewBand, mprSeedMode, growSeeds, setGrowSeeds,
+    mprVoxel: vox, setMprVoxel, mprWl: wl, setMprWl,
+  } = usePlanning();
   const meta = useVolumeMeta(sessionId);
 
-  // Shared crosshair voxel {x,y,z} and window/level across the three planes.
+  // Crosshair voxel {x,y,z} and window/level live in the store, so the main
+  // preview and the oblique view read the same values — picking a preset or
+  // clicking a vessel here used to leave the big image behind.
   const [nz, ny, nx] = meta?.shape ?? [1, 1, 1];
-  const [vox, setVox] = useState<{ x: number; y: number; z: number }>({ x: 0, y: 0, z: 0 });
-  const [wl, setWl] = useState<{ wc: number; ww: number } | null>(null);
+  const setVox = (u: React.SetStateAction<{ x: number; y: number; z: number }>) =>
+    setMprVoxel(typeof u === "function" ? u(vox) : u);
+  const setWl = setMprWl;
 
   useEffect(() => {
     if (meta) {
-      setVox({ x: Math.floor(nx / 2), y: Math.floor(ny / 2), z: Math.floor(nz / 2) });
-      setWl({ wc: meta.wc, ww: meta.ww });
+      setMprVoxel({ x: Math.floor(nx / 2), y: Math.floor(ny / 2), z: Math.floor(nz / 2) });
+      setMprWl({ wc: meta.wc, ww: meta.ww });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meta, nx, ny, nz]);
 
   // spacing = [sz, sy, sx]; mesh/world coords have origin 0 → world = voxel·spacing.
