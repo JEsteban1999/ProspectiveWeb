@@ -83,6 +83,19 @@ export function setToken(token: string | null) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
+/** Notified when the server rejects our credentials, so the app can return to
+ *  login instead of leaving the user clicking through per-panel errors with a
+ *  token that expired underneath them. */
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  onUnauthorized = fn;
+}
+
+/** Endpoints where a 401 is the expected answer, not a dead session. */
+function isAuthAttempt(path: string): boolean {
+  return path.startsWith("/api/auth/login") || path.startsWith("/api/auth/signup");
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, detail: string) {
@@ -100,6 +113,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   const res = await fetch(path, { ...init, headers });
+  if (res.status === 401 && !isAuthAttempt(path)) {
+    // The token is gone or expired: drop it and let the app show the login
+    // screen once, rather than surfacing an error in whichever panel asked.
+    setToken(null);
+    onUnauthorized?.();
+  }
   if (!res.ok) {
     let detail = `Error ${res.status}`;
     try {
@@ -125,6 +144,10 @@ async function getBlob(path: string): Promise<Blob> {
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const res = await fetch(path, { headers });
+  if (res.status === 401) {
+    setToken(null);
+    onUnauthorized?.();
+  }
   if (!res.ok) throw new ApiError(res.status, `Error ${res.status}`);
   return res.blob();
 }
@@ -141,6 +164,11 @@ export const api = {
   login: (username: string, password: string) =>
     post<LoginResponse>("/api/auth/login", { username, password }),
   me: () => get<UserInfo>("/api/auth/me"),
+  logout: () => post<{ status: string }>("/api/auth/logout"),
+  changePassword: (current_password: string, new_password: string) =>
+    post<{ status: string }>("/api/auth/change-password", { current_password, new_password }),
+  resetPassword: (userId: number, new_password: string) =>
+    post<{ status: string }>(`/api/auth/users/${userId}/reset-password`, { new_password }),
   myPhotoObjectUrl: async () =>
     URL.createObjectURL(await getBlob("/api/auth/me/photo")),
   signup: (req: SignupRequest, photo?: File | null, cv?: File | null) => {

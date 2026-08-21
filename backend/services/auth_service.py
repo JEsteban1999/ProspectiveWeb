@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -222,26 +222,48 @@ def decode_token(token: str) -> dict:
 # auto_error=False → returns None instead of 403 when no token is present
 _bearer = HTTPBearer(auto_error=False)
 
+# The browser cannot attach an Authorization header to an <img src> or to the
+# requests vtk.js makes for .vtp meshes, so the same token is also issued as a
+# cookie. SameSite=Lax keeps it off cross-site requests, and the frontend is
+# served same-origin (Vite proxies /api, /data and /static to the backend).
+COOKIE_NAME = "prospective_token"
+
+
+def token_from_request(request: Request | None,
+                       credentials: HTTPAuthorizationCredentials | None) -> str | None:
+    """The bearer token, from the Authorization header or the session cookie."""
+    if credentials is not None:
+        return credentials.credentials
+    if request is not None:
+        return request.cookies.get(COOKIE_NAME) or None
+    return None
+
+
+def user_for_token(db: Session, token: str | None) -> User | None:
+    """Resolve a token to a user. Returns None for missing/invalid/expired."""
+    if not token:
+        return None
+    try:
+        payload = decode_token(token)
+    except JWTError:
+        return None
+    username: str = payload.get("sub", "")
+    if not username:
+        return None
+    return get_user_by_username(db, username)
+
 
 def get_optional_user(
+    request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
     db: Annotated[Session, Depends(get_db)],
 ) -> User | None:
-    """Extract and verify the JWT from the Authorization header.
+    """Verify the JWT from the Authorization header, falling back to the cookie.
 
     Returns the User on success, None when no/invalid token is provided.
-    Never raises — callers decide whether auth is mandatory.
+    Never raises — use require_user when authentication is mandatory.
     """
-    if credentials is None:
-        return None
-    try:
-        payload = decode_token(credentials.credentials)
-        username: str = payload.get("sub", "")
-        if not username:
-            return None
-        return get_user_by_username(db, username)
-    except JWTError:
-        return None
+    return user_for_token(db, token_from_request(request, credentials))
 
 
 def get_current_user(

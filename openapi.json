@@ -55,6 +55,30 @@
         }
       }
     },
+    "/api/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Clear the session cookie",
+        "description": "Drops the auth cookie. The bearer token stays valid until it expires.",
+        "operationId": "logout_api_auth_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Logout Api Auth Logout Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/me": {
       "get": {
         "tags": [
@@ -540,6 +564,115 @@
         }
       }
     },
+    "/api/auth/change-password": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Change your own password",
+        "description": "Requires the current password, so a stolen session cannot lock the owner out. Passwords are never returned and the JWT keeps working: it is signed over the username, not the credential.",
+        "operationId": "change_password_api_auth_change_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Change Password Api Auth Change Password Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/auth/users/{user_id}/reset-password": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Reset another user's password (admin)",
+        "description": "For the clinician who forgot theirs. The admin does not need to know the old password; the event is written to the audit chain naming both parties.",
+        "operationId": "reset_password_api_auth_users__user_id__reset_password_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Reset Password Api Auth Users  User Id  Reset Password Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/patients": {
       "get": {
         "tags": [
@@ -670,6 +803,11 @@
         ],
         "summary": "List DICOM studies for a patient",
         "operationId": "list_studies_api_patients__patient_id__studies_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "patient_id",
@@ -884,6 +1022,11 @@
         ],
         "summary": "Get a patient's full record (for editing)",
         "operationId": "get_patient_api_patients__patient_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "patient_id",
@@ -1021,6 +1164,11 @@
         ],
         "summary": "List planning sessions done on a patient",
         "operationId": "list_patient_sessions_api_patients__patient_id__sessions_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "patient_id",
@@ -1068,6 +1216,11 @@
         "summary": "List studies for the gallery",
         "description": "Every study with its patient identity, archive state and pipeline progress. `q` filters by patient name or national ID (historia clínica); `patient_id` restricts the list to one patient.",
         "operationId": "list_studies_api_studies_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "q",
@@ -1350,7 +1503,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/upload/{session_id}/series/{series_id}": {
@@ -1361,6 +1519,11 @@
         "summary": "Switch the session's active DICOM series",
         "description": "A study often carries several series (localisers, 2-D cines and more than one 3-D acquisition). Upload activates the best 3-D volume, but the clinician may want a different acquisition. This re-points the session at `series_id` and drops the cached volume so MPR/segmentation reload it.\n\nEverything derived from the previous series (mesh, detection, morphometry) becomes stale — the client must reset those steps.",
         "operationId": "set_active_series_api_upload__session_id__series__series_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -1413,6 +1576,11 @@
         "summary": "Get auto-computed thresholds",
         "description": "Returns the automatically computed lower/upper HU thresholds for the DICOM series loaded in this session, along with the strategy key and a Spanish clinical hint string.\n\nThresholds are derived from the **actual voxel distribution** (which is what detects DSA subtraction, display-preset windows, etc.). The volume is read from the MPR cache and subsampled, so the call stays fast; if no volume is available yet it falls back to WindowCenter/WindowWidth.\n\nStrategies: `ct_stats`, `ct_wc_ww`, `xa_band_pass`, `xa_wc_ww`, `xa_window_mismatch`, `xa_raw16`, `dsa`, `mr_percentile`, `wc_ww`.",
         "operationId": "get_thresholds_api_thresholds__session_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -1487,7 +1655,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/segment/suggested-band/{session_id}": {
@@ -1498,6 +1671,11 @@
         "summary": "Adaptive starting band from the volume histogram",
         "description": "Starting band + a robust value range for the sliders, derived from THIS volume's own intensity distribution via the SAME modality-aware logic the segmentation uses (compute_auto_thresholds). One source of truth: the live preview reflects the real result, and non-subtracted 3DRA/CTA start on the bright vasculature (~1%) instead of a generic p94 that grabbed ~6% of tissue.",
         "operationId": "suggested_band_api_segment_suggested_band__session_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -1541,6 +1719,11 @@
         "summary": "Fast coarse-mesh preview for interactive threshold tuning",
         "description": "Runs a downsampled marching-cubes pass (no full smoothing/decimation) with top-N component isolation, so the clinician sees the 3D vascular tree form in near-real-time as they move the sliders — like the desktop app.",
         "operationId": "segment_preview_api_segment_preview__session_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -1594,6 +1777,11 @@
         "summary": "Detect aneurysm candidates in the segmented mesh",
         "description": "Runs the v6 aneurysm detector on the stored vessel-tree mesh.\n\n**Algorithm:** Gaussian curvature thresholding → connected-component analysis → 3 hard shape gates (positive_gauss_frac, compactness, sphericity) → composite score.\n\nEach candidate is written as an isolated `.vtp` mesh and its URL is returned so vtk.js can render individual domes.\n\n**Prerequisite:** `POST /segment` must be called first.",
         "operationId": "detect_aneurysm_api_detect__session_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -1637,6 +1825,11 @@
         "summary": "Compute aneurysm morphometry",
         "description": "Runs the full morphometric analysis on the best-scoring candidate mesh from the most recent detection run.\n\nReturns all clinical indices:\n- **DNR** (Dome-to-Neck Ratio) — risk ↑ if > 2.0\n- **AR** (Aspect Ratio) — risk ↑ if > 1.6\n- **BF** (Bottleneck Factor) — wide neck if > 1.5\n- **UI** (Undulation Index) — irregular dome if > 0.15\n- **EI** (Ellipticity Index) — non-spherical if > 0.35\n- **NSI** (Non-Sphericity Index)\n\nNeck origin is saved to session state for the perforators endpoint.\n\n**Prerequisite:** `POST /detect/{session_id}` must be called first.",
         "operationId": "get_morphometry_api_morphometry__session_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -1680,6 +1873,11 @@
         "summary": "Morphometry from a user-defined neck plane (closed-sac)",
         "description": "Semi-automatic Tier-2 morphometry. The user supplies a **neck plane** (a point on the neck and a normal pointing toward the dome). The backend clips the vessel tree at the plane, keeps the dome-side connected component, caps it into a **closed watertight sac**, and measures the neck directly from the clip contour.\n\nUse this when the automatic analysis returns `reliable=false` (the detector isolated an open surface cap, on which volume/neck degenerate).",
         "operationId": "morphometry_neck_plane_api_morphometry__session_id__neck_plane_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -1733,6 +1931,11 @@
         "summary": "Detect perforator vessels at risk",
         "description": "Analyses the full vascular mesh around the aneurysm neck to identify suspected perforator / branch-point candidates based on vertex-valence anomaly detection.\n\n**Risk zones** (centred on neck origin):\n- Zone 1 (high / red)   — ≤ 3 mm from neck\n- Zone 2 (medium / yellow) — 3–5 mm from neck\n- Zone 3 (low / green)  — 5–8 mm from neck\n\nThe tagged mesh (`perforators_risk.vtp`) is also written to the session for colour-mapped 3D display.\n\n**Best results:** run `POST /detect` and `GET /morphometry` first so the neck origin is accurate.  Falls back to the first detected candidate's centroid when morphometry has not been run.",
         "operationId": "get_perforators_api_perforators__session_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -1776,6 +1979,11 @@
         "summary": "Get longitudinal follow-up data for this session's patient",
         "description": "Returns all historical planning sessions for the patient linked to this session, ordered by date, plus computed deltas against the previous session.\n\n**Prerequisite:** the session must have been saved via `POST /api/sessions/save` with a `patient_id` to enable longitudinal comparison. Without a saved record, returns only the current session's morphometry snapshot.",
         "operationId": "get_longitudinal_api_longitudinal__session_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -1850,7 +2058,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/clips": {
@@ -1876,7 +2089,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/clips/recommendations/{session_id}": {
@@ -1887,6 +2105,11 @@
         "summary": "Get clip recommendations from the Clip Recommender assistant",
         "description": "Scores all clips in the catalogue against the patient's neck diameter and aspect ratio (loaded from session morphometry). Returns up to 8 ranked recommendations.\n\nScoring weights: coverage ratio 45%, shape fit 40%, closing force 15%.",
         "operationId": "get_clip_recommendations_api_clips_recommendations__session_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -1934,6 +2157,11 @@
         "summary": "Upload a custom clip mesh (STL/OBJ)",
         "description": "Imports a user-supplied clip geometry (STL or OBJ), centres it at the origin and stores it for placement. Returns a `custom:*` clip_id usable in the clip plan alongside catalogue clips.",
         "operationId": "upload_custom_clip_api_clips_custom__session_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -2018,7 +2246,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/coils": {
@@ -2044,7 +2277,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/coils/plan": {
@@ -2086,7 +2324,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/stents": {
@@ -2112,7 +2355,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/plan": {
@@ -2154,7 +2402,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/report": {
@@ -2196,7 +2449,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/report/dicom-sr": {
@@ -2238,7 +2496,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/export/stl": {
@@ -2280,7 +2543,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/trajectory/{session_id}": {
@@ -2291,6 +2559,11 @@
         "summary": "Save the surgical approach trajectory",
         "description": "Persists the entry → target approach corridor in session state so it is included in the PDF report and the DICOM SR. Returns the stored points plus the approach depth and incidence angle.",
         "operationId": "set_trajectory_api_trajectory__session_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -2341,6 +2614,11 @@
         ],
         "summary": "Clear the surgical approach trajectory",
         "operationId": "clear_trajectory_api_trajectory__session_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -2439,7 +2717,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/sessions/{session_id}/restore": {
@@ -2450,6 +2733,11 @@
         "summary": "Restore a saved session",
         "description": "Creates a fresh temporary session and re-populates its state from the database record identified by `session_id`. Returns the new session_id to use for subsequent API calls.",
         "operationId": "restore_session_api_sessions__session_id__restore_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -2493,6 +2781,11 @@
         "summary": "Get DICOM volume metadata for MPR",
         "description": "Loads (and caches) the primary DICOM series volume and returns its shape, spacing and default window/level so the frontend can set up the MPR sliders. First call triggers the volume load; subsequent calls are instant.",
         "operationId": "volume_meta_api_volume__session_id__meta_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -2538,6 +2831,11 @@
         "summary": "Get the downsampled volume as raw uint8 for 3D volume rendering",
         "description": "Returns the DICOM volume as raw uint8 bytes (C-order, z·y·x), downsampled so the largest axis is ≤ 192 and rescaled over a robust intensity window. Dimensions and spacing are returned in the X-Dims / X-Spacing headers. Consumed by the client-side vtk.js volume renderer.",
         "operationId": "get_volume_raw_api_volume__session_id__raw_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -2577,6 +2875,11 @@
         "summary": "Get an oblique (tilted) MPR slice as PNG",
         "description": "Resamples an oblique plane through the volume centre, tilted by `tilt` degrees around the x- or y-axis, scanned along its normal by `pos` (0–1).",
         "operationId": "get_oblique_slice_api_slice_oblique__session_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -2688,6 +2991,11 @@
         "summary": "Get a single MPR slice as PNG",
         "description": "Returns a grayscale PNG of the requested plane and slice index, with the given window center/width applied. Planes: axial · coronal · sagital.",
         "operationId": "get_slice_api_slice__session_id___plane___index__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -2848,7 +3156,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/centerline/{session_id}": {
@@ -2859,6 +3172,11 @@
         "summary": "Extract the vessel centreline between two points",
         "description": "Computes the medial-axis centreline of the segmented vessel between a source and a target point (voxelisation + EDT + Dijkstra on the distance-weighted grid). Returns a tube mesh of varying radius plus clinical metrics: arc length, tortuosity and vessel diameter statistics.",
         "operationId": "compute_centerline_api_centerline__session_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -2912,6 +3230,11 @@
         "summary": "Analyse vessel cross-sections along the centreline",
         "description": "Cuts the vessel with planes perpendicular to the extracted centreline and measures the cross-sectional area (shoelace) at each, yielding a diameter profile and a stenosis estimate. Requires that the centreline was extracted first (POST /api/centerline/{session_id}).",
         "operationId": "compute_cross_section_api_cross_section__session_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -2965,6 +3288,11 @@
         "summary": "Deploy a stent along the vessel centreline",
         "description": "Sweeps a stent tube along the previously-extracted centreline between two arc-length positions (parallel-transport frames + optional helical braids), following the true vessel curvature — unlike the straight neck stent. Requires that the centreline was extracted first (POST /api/centerline/{session_id}).",
         "operationId": "deploy_cl_stent_api_cl_stent__session_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -3050,7 +3378,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/audit/blocks": {
@@ -3076,7 +3409,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/audit/verify": {
@@ -3098,7 +3436,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/audit/export": {
@@ -3119,7 +3462,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/mesh-crop/{session_id}": {
@@ -3130,6 +3478,11 @@
         "summary": "Crop the vessel mesh to a box/sphere ROI",
         "description": "Non-destructive ROI crop of the working vessel mesh. `mode='sphere'` keeps geometry within `radius` of the picked centre; `mode='box'` uses an axis-aligned box (`half_size` per axis, or `radius` as a cube half-side). `invert=true` removes the ROI instead (useful to delete a bone/noise blob). The result overwrites `vessel_tree.vtp`; re-run segmentation to restore.",
         "operationId": "mesh_crop_api_mesh_crop__session_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -3183,6 +3536,11 @@
         "summary": "Grow a vessel mesh from seed points",
         "description": "Region-growing segmentation (SimpleITK ConnectedThreshold) starting from one or more seed points placed on the volume, expanding through connected voxels within [lower, upper] HU. Builds a fresh `vessel_tree.vtp` — an alternative to threshold segmentation for cases where a global threshold leaks into bone. Requires that a DICOM volume has been uploaded.",
         "operationId": "segment_grow_api_segment_grow__session_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -3250,7 +3608,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/print-prep/{session_id}": {
@@ -3261,6 +3624,11 @@
         "summary": "Prepare the vessel mesh for 3D printing",
         "description": "Fill holes → smooth → optional subdivision → scale to a target size, then report physical dimensions, solid volume, watertightness (open-edge count) and whether it fits the requested printer bed. Writes a print-ready STL. Requires that segmentation produced `vessel_tree.vtp`.",
         "operationId": "print_prep_api_print_prep__session_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -3314,6 +3682,11 @@
         "summary": "Preprocess the session volume (clip / isotropic resample / smooth)",
         "description": "Applies optional HU clipping, isotropic resampling and Gaussian smoothing to the cached volume and rewrites the MPR cache. The segmentation and any downstream analysis must be re-run afterwards. Requires an uploaded volume.",
         "operationId": "preprocess_api_preprocess__session_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -4089,6 +4462,26 @@
         ],
         "title": "CenterlineResult",
         "description": "Centreline geometry metrics + tube mesh URL for the 3D viewer."
+      },
+      "ChangePasswordRequest": {
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "title": "Current Password"
+          },
+          "new_password": {
+            "type": "string",
+            "minLength": 8,
+            "title": "New Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "ChangePasswordRequest",
+        "description": "Self-service password change — the current one is required."
       },
       "ClStentRequest": {
         "properties": {
@@ -6582,6 +6975,21 @@
         ],
         "title": "ReportResult",
         "description": "URLs and metadata of the generated export files."
+      },
+      "ResetPasswordRequest": {
+        "properties": {
+          "new_password": {
+            "type": "string",
+            "minLength": 8,
+            "title": "New Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "new_password"
+        ],
+        "title": "ResetPasswordRequest",
+        "description": "Admin resetting someone else's password (no current password needed)."
       },
       "SegmentRequest": {
         "properties": {

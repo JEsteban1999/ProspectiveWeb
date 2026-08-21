@@ -64,5 +64,6 @@ class TestMePhoto:
         assert r.status_code == 404
 
     def test_photo_requires_auth(self):
-        r = client.get("/api/auth/me/photo")
+        from conftest import anonymous_client
+        r = anonymous_client(app).get("/api/auth/me/photo")
         assert r.status_code in (401, 403)

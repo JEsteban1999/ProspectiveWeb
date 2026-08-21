@@ -147,7 +147,8 @@ class TestAuth:
         assert "avatar_initials" in data          # field name in UserInfo model
 
     def test_me_unauthenticated(self):
-        resp = client.get("/api/auth/me")
+        from conftest import anonymous_client
+        resp = anonymous_client(app).get("/api/auth/me")
         assert resp.status_code == 401
 
     def test_me_invalid_token(self):

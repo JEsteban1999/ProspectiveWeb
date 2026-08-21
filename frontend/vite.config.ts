@@ -1,6 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+const backend = process.env.BACKEND_URL ?? "http://127.0.0.1:8000";
+
 // Dev server proxies every backend surface to FastAPI on :8000 so the
 // frontend can use same-origin URLs (/api/…, /data/sessions/…, /static/…).
 export default defineConfig({
@@ -16,10 +18,11 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://127.0.0.1:8000",
-      "/data": "http://127.0.0.1:8000",
-      "/static": "http://127.0.0.1:8000",
-      "/ws": { target: "ws://127.0.0.1:8000", ws: true },
+      // Override with BACKEND_URL when :8000 is taken — on Windows the socket
+      // can survive the uvicorn process and stay bound to a PID that is gone.
+      "/api": backend,
+      "/data": backend,
+      "/static": backend,
     },
   },
 });

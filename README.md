@@ -53,10 +53,10 @@ approval, and a tamper-evident audit chain.
 
 | | |
 |---|---|
-| Backend tests | **321 passing** (`pytest`, 24 files) |
+| Backend tests | **335 passing** (`pytest`, 26 files) |
 | Frontend | `tsc -b` clean · production build clean |
-| REST endpoints | **73** operations across 66 paths (22 routers) |
-| Feature parity with desktop | **Complete**, except user password change — see [Known Limitations](#known-limitations) |
+| REST endpoints | **77** operations across 69 paths (21 routers), all authenticated except login/signup/logout |
+| Feature parity with desktop | **Complete** |
 
 ---
 
@@ -87,12 +87,12 @@ ProspectiveWeb/
 ├── start-all.bat           # Windows: launches backend + frontend in two windows
 │
 ├── backend/
-│   ├── main.py             # FastAPI app: lifespan, CORS, static mounts, 22 routers
+│   ├── main.py             # FastAPI app: lifespan, CORS, static mounts, guarded routers
 │   ├── requirements.txt
-│   ├── models/    (21)     # Pydantic request/response schemas
-│   ├── routers/   (22)     # Route handlers, one file per domain
+│   ├── models/    (20)     # Pydantic request/response schemas
+│   ├── routers/   (21)     # Route handlers, one file per domain
 │   ├── services/  (32)     # Qt-free business logic, shared with the desktop app
-│   ├── test_*.py  (24)     # pytest suites
+│   ├── test_*.py  (26)     # pytest suites
 │   ├── data/               # PUBLIC static mount — sessions, meshes, reports
 │   ├── study_files/        # PRIVATE archive: DICOM of archived studies (gitignored)
 │   ├── user_files/         # PRIVATE: signup photos and CVs (gitignored)
@@ -213,6 +213,8 @@ The server runs out of the box with sensible defaults.
 | `STORAGE_BACKEND` | `local` | `local` (filesystem) or `s3` |
 | `STORAGE_S3_BUCKET` | — | Required when `STORAGE_BACKEND=s3`; bucket must be private |
 | `STORAGE_S3_PREFIX` | — | Optional key prefix inside the bucket |
+| `COOKIE_SECURE` | off | Mark the auth cookie `Secure` (set it when serving over HTTPS) |
+| `BACKEND_URL` | `http://127.0.0.1:8000` | Where the Vite dev server proxies `/api`, `/data`, `/static` |
 
 Token lifetime is currently a constant (`ACCESS_TOKEN_EXPIRE_MIN`, 24 h) in
 `services/auth_service.py`, not an environment variable.
@@ -288,13 +290,20 @@ POST /api/sessions/save                → resumable snapshot + DB link
 ```
 
 Session files are served statically under `/data/sessions/` so vtk.js can fetch
-mesh URLs directly.
+mesh URLs directly — behind a middleware that requires the same token as the API,
+since those directories also hold the uploaded DICOM.
 
 ---
 
 ## API Reference
 
-73 operations under `/api`. Full spec in `openapi.json` or at `/docs`.
+77 operations under `/api`. Full spec in `openapi.json` or at `/docs`.
+
+**Everything except `POST /api/auth/login`, `/signup` and `/logout` requires a
+token.** It travels as `Authorization: Bearer …` or as the `prospective_token`
+cookie that login also sets — the browser cannot attach a header to an `<img
+src>` or to the requests vtk.js makes for `.vtp` meshes, and those URLs serve
+patient imaging.
 
 ### Authentication & users
 
@@ -302,6 +311,9 @@ mesh URLs directly.
 |---|---|---|
 | `POST` | `/api/auth/login` | Obtain JWT (username + password) |
 | `GET` | `/api/auth/me` · `/api/auth/me/photo` | Current user + avatar |
+| `POST` | `/api/auth/logout` | Clear the session cookie |
+| `POST` | `/api/auth/change-password` | Change your own (current password required) |
+| `POST` | `/api/auth/users/{id}/reset-password` | Reset someone else's (admin) |
 | `POST` | `/api/auth/signup` | Public signup (multipart: photo + CV) → *pending* |
 | `GET` | `/api/auth/pending` | Pending signup requests (admin) |
 | `POST` | `/api/auth/pending/{id}/approve` · `/reject` | Approve or reject (admin) |
@@ -382,11 +394,11 @@ mesh URLs directly.
 
 ```bash
 cd backend
-.venv\Scripts\python -m pytest -q                        # all 321 tests
+.venv\Scripts\python -m pytest -q                        # all 335 tests
 .venv\Scripts\python -m pytest test_session_abc.py -v    # one suite
 ```
 
-Expected: **321 passed, 0 failed** (~1–2 min; VTK and SimpleITK do real work).
+Expected: **335 passed, 0 failed** (~1–2 min; VTK and SimpleITK do real work).
 
 Frontend checks:
 
@@ -430,7 +442,7 @@ counterpart under `backend/services`, and every desktop panel has a web panel.
 | UI | PyQt5 widgets | React 19 + vtk.js in the browser |
 | Processing | `processing/` (Qt-coupled) | `services/` (Qt-free, same algorithms) |
 | Auth | local SQLite + signup approval | JWT + SQLite, same approval flow |
-| Password change / reset | yes | **not ported** |
+| Password change / reset | yes | yes (self-service + admin reset, audited) |
 | Session persistence | `.prospective` file on disk | DB record + durable server-side snapshot |
 | Study archive & gallery | no | local or S3, with preview thumbnails |
 | Case ↔ imaging separation | one study per case | several acquisitions per clinical case |
@@ -448,16 +460,17 @@ clinician.
 
 **Functional**
 
-- **No password change or reset.** The desktop has it
-  (`auth_manager.change_password` plus an admin reset in `user_manager`); the web
-  does not. `admin/admin123` cannot be changed from the app.
-- **`routers/progress.py` is a stub.** The WebSocket streams a canned progress
-  sequence unrelated to real work, and no client connects to it. Long operations
-  show an indeterminate bar instead.
-- **`GET /api/thresholds/{sid}` is redundant** with
-  `GET /api/segment/suggested-band/{sid}`, which is the one the frontend uses.
-- **No global 401 handling.** When a token expires mid-session the UI keeps
-  running and surfaces per-panel errors instead of returning to login.
+- **`GET /api/thresholds/{sid}` is not used by the bundled frontend.** It returns
+  the strategy key and a clinical hint; the UI reads the slider range from
+  `GET /api/segment/suggested-band/{sid}` instead. Both share the same
+  `compute_auto_thresholds` core, so they cannot drift apart.
+- **No progress streaming.** Long operations show an indeterminate bar. A
+  WebSocket route used to exist but emitted a canned sequence unrelated to real
+  work and no client connected to it, so it was removed rather than left to look
+  like a feature.
+- **CSRF relies on `SameSite=Lax`.** The auth cookie is not sent on cross-site
+  requests, and the API only accepts JSON, but there is no anti-CSRF token. Add
+  one before serving the app from a domain that also hosts untrusted content.
 
 **Clinical accuracy** (needs annotated ground truth, not a patch)
 
@@ -474,25 +487,34 @@ clinician.
 
 ## Privacy & Security Notes
 
-This software handles identifiable patient data. Before any deployment:
+This software handles identifiable patient data.
 
-- **`backend/data/` is mounted as public StaticFiles.** Anything written there is
-  downloadable without authentication. DICOM headers carry patient name, national
-  ID and date of birth, so archived studies live in `study_files/`, signup
-  documents in `user_files/` and the JWT key in `secrets/` — all outside `data/`
-  and gitignored. Never move private material into `data/`.
-- **Working sessions are the exception**: `data/sessions/{uuid}/dicom/` is served
-  statically so vtk.js can load meshes. Files are reachable by anyone who knows the
-  UUID. Put the app behind a reverse proxy that requires authentication for
-  `/data/sessions/`, or shorten `SESSION_TTL_HOURS`.
-- **Most API endpoints are currently unauthenticated.** Only the user-management
-  routes enforce a token; `get_current_user` is an *optional* dependency that
-  returns `None` instead of raising, so patients, studies, uploads, imaging and the
-  audit chain are reachable without one. Harden this before exposing the server
-  beyond localhost.
-- **`POST /api/audit` is open**, so the tamper-evident chain can be appended to by
-  anyone who can reach the server. The chain detects edits to existing blocks, not
-  forged new ones.
+**How access control works**
+
+- Every route requires a valid token except `POST /api/auth/login`, `/signup` and
+  `/logout`. This is enforced at `include_router` time in `main.py` rather than
+  per endpoint, so a router added without a guard is closed by default.
+  `test_auth_coverage.py` walks the real route table and fails if anything
+  outside an explicit allowlist answers anonymously.
+- Beware `get_current_user`: it is an alias of `get_optional_user` and returns
+  `None` instead of raising. Only `require_user` / `require_admin` authenticate.
+- Login issues the token twice: as a bearer token for the API client and as an
+  HttpOnly `SameSite=Lax` cookie, because `<img src>` (MPR slices) and vtk.js
+  mesh requests cannot carry a header. Logging out clears the cookie server-side.
+- `backend/data/` is a StaticFiles mount, so router dependencies do not apply to
+  it. A middleware guards `/data/` with the same token check — session DICOM used
+  to be downloadable by anyone who knew a session UUID.
+
+**Before deploying**
+
+- **Set `JWT_SECRET` from the environment.** Otherwise it is generated into
+  `backend/secrets/jwt_secret.txt`. Never place it under `data/`: it lived there
+  once and `GET /data/jwt_secret.txt` returned the signing key, which is enough to
+  mint an admin token.
+- **Change the seeded `admin` password** from the user menu ("Cambiar contraseña").
+- Serve over HTTPS and set `COOKIE_SECURE=1` so the auth cookie is marked secure.
+- Private material belongs in `study_files/` (archived DICOM), `user_files/`
+  (signup photos and CVs) and `secrets/` — all outside `data/` and gitignored.
 - **Never run `git add -A` in this repository.** Real DICOM files have no extension
   (`IM_0001`, bare UIDs); the ignore rules cover the known folders, but stage
   explicit paths and check `git diff --cached --name-only` first.

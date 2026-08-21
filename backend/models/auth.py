@@ -48,7 +48,15 @@ class UserCreateRequest(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
+    """Self-service password change — the current one is required."""
+
     current_password: str
+    new_password: str = Field(..., min_length=8)
+
+
+class ResetPasswordRequest(BaseModel):
+    """Admin resetting someone else's password (no current password needed)."""
+
     new_password: str = Field(..., min_length=8)
 
 

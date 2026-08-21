@@ -15,12 +15,15 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from services.auth_service import require_user, user_for_token
+
 from routers import (
-    upload, segment, detect, perforators, plan, progress,
+    upload, segment, detect, perforators, plan,
     auth, patients, treatment, clips, coils, longitudinal,
     report, session_state, mpr, phases, centerline, audit,
     mesh_edit, print_prep, preprocess, studies,
@@ -105,6 +108,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Private static files ──────────────────────────────────────────────────── #
+#
+# StaticFiles is mounted below and bypasses router dependencies entirely, so the
+# guard has to live in middleware. Session directories hold uploaded DICOM,
+# whose headers carry patient name, national ID and date of birth: reachable by
+# anyone who knew (or guessed) a session UUID before this existed.
+#
+# /static is bundled sample geometry with no patient data and stays public.
+
+_PROTECTED_STATIC_PREFIXES = ("/data/",)
+
+
+@app.middleware("http")
+async def guard_private_static(request: Request, call_next):
+    path = request.url.path
+    if any(path.startswith(p) for p in _PROTECTED_STATIC_PREFIXES):
+        from services.database import SessionLocal
+        auth = request.headers.get("Authorization", "")
+        token = auth[7:] if auth.lower().startswith("bearer ") else request.cookies.get("prospective_token")
+        db = SessionLocal()
+        try:
+            if user_for_token(db, token) is None:
+                return JSONResponse(
+                    {"detail": "Authentication required — patient data"},
+                    status_code=401,
+                )
+        finally:
+            db.close()
+    return await call_next(request)
+
+
 # ── Static files ──────────────────────────────────────────────────────────── #
 # /static — bundled sample meshes (development only; production: S3/CloudFront)
 # /data   — session-scoped files: DICOM uploads, meshes, reports, exports
@@ -125,29 +159,39 @@ app.mount(
 
 
 # ── Routers ───────────────────────────────────────────────────────────────── #
+#
+# Everything except `auth` is patient data, so it is gated here rather than
+# endpoint by endpoint — a router added without a guard would otherwise be
+# public by default. `auth` keeps its own rules (login and signup are public,
+# the rest already require a user or an admin).
+#
+# NOTE: `get_current_user` does NOT authenticate; it is an alias of
+# `get_optional_user` and returns None when no token is present. Only
+# `require_user` / `require_admin` reject anonymous callers.
+
+_private = [Depends(require_user)]
 
 app.include_router(auth.router)
-app.include_router(patients.router)
-app.include_router(studies.router)
-app.include_router(upload.router)
-app.include_router(segment.router)
-app.include_router(detect.router)
-app.include_router(perforators.router)
-app.include_router(longitudinal.router)
-app.include_router(treatment.router)
-app.include_router(clips.router)
-app.include_router(coils.router)
-app.include_router(plan.router)
-app.include_router(report.router)
-app.include_router(session_state.router)
-app.include_router(progress.router)
-app.include_router(mpr.router)
-app.include_router(phases.router)
-app.include_router(centerline.router)
-app.include_router(audit.router)
-app.include_router(mesh_edit.router)
-app.include_router(print_prep.router)
-app.include_router(preprocess.router)
+app.include_router(patients.router,      dependencies=_private)
+app.include_router(studies.router,       dependencies=_private)
+app.include_router(upload.router,        dependencies=_private)
+app.include_router(segment.router,       dependencies=_private)
+app.include_router(detect.router,        dependencies=_private)
+app.include_router(perforators.router,   dependencies=_private)
+app.include_router(longitudinal.router,  dependencies=_private)
+app.include_router(treatment.router,     dependencies=_private)
+app.include_router(clips.router,         dependencies=_private)
+app.include_router(coils.router,         dependencies=_private)
+app.include_router(plan.router,          dependencies=_private)
+app.include_router(report.router,        dependencies=_private)
+app.include_router(session_state.router, dependencies=_private)
+app.include_router(mpr.router,           dependencies=_private)
+app.include_router(phases.router,        dependencies=_private)
+app.include_router(centerline.router,    dependencies=_private)
+app.include_router(audit.router,         dependencies=_private)
+app.include_router(mesh_edit.router,     dependencies=_private)
+app.include_router(print_prep.router,    dependencies=_private)
+app.include_router(preprocess.router,    dependencies=_private)
 
 
 # ── Health check ──────────────────────────────────────────────────────────── #

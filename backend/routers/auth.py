@@ -2,14 +2,16 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from models import (
+    ChangePasswordRequest, ResetPasswordRequest,
     LoginRequest, LoginResponse, UserInfo,
     SignupRequest, SignupResponse, PendingUser,
     UserAdminInfo, UserUpdate,
@@ -17,15 +19,18 @@ from models import (
 from services.database import get_db
 from services.auth_service import (
     ACCESS_TOKEN_EXPIRE_MIN,
+    COOKIE_NAME,
     AuthError,
     approve_user,
     authenticate_user,
     create_access_token,
     create_pending_user,
+    get_password_hash,
     get_pending_users,
     reject_user,
     require_admin,
     require_user,
+    verify_password,
 )
 from services.db_models import User
 
@@ -84,6 +89,7 @@ def _user_to_info(user: User) -> UserInfo:
 )
 async def login(
     req: LoginRequest,
+    response: Response,
     db: Annotated[Session, Depends(get_db)],
 ) -> LoginResponse:
     try:
@@ -105,12 +111,32 @@ async def login(
     from services.audit import audit_append, ACT_LOGIN
     audit_append(ACT_LOGIN, {"role": user.role}, username=user.username)
 
+    # Also as a cookie: an <img src> or a vtk.js mesh request cannot carry an
+    # Authorization header, and those URLs serve patient imaging.
+    response.set_cookie(
+        COOKIE_NAME, token,
+        max_age=ACCESS_TOKEN_EXPIRE_MIN * 60,
+        httponly=True, samesite="lax",
+        secure=os.environ.get("COOKIE_SECURE", "").lower() in ("1", "true", "yes"),
+        path="/",
+    )
+
     return LoginResponse(
         access_token=token,
         token_type="bearer",
         expires_in=ACCESS_TOKEN_EXPIRE_MIN * 60,
         user=_user_to_info(user),
     )
+
+
+@router.post(
+    "/logout",
+    summary="Clear the session cookie",
+    description="Drops the auth cookie. The bearer token stays valid until it expires.",
+)
+async def logout(response: Response) -> dict:
+    response.delete_cookie(COOKIE_NAME, path="/")
+    return {"status": "ok"}
 
 
 @router.get(
@@ -439,3 +465,66 @@ async def delete_user(
     db.delete(user)
     db.commit()
     logger.info("User deleted by admin — id=%d username=%s", user_id, user.username)
+
+
+# ── POST /auth/change-password ─────────────────────────────────────────────── #
+
+@router.post(
+    "/change-password",
+    summary="Change your own password",
+    description=(
+        "Requires the current password, so a stolen session cannot lock the owner "
+        "out. Passwords are never returned and the JWT keeps working: it is signed "
+        "over the username, not the credential."
+    ),
+)
+async def change_password(
+    req: ChangePasswordRequest,
+    current_user: Annotated[User, Depends(require_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    if not verify_password(req.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La contraseña actual no es correcta.",
+        )
+    if req.new_password == req.current_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La nueva contraseña debe ser distinta de la actual.",
+        )
+    current_user.hashed_password = get_password_hash(req.new_password)
+    db.commit()
+    logger.info("Password changed — user=%s", current_user.username)
+
+    from services.audit import audit_append
+    audit_append("password_change", {}, username=current_user.username)
+    return {"status": "ok"}
+
+
+# ── POST /auth/users/{user_id}/reset-password ──────────────────────────────── #
+
+@router.post(
+    "/users/{user_id}/reset-password",
+    summary="Reset another user's password (admin)",
+    description=(
+        "For the clinician who forgot theirs. The admin does not need to know the "
+        "old password; the event is written to the audit chain naming both parties."
+    ),
+)
+async def reset_password(
+    user_id: int,
+    req: ResetPasswordRequest,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
+    user.hashed_password = get_password_hash(req.new_password)
+    db.commit()
+    logger.info("Password reset by admin — target=%s by=%s", user.username, admin.username)
+
+    from services.audit import audit_append
+    audit_append("password_reset", {"target": user.username}, username=admin.username)
+    return {"status": "ok"}

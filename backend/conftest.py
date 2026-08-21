@@ -35,3 +35,36 @@ try:
     seed_default_user(_db)
 finally:
     _db.close()
+
+# ── Authenticated by default ──────────────────────────────────────────────── #
+#
+# Patient data endpoints now require a token (they used to answer anonymously,
+# which is what made the whole registry readable without logging in). Every test
+# module builds its own ``TestClient(app)`` at import time, so instead of
+# threading a header through ~300 call sites the client is given one by default.
+# The header is a REAL token verified by the real dependency, so the tests still
+# exercise authentication rather than bypassing it.
+#
+# For tests that must be anonymous, use ``anonymous_client(app)`` below.
+from starlette.testclient import TestClient as _TestClient  # noqa: E402
+from services.auth_service import create_access_token       # noqa: E402
+
+_TEST_TOKEN = create_access_token(subject="admin")
+
+_orig_testclient_init = _TestClient.__init__
+
+
+def _testclient_init(self, *args, **kwargs):
+    _orig_testclient_init(self, *args, **kwargs)
+    self.headers.setdefault("Authorization", f"Bearer {_TEST_TOKEN}")
+
+
+_TestClient.__init__ = _testclient_init
+
+
+def anonymous_client(app):
+    """A TestClient with no credentials, for asserting endpoints reject anons."""
+    c = _TestClient(app)
+    c.headers.pop("Authorization", None)
+    c.cookies.clear()
+    return c

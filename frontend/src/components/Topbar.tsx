@@ -9,6 +9,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { Icon } from "./Icon";
 import { Badge } from "./Badge";
 import { useAuth } from "../store/auth";
+import { ChangePasswordSheet } from "./ChangePasswordSheet";
 import { useNav } from "../store/nav";
 import { api } from "../api/client";
 
@@ -32,6 +33,7 @@ function UserMenu() {
   const { user, logout } = useAuth();
   const nav = useNav();
   const [open, setOpen] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
   const [pending, setPending] = useState(0);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -155,9 +157,12 @@ function UserMenu() {
 
           <div style={{ height: 1, background: "var(--border)", margin: "2px 0" }} />
 
+          <MenuItem icon="LOCK" label="Cambiar contraseña" onClick={() => { setOpen(false); setPwOpen(true); }} />
           <MenuItem icon="LOCK" label="Cerrar sesión" danger onClick={doLogout} />
         </div>
       )}
+
+      <ChangePasswordSheet open={pwOpen} onClose={() => setPwOpen(false)} />
     </div>
   );
 }

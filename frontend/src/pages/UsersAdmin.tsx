@@ -200,6 +200,30 @@ export function UsersAdmin({ onBack }: { onBack: () => void }) {
   const [newOpen, setNewOpen] = useState(false);
   const [toDelete, setToDelete] = useState<UserAdminInfo | null>(null);
   const [delBusy, setDelBusy] = useState(false);
+  // Admin reset for the clinician who forgot theirs — parity with the desktop
+  // user manager. No current password is needed, so the event is audited.
+  const [toReset, setToReset] = useState<UserAdminInfo | null>(null);
+  const [resetPw, setResetPw] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetErr, setResetErr] = useState<string | null>(null);
+  const [resetDone, setResetDone] = useState<string | null>(null);
+
+  const confirmReset = async () => {
+    if (!toReset || resetPw.length < 8) return;
+    setResetBusy(true);
+    setResetErr(null);
+    try {
+      await api.resetPassword(toReset.id, resetPw);
+      setResetDone(toReset.username);
+      setToReset(null);
+      setResetPw("");
+      setTimeout(() => setResetDone(null), 3000);
+    } catch (e) {
+      setResetErr(e instanceof Error ? e.message : "No se pudo restablecer");
+    } finally {
+      setResetBusy(false);
+    }
+  };
 
   const load = () => {
     setLoading(true);
@@ -322,6 +346,14 @@ export function UsersAdmin({ onBack }: { onBack: () => void }) {
                             <Icon name="EDIT" size={14} color="var(--muted-foreground)" />
                           </button>
                           <button
+                            title="Restablecer contraseña" style={iconBtn}
+                            onClick={() => { setToReset(u); setResetPw(""); setResetErr(null); }}
+                            onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--brand-deep)")}
+                            onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
+                          >
+                            <Icon name="LOCK" size={14} color="var(--muted-foreground)" />
+                          </button>
+                          <button
                             title={isMe ? "No puedes eliminar tu propia cuenta" : "Eliminar"}
                             style={{ ...iconBtn, opacity: isMe ? 0.4 : 1, cursor: isMe ? "not-allowed" : "pointer" }}
                             disabled={isMe}
@@ -362,6 +394,47 @@ export function UsersAdmin({ onBack }: { onBack: () => void }) {
               <Button variant="destructive" disabled={delBusy} onClick={confirmDelete}>{delBusy ? "Eliminando…" : "Eliminar"}</Button>
             </div>
           </div>
+        </div>
+      )}
+
+      {toReset && (
+        <div
+          onClick={() => setToReset(null)}
+          style={{ position: "fixed", inset: 0, zIndex: 320, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: 400, maxWidth: "90%", background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow-lg)", padding: "22px 24px" }}
+          >
+            <div style={{ fontSize: 16, fontWeight: 800, color: "var(--foreground)" }}>Restablecer contraseña</div>
+            <div style={{ fontSize: 13, color: "var(--muted-foreground)", marginTop: 8, lineHeight: 1.5 }}>
+              Asigna una contraseña nueva a <b style={{ color: "var(--foreground)" }}>{toReset.full_name || toReset.username}</b>.
+              Queda registrado en la auditoría; comunícasela por un canal seguro y pídele que la cambie al entrar.
+            </div>
+            <div style={{ marginTop: 14 }}>
+              <Input
+                label="Nueva contraseña (mín. 8)"
+                type="password"
+                value={resetPw}
+                onChange={(e) => setResetPw(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void confirmReset(); }}
+                autoComplete="new-password"
+              />
+            </div>
+            <ErrorNote>{resetErr}</ErrorNote>
+            <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+              <Button variant="outline" onClick={() => setToReset(null)} disabled={resetBusy}>Cancelar</Button>
+              <Button disabled={resetBusy || resetPw.length < 8} onClick={() => void confirmReset()}>
+                {resetBusy ? "Guardando…" : "Restablecer"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {resetDone && (
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", zIndex: 330, background: "var(--foreground)", color: "var(--background)", padding: "10px 18px", borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-lg)", fontSize: 13, fontWeight: 600 }}>
+          Contraseña de @{resetDone} restablecida
         </div>
       )}
     </div>

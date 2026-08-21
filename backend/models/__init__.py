@@ -2,6 +2,7 @@
 
 from .auth import (
     ChangePasswordRequest,
+    ResetPasswordRequest,
     LoginRequest,
     LoginResponse,
     PendingUser,
@@ -38,7 +39,6 @@ from .longitudinal import LongitudinalDelta, LongitudinalEntry, LongitudinalResu
 from .patient import CaseCreate, PatientCreate, PatientDetail, PatientSessionInfo, PatientSummary, PlanningSessionSummary, StudyCreate, StudySummary
 from .perforators import PerforatorCandidate, PerforatorsResult, RiskLevel
 from .plan import PlanRequest, PlanResult, StentLibraryItem, StentParams
-from .progress import ProgressEvent, StepName
 from .report import ExportRequest, ReportRequest, ReportResult
 from .segmentation import AutoThresholdResult, SegmentRequest, SegmentResult
 from .session_state import (
@@ -58,7 +58,7 @@ from .treatment import (
 
 __all__ = [
     # auth
-    "ChangePasswordRequest", "LoginRequest", "LoginResponse",
+    "ChangePasswordRequest", "ResetPasswordRequest", "LoginRequest", "LoginResponse",
     "UserCreateRequest", "UserInfo", "UserRole", "UserAdminInfo", "UserUpdate",
     "SignupRequest", "SignupResponse", "PendingUser",
     # clips
@@ -78,8 +78,6 @@ __all__ = [
     "PerforatorCandidate", "PerforatorsResult", "RiskLevel",
     # plan (stent)
     "PlanRequest", "PlanResult", "StentLibraryItem", "StentParams",
-    # progress
-    "ProgressEvent", "StepName",
     # report
     "ExportRequest", "ReportRequest", "ReportResult",
     # segmentation

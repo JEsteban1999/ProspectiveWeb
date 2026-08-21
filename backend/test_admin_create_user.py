@@ -81,5 +81,9 @@ class TestAdminCreate:
         assert r.status_code == 403
 
     def test_requires_auth(self):
-        r = client.post("/api/auth/users", data={"username": "z", "password": "claveSegura1", "full_name": "Z"})
+        from conftest import anonymous_client
+        r = anonymous_client(app).post(
+            "/api/auth/users",
+            data={"username": "z", "password": "claveSegura1", "full_name": "Z"},
+        )
         assert r.status_code in (401, 403)

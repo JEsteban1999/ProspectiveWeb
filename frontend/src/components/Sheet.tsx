@@ -1,5 +1,11 @@
-/* Sheet — right-side drawer with translucent blur panel and 40% scrim. */
+/* Sheet — right-side drawer with translucent blur panel and 40% scrim.
 
+   Rendered through a portal on <body>: `position: fixed` is resolved against
+   the nearest ancestor with a transform, filter or backdrop-filter, not the
+   viewport. The topbar is a glass bar (backdrop-filter), so a sheet opened from
+   the user menu collapsed to the topbar's 66 px and clipped its own form. */
+
+import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 import { Icon } from "./Icon";
 
@@ -17,7 +23,7 @@ export function Sheet({
   children: ReactNode;
 }) {
   if (!open) return null;
-  return (
+  return createPortal(
     <div style={{ position: "fixed", inset: 0, zIndex: 100 }}>
       <div
         onClick={onClose}
@@ -55,6 +61,7 @@ export function Sheet({
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 22px" }}>{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

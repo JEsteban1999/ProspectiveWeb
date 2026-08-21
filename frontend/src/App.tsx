@@ -19,7 +19,7 @@ import { NavProvider } from "./store/nav";
 import type { Screen } from "./store/nav";
 
 function Router() {
-  const { user, ready } = useAuth();
+  const { user, ready, expiredNotice } = useAuth();
   const planning = usePlanning();
   const [screen, setScreen] = useState<Screen>("login");
   const [patient, setPatient] = useState<PatientSummary | null>(null);
@@ -142,11 +142,12 @@ function Router() {
 
   let view;
   if (effective === "login")
+    // A session that expired mid-study explains itself on the login screen.
     view = (
       <Login
         onLogin={() => { setLoadingIn(true); setScreen("patients"); }}
         onSignup={() => setScreen("signup")}
-        notice={loginNotice}
+        notice={loginNotice ?? expiredNotice}
       />
     );
   else if (effective === "signup")
