@@ -131,6 +131,17 @@ class TestFullResolution:
             "premisa de la opción de resolución completa ya no se sostiene"
         )
 
+    def test_a_volume_too_big_for_memory_is_refused_with_a_way_out(self):
+        """Marching cubes holds several float32 copies at once: a 1030x512x512 CT
+        at native resolution would take the process down, so it must be rejected
+        with an actionable message rather than crashing the server."""
+        from routers.segment import _FULL_RES_MAX_VOXELS
+
+        ct = 1030 * 512 * 512          # the biggest study in the corpus
+        angio = 384 * 384 * 384        # what the option exists for
+        assert ct > _FULL_RES_MAX_VOXELS, "el TC grande debe quedar por encima del tope"
+        assert angio < _FULL_RES_MAX_VOXELS, "los angiográficos deben caber"
+
     def test_request_defaults_to_the_fast_path(self):
         """Full resolution costs minutes; it must be opt-in."""
         from models.segmentation import SegmentRequest

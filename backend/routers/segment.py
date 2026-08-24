@@ -35,6 +35,11 @@ _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="seg-worker")
 # volume — only the mesh is coarsened, mirroring the desktop's preview downsample.
 _SEG_MAX_AXIS = 256
 
+# Ceiling for full_resolution. Marching cubes holds several float32 copies of the
+# volume at once, so a 1030×512×512 CT (270 M voxels, ~1.1 GB per copy) would take
+# the process down. The angiographic studies this option exists for are 50–60 M.
+_FULL_RES_MAX_VOXELS = 120_000_000
+
 # Voxels sampled when deriving auto-thresholds. Percentiles are stable well
 # below this, and it keeps a 1 GB CT from being read whole just to get p90/p99.
 _THRESHOLD_SAMPLE = 8_000_000
@@ -400,11 +405,19 @@ def _run_segmentation_sync(
     # ── Downsample very large volumes so segmentation stays responsive ────── #
     # full_resolution keeps every voxel: thin vessels stay above threshold and
     # the tree comes out in far fewer pieces, at the cost of minutes.
-    seg_volume, seg_spacing, ds_factor = (
-        (np.ascontiguousarray(dcm.volume, dtype=np.float32), tuple(dcm.spacing), 1)
-        if full_resolution
-        else _maybe_downsample(dcm.volume, dcm.spacing)
-    )
+    if full_resolution:
+        n_voxels = int(np.prod(dcm.volume.shape))
+        if n_voxels > _FULL_RES_MAX_VOXELS:
+            raise ValueError(
+                f"Este volumen tiene {n_voxels / 1e6:.0f} millones de vóxeles; a "
+                f"resolución completa la segmentación agotaría la memoria del "
+                f"servidor (el límite son {_FULL_RES_MAX_VOXELS / 1e6:.0f} millones). "
+                f"Segmenta sin esa opción, o recorta el volumen antes."
+            )
+        seg_volume = np.ascontiguousarray(dcm.volume, dtype=np.float32)
+        seg_spacing, ds_factor = tuple(dcm.spacing), 1
+    else:
+        seg_volume, seg_spacing, ds_factor = _maybe_downsample(dcm.volume, dcm.spacing)
 
     # ── Run marching cubes ────────────────────────────────────────────────── #
     logger.info(
