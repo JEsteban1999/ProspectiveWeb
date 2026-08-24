@@ -200,6 +200,7 @@ async def segment(req: SegmentRequest) -> SegmentResult:
                 min_mm3=      min_mm3,
                 top_n=        top_n,
                 closing_mm=   closing_mm,
+                full_resolution= req.full_resolution,
             ),
         )
     except ValueError as exc:
@@ -339,6 +340,7 @@ def _run_segmentation_sync(
     min_mm3:       float,
     top_n:         int,
     closing_mm:    float,
+    full_resolution: bool = False,
 ) -> SegmentResult:
     """Load DICOM → run VTK pipeline → write .vtp → update session state.
 
@@ -396,7 +398,13 @@ def _run_segmentation_sync(
     )
 
     # ── Downsample very large volumes so segmentation stays responsive ────── #
-    seg_volume, seg_spacing, ds_factor = _maybe_downsample(dcm.volume, dcm.spacing)
+    # full_resolution keeps every voxel: thin vessels stay above threshold and
+    # the tree comes out in far fewer pieces, at the cost of minutes.
+    seg_volume, seg_spacing, ds_factor = (
+        (np.ascontiguousarray(dcm.volume, dtype=np.float32), tuple(dcm.spacing), 1)
+        if full_resolution
+        else _maybe_downsample(dcm.volume, dcm.spacing)
+    )
 
     # ── Run marching cubes ────────────────────────────────────────────────── #
     logger.info(
@@ -444,6 +452,7 @@ def _run_segmentation_sync(
         is_dsa=         is_dsa,
         vertices=       seg_result.n_vertices,
         faces=          seg_result.n_triangles,
+        downsample_factor=   ds_factor,
         kept_fraction=       seg_result.kept_fraction,
         fragments_removed=   seg_result.n_fragments_removed,
         largest_removed_mm3= round(seg_result.largest_removed_mm3, 1),

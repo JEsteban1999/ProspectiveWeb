@@ -32,6 +32,8 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
   const [upper, setUpper] = useState(SEG_UPPER_DEFAULT);
   const [smoothing, setSmoothing] = useState(3);
   const [cleanup, setCleanup] = useState(7);   // level 7 → top-N isolation, mesh limpia
+  // Off by default: on a 384³ study this is minutes instead of seconds.
+  const [fullRes, setFullRes] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Slider range + suggested band, adapted to this volume's intensity scale.
@@ -102,6 +104,7 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
         upper,
         smoothing,
         cleanup,
+        full_resolution: fullRes,
       });
       planning.setSegmentation(res);
       setPreviewBand(null);       // final mesh now shows
@@ -148,6 +151,33 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
               ? "Filtra por tamaño: descarta motas y conserva cualquier fragmento que pueda ser un vaso."
               : "Aísla las estructuras mayores: malla más limpia, pero puede dejar fuera una rama suelta."}
         </div>
+
+        {/* Los huecos en los vasos finos vienen sobre todo de segmentar el
+            volumen a la mitad de su resolución. */}
+        <label
+          style={{
+            display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer",
+            padding: "10px 12px", marginBottom: 10, borderRadius: "var(--radius-md)",
+            border: "1px solid var(--border)", background: "var(--card)",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={fullRes}
+            onChange={(e) => setFullRes(e.target.checked)}
+            style={{ marginTop: 2 }}
+          />
+          <span style={{ minWidth: 0 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>
+              Resolución completa
+            </span>
+            <span style={{ display: "block", fontSize: 11, color: "var(--muted-foreground)", lineHeight: 1.45, marginTop: 2 }}>
+              Los volúmenes grandes se segmentan a la mitad de su resolución, y eso
+              parte los vasos finos: la malla sale con huecos. Marcando esto se usa
+              el volumen íntegro — tarda minutos en vez de segundos.
+            </span>
+          </span>
+        </label>
       </div>
       <div style={{ marginTop: 6, textAlign: "right" }}>
         <button
@@ -188,6 +218,15 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
               badge={segmentation.voxel_fraction > 0.15 ? ["Permisivo", "warning"] : ["OK", "success"]}
             />
           )}
+          <Metric
+            label="Resolución de la malla"
+            value={segmentation.downsample_factor > 1
+              ? `1/${segmentation.downsample_factor}`
+              : "completa"}
+            badge={segmentation.downsample_factor > 1
+              ? ["Submuestreada", "warning"]
+              : ["Nativa", "success"]}
+          />
           {/* What the cleanup threw away. Without this the loss is invisible:
               a whole branch can vanish and the mesh still looks plausible. */}
           <Metric

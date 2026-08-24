@@ -335,6 +335,9 @@ export interface SegmentRequest {
   upper: number;
   smoothing: number;
   cleanup: number;
+  /** Segment at native resolution. Downsampling halves the tree's connectivity,
+   *  which is what leaves gaps in thin vessels. Costs minutes, not seconds. */
+  full_resolution?: boolean;
 }
 
 export interface SegmentResult {
@@ -344,6 +347,8 @@ export interface SegmentResult {
   is_dsa: boolean;
   vertices: number;
   faces: number;
+  /** 1 = native resolution; above 1 the mesh is expected to have more gaps. */
+  downsample_factor: number;
   /** Share of the thresholded volume kept by the cleanup filter (0–1). */
   kept_fraction: number;
   fragments_removed: number;

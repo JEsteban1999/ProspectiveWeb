@@ -88,7 +88,7 @@ export function MeshEditTools() {
         vertices: res.vertices,
         faces: res.faces,
         // Region-grow keeps a single connected region by construction.
-        kept_fraction: 1, fragments_removed: 0, largest_removed_mm3: 0,
+        kept_fraction: 1, fragments_removed: 0, largest_removed_mm3: 0, downsample_factor: 1,
       });
       clearDownstream();
       setGrowSeeds([]);

@@ -58,6 +58,17 @@ class SegmentRequest(BaseModel):
         3, ge=0, le=10,
         description="Cleanup level 0–10 (removes disconnected mesh fragments)",
     )
+    full_resolution: bool = Field(
+        False,
+        description=(
+            "Segment at the volume's native resolution instead of downsampling "
+            "the longest axis to 256. Halving a volume also halves the tree's "
+            "connectivity — measured on case 9 the largest connected component "
+            "falls from 69% to 42% — so thin vessels break into fragments that "
+            "the cleanup then removes, leaving visible gaps. Costs minutes "
+            "instead of seconds on a 384³ or larger study."
+        ),
+    )
 
 
 class SuggestedBand(BaseModel):
@@ -115,6 +126,13 @@ class SegmentResult(BaseModel):
     )
     fragments_removed: int = Field(
         0, description="Connected components discarded by the cleanup filter"
+    )
+    downsample_factor: int = Field(
+        1,
+        description=(
+            "Voxel-decimation factor used (1 = native resolution). Above 1 the "
+            "tree is measurably less connected, so gaps in the mesh are expected."
+        ),
     )
     largest_removed_mm3: float = Field(
         0.0,

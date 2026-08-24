@@ -14,8 +14,15 @@ from pydantic import BaseModel, Field
 class LongitudinalEntry(BaseModel):
     """Morphometry snapshot from one historical session."""
 
-    session_date: date = Field(..., description="Date of this planning session")
+    session_date: date = Field(..., description="Acquisition date, or the session date if unknown")
     session_label: str = Field("", description="User label for this session")
+    imaging_study_id: int | None = Field(
+        None, description="Acquisition this point measures (one point per acquisition)"
+    )
+    case_id: int | None = Field(None, description="Clinical case the acquisition belongs to")
+    n_sessions: int = Field(
+        1, description="Saved sessions on this acquisition; only the latest is plotted"
+    )
 
     # Key metrics stored per session (subset of MorphometryResult)
     max_diameter_mm: float
@@ -45,8 +52,17 @@ class LongitudinalResult(BaseModel):
     """Longitudinal comparison between the current session and historical ones."""
 
     patient_id: int | None = None
+    case_id: int | None = Field(
+        None, description="Set when the series was restricted to one clinical case"
+    )
     entries: list[LongitudinalEntry] = Field(
-        ..., description="All historical sessions for this patient, ordered by date"
+        ...,
+        description=(
+            "One point per imaging study, ordered by acquisition date. Re-running "
+            "the pipeline on the same images is not a new time point — it would "
+            "read as growth when nothing changed — so repeated sessions on one "
+            "acquisition collapse to the most recent."
+        ),
     )
     deltas: list[LongitudinalDelta] = Field(
         ...,

@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -14,6 +15,14 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ["events"],
+  },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./src/test/setup.ts"],
+    // vtk.js pulls in WebGL and Node's "events"; the suite covers logic and
+    // panels, not the 3D renderer, so its heavy modules stay out.
+    exclude: ["node_modules/**", "dist/**", "src/vtk/**"],
   },
   server: {
     port: 5173,

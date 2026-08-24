@@ -27,10 +27,14 @@ def _read_float(session_id: str, key: str, default: float = 0.0) -> float:
         return default
 
 
-def _ps_to_entry(ps: PlanningSession, label: str | None = None) -> LongitudinalEntry:
+def _ps_to_entry(ps: PlanningSession, label: str | None = None,
+                 when: "date | None" = None, n_sessions: int = 1) -> LongitudinalEntry:
     return LongitudinalEntry(
-        session_date        = ps.created_at.date() if ps.created_at else date.today(),
+        session_date        = when or (ps.created_at.date() if ps.created_at else date.today()),
         session_label       = label or ps.label or ps.session_id[:12],
+        imaging_study_id    = ps.imaging_study_id,
+        case_id             = ps.study_id,
+        n_sessions          = n_sessions,
         max_diameter_mm     = ps.max_diameter_mm or 0.0,
         neck_mm             = ps.neck_mm         or 0.0,
         volume_mm3          = ps.volume_mm3       or 0.0,
@@ -149,20 +153,60 @@ async def get_longitudinal(
             growth_alert=False, growth_alert_message=None,
         )
 
-    # ── 3. Patient is known — load all sessions for this patient ─────────── #
-    all_sessions = (
-        db.query(PlanningSession)
-        .filter(PlanningSession.patient_id == ps_current.patient_id)
-        .order_by(PlanningSession.created_at.asc())
-        .all()
+    # ── 3. One point per ACQUISITION, not per session ─────────────────────── #
+    #
+    # Re-running the pipeline on the same images is not a new time point: two
+    # runs of the same study differ by a millimetre of segmentation noise, and
+    # plotting both reads as growth when nothing grew. So sessions are grouped by
+    # the imaging study they analysed and only the most recent of each is kept.
+    #
+    # Restricted to the current clinical case when there is one — comparing a
+    # control against the baseline of the SAME aneurysm is the clinical question;
+    # a different case in the same patient is a different lesion.
+    query = db.query(PlanningSession).filter(
+        PlanningSession.patient_id == ps_current.patient_id
     )
+    case_id = ps_current.study_id
+    if case_id is not None:
+        query = query.filter(PlanningSession.study_id == case_id)
+    all_sessions = query.order_by(PlanningSession.created_at.asc()).all()
 
-    # Build entry list; label the current one explicitly
-    entries: list[LongitudinalEntry] = []
-    for i, ps in enumerate(all_sessions):
-        is_this = ps.session_id == session_id
-        label = "Sesion actual" if is_this else (ps.label or f"Sesion {i + 1}")
-        entries.append(_ps_to_entry(ps, label=label))
+    from services.db_models import ImagingStudy
+
+    def _acquired_on(img_id: int | None) -> "date | None":
+        if img_id is None:
+            return None
+        img = db.get(ImagingStudy, img_id)
+        if img is None or not img.acquired_at:
+            return None
+        try:
+            return date.fromisoformat(str(img.acquired_at)[:10])
+        except ValueError:
+            return None
+
+    # Group by acquisition; sessions predating the imaging-study model have no
+    # id and each stands on its own so their history is not silently merged.
+    groups: dict[object, list[PlanningSession]] = {}
+    for ps in all_sessions:
+        key = ps.imaging_study_id if ps.imaging_study_id is not None else f"session:{ps.session_id}"
+        groups.setdefault(key, []).append(ps)
+
+    points: list[tuple[date, LongitudinalEntry]] = []
+    for key, sessions in groups.items():
+        # Prefer a run that actually has morphometry, then the most recent.
+        measured = [p for p in sessions if p.max_diameter_mm is not None] or sessions
+        latest = max(measured, key=lambda p: p.updated_at or p.created_at)
+        img_id = latest.imaging_study_id
+        when = _acquired_on(img_id) or (
+            latest.created_at.date() if latest.created_at else date.today()
+        )
+        is_this = any(p.session_id == session_id for p in sessions)
+        label = "Estudio actual" if is_this else (latest.label or f"Estudio {when.isoformat()}")
+        points.append((when, _ps_to_entry(latest, label=label, when=when,
+                                          n_sessions=len(sessions))))
+
+    points.sort(key=lambda t: t[0])
+    entries: list[LongitudinalEntry] = [e for _w, e in points]
 
     # ── 4. Compute deltas between last two entries ────────────────────────── #
     deltas: list[LongitudinalDelta] = []
@@ -173,12 +217,13 @@ async def get_longitudinal(
     growth_alert_message = _growth_message(deltas) if growth_alert else None
 
     logger.info(
-        "Longitudinal — session=%s  patient=%s  entries=%d",
-        session_id, ps_current.patient_id, len(entries),
+        "Longitudinal — session=%s  patient=%s  case=%s  acquisitions=%d (from %d sessions)",
+        session_id, ps_current.patient_id, case_id, len(entries), len(all_sessions),
     )
 
     return LongitudinalResult(
         patient_id           = ps_current.patient_id,
+        case_id              = case_id,
         entries              = entries,
         deltas               = deltas,
         growth_alert         = growth_alert,

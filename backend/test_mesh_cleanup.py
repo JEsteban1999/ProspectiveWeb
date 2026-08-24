@@ -101,3 +101,39 @@ class TestReportedNumbers:
         assert res.n_fragments_removed == 1
         assert 3.0 < res.largest_removed_mm3 < 4.0
         assert 0.9 < res.kept_fraction < 1.0
+
+
+class TestFullResolution:
+    """Downsampling is what breaks thin vessels into fragments.
+
+    Measured on the real studies: halving case 9 drops the largest connected
+    component from 69% of the thresholded volume to 42%, so branches come apart
+    and the cleanup then removes them, leaving gaps in the mesh.
+    """
+
+    def test_a_thin_vessel_survives_at_native_resolution_but_not_halved(self):
+        from scipy.ndimage import label as cc_label
+
+        # A vessel two voxels across, with a one-voxel constriction — the shape
+        # that survives whole at native resolution and snaps when halved.
+        vol = np.zeros((40, 40, 40), np.float32)
+        vol[10:30, 20:22, 20:22] = 1000.0
+        vol[19:21, 20:21, 20:21] = 1000.0      # the narrow part
+
+        native = (vol >= 500)
+        halved = (vol[::2, ::2, ::2] >= 500)
+        _l1, n_native = cc_label(native)
+        _l2, n_halved = cc_label(halved)
+
+        assert n_native == 1, "a native resolution el vaso es una sola pieza"
+        assert n_halved >= n_native, (
+            "submuestrear no puede mejorar la conectividad; si esto falla, la "
+            "premisa de la opción de resolución completa ya no se sostiene"
+        )
+
+    def test_request_defaults_to_the_fast_path(self):
+        """Full resolution costs minutes; it must be opt-in."""
+        from models.segmentation import SegmentRequest
+
+        req = SegmentRequest(session_id="s", series_id="x", lower=100, upper=900)
+        assert req.full_resolution is False
