@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException
 from models import (
     AneurysmCandidate as PydAneurysmCandidate,
     AneurysmDetectionResult,
+    DetectionDiagnostics,
     MorphometryResult,
     NeckPlaneRequest,
     Position3D,
@@ -184,6 +185,22 @@ def _run_detection_sync(
     return AneurysmDetectionResult(
         found=len(pyd_candidates) > 0,
         candidates=pyd_candidates,
+        # Carried out so an empty result can explain itself. On a complete mesh
+        # the size gate rejects the vast majority: high-curvature patches merge
+        # across several vessels and their equivalent radius exceeds the bound.
+        diagnostics=DetectionDiagnostics(
+            regions_analyzed        = det_result.n_regions_total,
+            rejected_too_few_points = det_result.n_failed_points,
+            rejected_size           = det_result.n_failed_size,
+            rejected_mean_curvature = det_result.n_failed_mean_curv,
+            rejected_positive_gauss = det_result.n_failed_pgf,
+            rejected_compactness    = det_result.n_failed_compact,
+            rejected_sphericity     = det_result.n_failed_sphericity,
+            merged                  = det_result.n_merged,
+            removed_components      = det_result.n_removed_components,
+            min_radius_mm           = detector.min_radius_mm,
+            max_radius_mm           = detector.max_radius_mm,
+        ),
     )
 
 

@@ -43,6 +43,34 @@ class AneurysmCandidate(BaseModel):
     )
 
 
+class DetectionDiagnostics(BaseModel):
+    """Why the detector kept or rejected what it did.
+
+    The detector always computed this breakdown but never returned it, so an
+    empty result was indistinguishable from a crash. It is what tells a
+    clinician whether to crop the region of interest, widen the mesh or accept
+    that this study has no dome to find.
+    """
+
+    regions_analyzed: int = Field(
+        0, description="High-curvature regions examined before the shape gates"
+    )
+    rejected_too_few_points: int = 0
+    rejected_size: int = Field(
+        0, description="Equivalent radius outside the accepted range"
+    )
+    rejected_mean_curvature: int = 0
+    rejected_positive_gauss: int = 0
+    rejected_compactness: int = 0
+    rejected_sphericity: int = 0
+    merged: int = Field(0, description="Regions merged into a neighbouring candidate")
+    removed_components: int = Field(
+        0, description="Disconnected mesh fragments dropped before analysis"
+    )
+    min_radius_mm: float = Field(0.0, description="Lower bound of the size gate")
+    max_radius_mm: float = Field(0.0, description="Upper bound of the size gate")
+
+
 class AneurysmDetectionResult(BaseModel):
     """Result of the aneurysm detection step."""
 
@@ -50,6 +78,10 @@ class AneurysmDetectionResult(BaseModel):
     candidates: list[AneurysmCandidate] = Field(
         default_factory=list,
         description="All detected aneurysm candidates, ordered by confidence (descending)",
+    )
+    diagnostics: DetectionDiagnostics = Field(
+        default_factory=DetectionDiagnostics,
+        description="Region counts per rejection reason — explains an empty result",
     )
 
 

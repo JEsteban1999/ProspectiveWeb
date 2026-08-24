@@ -490,9 +490,26 @@ export interface AneurysmCandidate {
   selected: boolean;
 }
 
+/** Why the detector kept or rejected what it did. An empty result used to be
+ *  indistinguishable from a failure; these counts say which gate did it. */
+export interface DetectionDiagnostics {
+  regions_analyzed: number;
+  rejected_too_few_points: number;
+  rejected_size: number;
+  rejected_mean_curvature: number;
+  rejected_positive_gauss: number;
+  rejected_compactness: number;
+  rejected_sphericity: number;
+  merged: number;
+  removed_components: number;
+  min_radius_mm: number;
+  max_radius_mm: number;
+}
+
 export interface AneurysmDetectionResult {
   found: boolean;
   candidates: AneurysmCandidate[];
+  diagnostics: DetectionDiagnostics;
 }
 
 export type RiskLabel = "Alto" | "Moderado" | "Bajo";
