@@ -4,7 +4,8 @@
    on the black clinical surface. Optionally supports point picking on the mesh
    surface (for centreline endpoints) and small sphere markers. */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { markerRadiusMm, RULER_BEAD_RATIO, RULER_TUBE_RATIO } from "./markerSize";
 
 import "@kitware/vtk.js/Rendering/Profiles/Geometry";
 import vtkFullScreenRenderWindow from "@kitware/vtk.js/Rendering/Misc/FullScreenRenderWindow";
@@ -56,6 +57,7 @@ export function MeshView({
   markers = [],
   lines = [],
   cropPreview = null,
+  referenceDiameterMm = null,
   pickMode = false,
   onPick,
   onPickMiss,
@@ -68,6 +70,9 @@ export function MeshView({
   lines?: MeshLine[];
   /** Translucent sphere/box preview of the crop ROI (null to hide). */
   cropPreview?: CropPreview | null;
+  /** Diameter of the structure being marked (mm). Markers scale to it so they
+   *  stay smaller than the vessel or dome they sit on. */
+  referenceDiameterMm?: number | null;
   /** When true, a left click on the mesh reports the world position via onPick. */
   pickMode?: boolean;
   onPick?: (xyz: [number, number, number]) => void;
@@ -86,6 +91,8 @@ export function MeshView({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const handles = useRef<Handles | null>(null);
+  // Set once the geometry is on screen; markers re-render at the new size.
+  const [sceneDiagonal, setSceneDiagonal] = useState(0);
   const markerActors = useRef<vtkActor[]>([]);
   const cropActor = useRef<vtkActor | null>(null);
   const registerCaptureRef = useRef(registerCapture);
@@ -197,6 +204,12 @@ export function MeshView({
       }
       if (cancelled) return;
       if (anyGeometry) {
+        // Scene scale for the markers: the union of everything on screen.
+        const b = renderer.computeVisiblePropBounds();
+        if (b && isFinite(b[0]) && b[1] >= b[0]) {
+          const diag = Math.hypot(b[1] - b[0], b[3] - b[2], b[5] - b[4]);
+          if (diag > 0) setSceneDiagonal(diag);
+        }
         const cam = renderer.getActiveCamera();
         if (preserveCameraRef.current && savedCamera.current) {
           // Live preview refresh: keep the user's current viewpoint.
@@ -309,8 +322,10 @@ export function MeshView({
     markerActors.current.forEach((a) => h.renderer.removeActor(a));
     markerActors.current = [];
 
+    const rMarker = markerRadiusMm(referenceDiameterMm, sceneDiagonal);
+
     for (const m of markers) {
-      const sphere = vtkSphereSource.newInstance({ radius: 1.4, thetaResolution: 16, phiResolution: 16 });
+      const sphere = vtkSphereSource.newInstance({ radius: rMarker, thetaResolution: 16, phiResolution: 16 });
       sphere.setCenter(m.pos[0], m.pos[1], m.pos[2]);
       const mapper = vtkMapper.newInstance();
       mapper.setInputConnection(sphere.getOutputPort());
@@ -323,7 +338,9 @@ export function MeshView({
 
     for (const l of lines) {
       const lineSrc = vtkLineSource.newInstance({ point1: l.a, point2: l.b, resolution: 1 });
-      const tube = vtkTubeFilter.newInstance({ radius: 0.35, numberOfSides: 10, capping: true });
+      const tube = vtkTubeFilter.newInstance({
+        radius: rMarker * RULER_TUBE_RATIO, numberOfSides: 10, capping: true,
+      });
       tube.setInputConnection(lineSrc.getOutputPort());
       const mapper = vtkMapper.newInstance();
       mapper.setInputConnection(tube.getOutputPort());
@@ -334,7 +351,9 @@ export function MeshView({
       markerActors.current.push(actor);
       // Endpoint beads for the ruler.
       for (const p of [l.a, l.b]) {
-        const bead = vtkSphereSource.newInstance({ radius: 0.7, thetaResolution: 12, phiResolution: 12 });
+        const bead = vtkSphereSource.newInstance({
+          radius: rMarker * RULER_BEAD_RATIO, thetaResolution: 12, phiResolution: 12,
+        });
         bead.setCenter(p[0], p[1], p[2]);
         const bm = vtkMapper.newInstance();
         bm.setInputConnection(bead.getOutputPort());
@@ -347,7 +366,7 @@ export function MeshView({
     }
     h.renderWindow.render();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, markerKey, lineKey]);
+  }, [key, markerKey, lineKey, sceneDiagonal, referenceDiameterMm]);
 
   // ── Crop ROI preview: a translucent sphere/box so the crop is not blind ──── #
   useEffect(() => {

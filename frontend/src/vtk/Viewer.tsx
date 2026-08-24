@@ -168,6 +168,12 @@ export function Viewer({ step }: { step: string }) {
   // step shows the study's DICOM views, not the leftover 3D mesh.
   const meshVisible = !!displayMeshUrl && step !== "upload" && !previewActive;
   const candidate = candidates[selectedCandidate];
+
+  // What the markers should be sized against. The candidate's own diameter is
+  // the honest reference — the neck, the apex and the seeds are all placed on
+  // or around it — and morphometry refines it once measured.
+  const referenceDiameterMm =
+    morphometry?.max_diameter_mm || candidate?.max_diameter_mm || null;
   // Frame + highlight the selected candidate during detection and morphometry,
   // so it's obvious where the aneurysm is (and where to place the neck plane).
   const focusUrl =
@@ -277,7 +283,7 @@ export function Viewer({ step }: { step: string }) {
         <ObliqueMprView sessionId={sessionId} wc={mprWl?.wc ?? meta.wc} ww={mprWl?.ww ?? meta.ww} />
       ) : meshVisible ? (
         <Suspense fallback={<ViewerLoading label="Cargando visor 3D…" />}>
-          <MeshView layers={layers} markers={markers} lines={lines} cropPreview={cropPreview} pickMode={pickMode !== null} onPick={onPick} onPickMiss={onPickMiss} focusUrl={focusUrl} registerCapture={setCaptureViewport} />
+          <MeshView layers={layers} markers={markers} lines={lines} cropPreview={cropPreview} referenceDiameterMm={referenceDiameterMm} pickMode={pickMode !== null} onPick={onPick} onPickMiss={onPickMiss} focusUrl={focusUrl} registerCapture={setCaptureViewport} />
         </Suspense>
       ) : sessionId && meta ? (
         <MprView

@@ -20,9 +20,9 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
-    // vtk.js pulls in WebGL and Node's "events"; the suite covers logic and
-    // panels, not the 3D renderer, so its heavy modules stay out.
-    exclude: ["node_modules/**", "dist/**", "src/vtk/**"],
+    // The 3D components pull in WebGL and Node's "events" and are not unit
+    // tested; the pure helpers beside them (marker sizing) are.
+    exclude: ["node_modules/**", "dist/**", "src/vtk/*View.test.*"],
   },
   server: {
     port: 5173,

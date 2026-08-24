@@ -236,6 +236,8 @@ function SeedDotOverlay({ imgRef, u, v }: { imgRef: React.RefObject<HTMLImageEle
   }, [imgRef, u, v]);
   if (!box) return null;
   return (
-    <div style={{ position: "absolute", left: box.left + u * box.w - 5, top: box.top + v * box.h - 5, width: 10, height: 10, borderRadius: "50%", background: "rgba(140,224,90,0.95)", border: "1.5px solid #14181c", boxShadow: "0 0 6px 1px rgba(140,224,90,0.7)", pointerEvents: "none" }} />
+    // 7 px, not 10: on a 384-px slice spanning ~140 mm the old dot covered some
+    // 3.6 mm — wider than the vessel it marks. The glow keeps it findable.
+    <div style={{ position: "absolute", left: box.left + u * box.w - 3.5, top: box.top + v * box.h - 3.5, width: 7, height: 7, borderRadius: "50%", background: "rgba(140,224,90,0.95)", border: "1px solid #14181c", boxShadow: "0 0 5px 1px rgba(140,224,90,0.75)", pointerEvents: "none" }} />
   );
 }
