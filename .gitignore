@@ -91,3 +91,7 @@ backend/study_files/
 
 # JWT signing key — moved out of the public data/ mount (see auth_service.py)
 backend/secrets/
+
+# Mesh-quality probe output (regenerate with the harness; not source)
+backend/*_report.json
+backend/mesh_quality_report*.json

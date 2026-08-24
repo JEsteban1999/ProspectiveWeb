@@ -190,9 +190,9 @@ cd frontend && npm run dev
 | `http://127.0.0.1:8000/redoc` | ReDoc |
 | `http://127.0.0.1:8000/health` | Health check |
 
-Default account seeded on first run: **`admin` / `admin123`**. There is no
-password-change endpoint yet, so treat this as a development credential and set
-up a proper account flow before any real deployment.
+Default account seeded on first run: **`admin` / `admin123`**. Change it from the
+user menu ("Cambiar contraseña") before using the app with real data — an admin
+can also reset another user's password from the Usuarios page.
 
 > **Note on `--reload`**: uvicorn's reloader does not reliably pick up *new*
 > modules, and a stale process on :8000 will silently serve old code. Restart the

@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from main import app
 from services.database import Base, engine
 from services.sessions import create_session, session_subdir, write_state
-from services.segmentation import level_to_cleanup
+from services.segmentation import level_to_cleanup_mm3
 from services import mpr as mprmod
 
 Base.metadata.create_all(bind=engine)
@@ -63,11 +63,33 @@ def _wide_ww_3dra_session() -> "tuple[str, np.ndarray]":
 
 
 class TestCleanupMapping:
-    def test_switches_to_topn_at_level_5(self):
-        assert level_to_cleanup(4)[0] == 0     # still size-based
-        assert level_to_cleanup(5)[0] == 20    # top-N kicks in
-        assert level_to_cleanup(7)[0] == 10
-        assert level_to_cleanup(10)[0] == 3    # only the 3 largest
+    """The slider has two regimes, and each must stay internally consistent.
+
+    Levels 1–4 filter by physical volume (nothing vessel-sized is ever dropped);
+    levels 5–10 keep the N largest components (clean mesh, may drop a branch —
+    which is why the run reports what it discarded).
+    """
+
+    def test_low_levels_filter_by_growing_physical_volume(self):
+        mm3 = [level_to_cleanup_mm3(i)[0] for i in range(5)]
+        assert mm3[0] == 0.0, "el nivel 0 no debe filtrar nada"
+        assert mm3 == sorted(mm3) and mm3[4] > mm3[1]
+
+    def test_high_levels_keep_fewer_components_as_the_level_rises(self):
+        top = [level_to_cleanup_mm3(i)[1] for i in range(5, 11)]
+        assert all(t > 0 for t in top), "de 5 en adelante manda el conteo"
+        assert top == sorted(top, reverse=True), "subir el nivel debe limpiar más"
+
+    def test_the_two_regimes_never_overlap(self):
+        """Both filters at once would compound losses that the report attributes
+        to a single rule."""
+        for lvl in range(11):
+            mm3, top_n, _c = level_to_cleanup_mm3(lvl)
+            assert not (mm3 > 0 and top_n > 0), f"nivel {lvl} activa las dos reglas"
+
+    def test_out_of_range_levels_are_clamped(self):
+        assert level_to_cleanup_mm3(-3) == level_to_cleanup_mm3(0)
+        assert level_to_cleanup_mm3(99) == level_to_cleanup_mm3(10)
 
 
 class TestSuggestedBand:

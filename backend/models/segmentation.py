@@ -106,3 +106,20 @@ class SegmentResult(BaseModel):
     is_dsa: bool = Field(False, description="True when DSA mode was active")
     vertices: int = Field(..., description="Number of vertices in the output mesh")
     faces: int = Field(..., description="Number of triangular faces in the output mesh")
+    kept_fraction: float = Field(
+        1.0,
+        description=(
+            "Share of the thresholded volume that survived the cleanup filter "
+            "(0–1). Below ~0.9 the mesh may be missing vessel branches."
+        ),
+    )
+    fragments_removed: int = Field(
+        0, description="Connected components discarded by the cleanup filter"
+    )
+    largest_removed_mm3: float = Field(
+        0.0,
+        description=(
+            "Volume of the biggest discarded component, in mm³. A few mm³ is a "
+            "speck; tens of mm³ is a vessel segment that left the mesh."
+        ),
+    )

@@ -344,6 +344,11 @@ export interface SegmentResult {
   is_dsa: boolean;
   vertices: number;
   faces: number;
+  /** Share of the thresholded volume kept by the cleanup filter (0–1). */
+  kept_fraction: number;
+  fragments_removed: number;
+  /** Biggest discarded component, mm³. Tens of mm³ = a vessel segment left out. */
+  largest_removed_mm3: number;
 }
 
 /* ── interactive mesh editing: ROI crop + grow-from-seeds ───────────────── */

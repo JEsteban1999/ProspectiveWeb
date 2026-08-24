@@ -53,6 +53,11 @@ class SegmentationResult:
     reduction_pct:       float         # actual decimation achieved
     n_fragments_removed: int = 0
     is_preview:          bool = False
+    # How much of the thresholded vasculature survived the component filter.
+    # Silent loss here is how a real vessel branch disappears from the mesh, so
+    # the numbers travel out to the UI instead of staying in the log.
+    kept_fraction:       float = 1.0
+    largest_removed_mm3: float = 0.0
 
 
 # ── Main pipeline ──────────────────────────────────────────────────────────── #
@@ -88,6 +93,7 @@ class SegmentationPipeline:
         vessel_dilation_mm:  float = 3.0,
         morpho_closing_mm:   float = 0.0,
         keep_top_n:          int   = 0,
+        min_component_mm3:   float = 0.0,
     ) -> None:
         self.threshold_hu        = threshold_hu
         self.threshold_max_hu    = threshold_max_hu
@@ -100,6 +106,8 @@ class SegmentationPipeline:
         self.vessel_dilation_mm  = vessel_dilation_mm
         self.morpho_closing_mm   = morpho_closing_mm
         self.keep_top_n          = keep_top_n
+        # Physical-size cut-off; preferred over keep_top_n for vasculature.
+        self.min_component_mm3   = min_component_mm3
 
     # ── Public API ─────────────────────────────────────────────────────────── #
 
@@ -157,10 +165,29 @@ class SegmentationPipeline:
 
         # 4. Connected-component filtering in mask space
         n_fragments_removed = 0
-        if self.keep_top_n > 0 or self.min_component_verts > 0:
-            mask, n_fragments_removed = self._filter_mask_components(
-                mask, self.min_component_verts, self.keep_top_n,
+        kept_fraction       = 1.0
+        largest_removed_mm3 = 0.0
+        voxel_mm3 = float(np.prod(spacing))
+        min_voxels = self.min_component_verts
+        if self.min_component_mm3 > 0.0 and voxel_mm3 > 0.0:
+            # A physical cut-off means the same thing whatever the resolution,
+            # which matters because large volumes are segmented downsampled.
+            min_voxels = max(1, int(round(self.min_component_mm3 / voxel_mm3)))
+        if self.keep_top_n > 0 or min_voxels > 0:
+            before = float(mask.sum())
+            mask, n_fragments_removed, largest_removed_vox = self._filter_mask_components(
+                mask, min_voxels, self.keep_top_n,
             )
+            after = float(mask.sum())
+            kept_fraction = (after / before) if before > 0 else 1.0
+            largest_removed_mm3 = largest_removed_vox * voxel_mm3
+            if kept_fraction < 0.9:
+                logger.warning(
+                    "Cleanup discarded %.0f%% of the thresholded volume "
+                    "(%d fragments, largest %.1f mm3) — lower the cleanup level "
+                    "if branches are missing",
+                    100 * (1 - kept_fraction), n_fragments_removed, largest_removed_mm3,
+                )
 
         # 5. Marching Cubes on binary mask at iso=0.5
         mc_input = self._to_vtk_image(mask, spacing)
@@ -239,6 +266,8 @@ class SegmentationPipeline:
             threshold_hu=self.threshold_hu,
             reduction_pct=actual_reduction * 100,
             n_fragments_removed=n_fragments_removed,
+            kept_fraction=kept_fraction,
+            largest_removed_mm3=largest_removed_mm3,
         )
 
     def run_fast_preview(
@@ -265,7 +294,7 @@ class SegmentationPipeline:
             mask = (vol_d >= self.threshold_hu).astype(np.float32)
 
         kn = self.keep_top_n if self.keep_top_n > 0 else 20
-        mask, _ = self._filter_mask_components(mask, 0, kn)
+        mask, _n, _largest = self._filter_mask_components(mask, 0, kn)
 
         img = self._to_vtk_image(mask, sp_d)
         mc  = vtk.vtkMarchingCubes()
@@ -342,16 +371,22 @@ class SegmentationPipeline:
         mask:        np.ndarray,
         min_voxels:  int,
         keep_top_n:  int,
-    ) -> tuple[np.ndarray, int]:
+    ) -> tuple[np.ndarray, int, int]:
+        """Returns (mask, n_removed, largest_removed_voxels).
+
+        The third value matters clinically: a few thousand discarded specks are
+        noise, but one discarded component of a few hundred voxels is a vessel
+        branch that silently vanished from the mesh.
+        """
         try:
             from scipy.ndimage import label as scipy_label
         except ImportError:
             logger.warning("scipy not available — component filtering skipped")
-            return mask.astype(np.float32), 0
+            return mask.astype(np.float32), 0, 0
 
         labeled, n_labels = scipy_label(mask.astype(bool))
         if n_labels <= 1:
-            return mask.astype(np.float32), 0
+            return mask.astype(np.float32), 0, 0
 
         sizes = np.bincount(labeled.ravel())
         component_list = [(int(sizes[i + 1]), i + 1) for i in range(n_labels)]
@@ -366,7 +401,9 @@ class SegmentationPipeline:
 
         n_removed = n_labels - len(keep_set)
         if n_removed == 0:
-            return mask.astype(np.float32), 0
+            return mask.astype(np.float32), 0, 0
+        largest_removed = max((sz for sz, idx in component_list if idx not in keep_set),
+                              default=0)
 
         result = np.isin(labeled, list(keep_set)).astype(np.float32)
         logger.info(
@@ -374,7 +411,7 @@ class SegmentationPipeline:
             len(keep_set), n_labels,
             f"top-{keep_top_n}" if keep_top_n > 0 else f"≥{min_voxels} voxels",
         )
-        return result, n_removed
+        return result, n_removed, largest_removed
 
     @staticmethod
     def _dual_threshold_mask(
@@ -447,7 +484,50 @@ _SMOOTH_ITER = [0, 5, 10, 20, 25, 30, 35, 40, 45, 50, 60]
 # cleanup level 0–10 → min_component_verts (or keep_top_n if 0)
 _CLEANUP_VERTS = [0, 20, 50, 100, 200, 500, 800, 1200, 1500, 2000, 3000]
 
-# Cleanup level 0–10 → (keep_top_n, min_voxels, morpho_closing_mm), ported from
+# Cleanup level 0–10 → (min_component_mm3, keep_top_n, morpho_closing_mm).
+#
+# Two regimes, because no single rule gives both a clean mesh and a complete one
+# — measured over the three angiographic studies in `Archivos DICOM/`:
+#
+#   · An angiographic tree is NOT one connected component. After thresholding and
+#     a 0.5 mm closing the largest component holds only 40–47% of the volume, in
+#     1300–2700 pieces.
+#   · Keeping the N largest gives the clean look, but discards 20–40% of the
+#     volume, and among it single connected pieces of 66, 175 and 255 mm³. A
+#     255 mm³ piece is a 3 mm vessel some 36 mm long, not noise.
+#   · Keeping everything above a physical volume retains 89–94%, but leaves
+#     65–270 visible islands.
+#   · Closing harder reconnects the tree (largest component 42% → 75% at 3 mm)
+#     by fattening it: the mask grows up to 2.3×, which would corrupt the
+#     diameters morphometry reads off it.
+#
+# So levels 1–4 filter by physical volume — nothing vessel-sized is ever dropped,
+# at the cost of speckle — and levels 5–10 keep the N largest for a clean mesh.
+# Whichever regime is active, the run reports how much volume it discarded and
+# how big the largest discarded piece was, so the loss is visible instead of
+# silent and the clinician can drop a level when a branch is missing.
+_CLEANUP_MAP_V2: list[tuple[float, int, float]] = [
+    (0.0,   0, 0.0),  # 0  — Ninguna
+    (0.5,   0, 0.0),  # 1  ┐
+    (1.0,   0, 0.0),  # 2  │ por volumen físico: conserva todo lo que puede ser vaso
+    (2.0,   0, 0.0),  # 3  │
+    (5.0,   0, 0.5),  # 4  ┘ ~90% del volumen, descarta solo motas < 5 mm³
+    (0.0,  20, 0.5),  # 5  ┐
+    (0.0,  15, 0.5),  # 6  │ por número de componentes: malla limpia
+    (0.0,  10, 0.5),  # 7  │ ← por defecto en la interfaz
+    (0.0,   7, 1.0),  # 8  │
+    (0.0,   5, 1.0),  # 9  │
+    (0.0,   3, 1.0),  # 10 ┘ Máxima: solo las 3 estructuras mayores
+]
+
+
+def level_to_cleanup_mm3(level: int) -> tuple[float, int, float]:
+    """Cleanup level 0–10 → (min_component_mm3, keep_top_n, morpho_closing_mm)."""
+    return _CLEANUP_MAP_V2[max(0, min(10, level))]
+
+
+# LEGACY top-N table. Kept because grow.py and the mesh-edit path still take a
+# component count; the segmentation slider no longer uses it. Ported from
 # the desktop segmentation panel (_LIMPIEZA_MAP). From level 5 up it switches to
 # TOPOLOGICAL isolation — keep only the N largest connected components — which
 # removes large tissue/noise blobs a size-only filter cannot. Level 10 keeps just

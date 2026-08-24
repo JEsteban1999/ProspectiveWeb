@@ -20,7 +20,7 @@ from services.dicom_loader import load_series
 from services.segmentation import (
     SegmentationPipeline, write_vtp,
     voxel_fraction as seg_voxel_fraction,
-    level_to_smooth_iters, level_to_cleanup,
+    level_to_smooth_iters, level_to_cleanup_mm3,
 )
 
 logger = logging.getLogger(__name__)
@@ -181,7 +181,7 @@ async def segment(req: SegmentRequest) -> SegmentResult:
 
     # Map API levels (0–10) to pipeline parameters
     smooth_iters = level_to_smooth_iters(req.smoothing)
-    top_n, min_voxels, closing_mm = level_to_cleanup(req.cleanup)
+    min_mm3, top_n, closing_mm = level_to_cleanup_mm3(req.cleanup)
 
     # Run heavy CPU work off the event loop
     loop = asyncio.get_event_loop()
@@ -197,8 +197,8 @@ async def segment(req: SegmentRequest) -> SegmentResult:
                 lower=        req.lower,
                 upper=        req.upper,
                 smooth_iters= smooth_iters,
-                keep_top_n=   top_n,
-                min_voxels=   min_voxels,
+                min_mm3=      min_mm3,
+                top_n=        top_n,
                 closing_mm=   closing_mm,
             ),
         )
@@ -307,11 +307,15 @@ def _run_preview_sync(session_id: str, meshes_dir: Path, req: PreviewRequest) ->
     volume = np.asarray(_get_volume(session_id))
     spacing = tuple(float(s) for s in meta["spacing"])  # (sz, sy, sx)
 
-    top_n, _min_voxels, _closing = level_to_cleanup(req.cleanup)
+    # The preview must filter exactly like the real run, or the mesh the user
+    # tunes the sliders against is not the mesh they get.
+    min_mm3, top_n, _closing = level_to_cleanup_mm3(req.cleanup)
     pipeline = SegmentationPipeline(
         threshold_hu=req.lower,
         threshold_max_hu=req.upper if req.upper > req.lower else 0.0,
-        keep_top_n=top_n if top_n > 0 else 12,   # preview always isolates for a clean look
+        min_component_mm3=min_mm3,
+        keep_top_n=top_n,
+        min_component_verts=0,
     )
     seg = pipeline.run_fast_preview(volume, spacing, downsample=req.downsample)
 
@@ -332,8 +336,8 @@ def _run_segmentation_sync(
     lower:         float,
     upper:         float,
     smooth_iters:  int,
-    keep_top_n:    int,
-    min_voxels:    int,
+    min_mm3:       float,
+    top_n:         int,
     closing_mm:    float,
 ) -> SegmentResult:
     """Load DICOM → run VTK pipeline → write .vtp → update session state.
@@ -374,8 +378,8 @@ def _run_segmentation_sync(
     vf = seg_voxel_fraction(dcm.volume, lower, upper)
 
     # ── Build pipeline parameters ─────────────────────────────────────────── #
-    # Cleanup slider maps to topological isolation (keep_top_n) from level 5 up —
-    # like the desktop — which removes large tissue blobs a size-only filter can't.
+    # Cleanup discards connected components below a physical volume. See
+    # _CLEANUP_MM3 for why this replaced "keep the N largest".
     pipeline = SegmentationPipeline(
         threshold_hu=        lower,
         threshold_max_hu=    upper if upper > lower else 0.0,
@@ -383,9 +387,12 @@ def _run_segmentation_sync(
         smooth_pass_band=    0.06,
         target_reduction=    0.70,
         gaussian_sigma=      0.5,
-        min_component_verts= min_voxels,
         morpho_closing_mm=   closing_mm,
-        keep_top_n=          keep_top_n,
+        min_component_mm3=   min_mm3,
+        keep_top_n=          top_n,
+        # One of min_component_mm3 / keep_top_n is active per level; the pipeline
+        # default of 100 vertices must not filter on top of them (nor at level 0).
+        min_component_verts= 0,
     )
 
     # ── Downsample very large volumes so segmentation stays responsive ────── #
@@ -393,8 +400,8 @@ def _run_segmentation_sync(
 
     # ── Run marching cubes ────────────────────────────────────────────────── #
     logger.info(
-        "Running marching cubes: lower=%.0f upper=%.0f smooth=%d top_n=%d min_vox=%d shape=%s (ds=%d)",
-        lower, upper, smooth_iters, keep_top_n, min_voxels, seg_volume.shape, ds_factor,
+        "Running marching cubes: lower=%.0f upper=%.0f smooth=%d min_mm3=%.1f top_n=%d shape=%s (ds=%d)",
+        lower, upper, smooth_iters, min_mm3, top_n, seg_volume.shape, ds_factor,
     )
     seg_result = pipeline.run(seg_volume, seg_spacing)
 
@@ -437,4 +444,7 @@ def _run_segmentation_sync(
         is_dsa=         is_dsa,
         vertices=       seg_result.n_vertices,
         faces=          seg_result.n_triangles,
+        kept_fraction=       seg_result.kept_fraction,
+        fragments_removed=   seg_result.n_fragments_removed,
+        largest_removed_mm3= round(seg_result.largest_removed_mm3, 1),
     )

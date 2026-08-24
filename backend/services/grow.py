@@ -115,7 +115,7 @@ def grow_from_seeds(
     # ── 2c. Optional component filter (drop satellite leaks) ───────────────── #
     n_fragments_removed = 0
     if keep_top_n > 0:
-        mask_f, n_fragments_removed = SegmentationPipeline._filter_mask_components(
+        mask_f, n_fragments_removed, _largest_removed = SegmentationPipeline._filter_mask_components(
             mask_f, 0, keep_top_n
         )
     n_voxels = int(mask_f.sum())

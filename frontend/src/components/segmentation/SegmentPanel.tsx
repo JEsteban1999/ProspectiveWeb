@@ -140,7 +140,14 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
         <div style={{ height: 14 }} />
         <Slider label="Suavizado" min={0} max={10} value={smoothing} onChange={setSmoothing} />
         <div style={{ height: 14 }} />
-        <Slider label="Limpieza (aísla árbol principal)" min={0} max={10} value={cleanup} onChange={setCleanup} />
+        <Slider label="Limpieza" min={0} max={10} value={cleanup} onChange={setCleanup} />
+        <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: -4, marginBottom: 8, lineHeight: 1.45 }}>
+          {cleanup === 0
+            ? "Sin filtrar: se conserva todo, incluido el ruido."
+            : cleanup <= 4
+              ? "Filtra por tamaño: descarta motas y conserva cualquier fragmento que pueda ser un vaso."
+              : "Aísla las estructuras mayores: malla más limpia, pero puede dejar fuera una rama suelta."}
+        </div>
       </div>
       <div style={{ marginTop: 6, textAlign: "right" }}>
         <button
@@ -180,6 +187,28 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
               unit=" %"
               badge={segmentation.voxel_fraction > 0.15 ? ["Permisivo", "warning"] : ["OK", "success"]}
             />
+          )}
+          {/* What the cleanup threw away. Without this the loss is invisible:
+              a whole branch can vanish and the mesh still looks plausible. */}
+          <Metric
+            label="Volumen conservado"
+            value={(segmentation.kept_fraction * 100).toFixed(1)}
+            unit=" %"
+            badge={
+              segmentation.largest_removed_mm3 >= 20
+                ? ["Revisar", "warning"]
+                : ["Limpio", "success"]
+            }
+          />
+          {segmentation.fragments_removed > 0 && (
+            <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 6, lineHeight: 1.5 }}>
+              Se descartaron {segmentation.fragments_removed.toLocaleString("es")} fragmentos
+              sueltos; el mayor medía {segmentation.largest_removed_mm3.toFixed(1)} mm³.
+              {segmentation.largest_removed_mm3 >= 20 && (
+                <> Un fragmento de ese tamaño puede ser un segmento de vaso desconectado:
+                baja la limpieza si echas en falta alguna rama.</>
+              )}
+            </div>
           )}
         </Card>
       )}

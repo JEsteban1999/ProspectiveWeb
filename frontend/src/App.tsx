@@ -101,6 +101,9 @@ function Router() {
         planning.setSegmentation({
           mesh_url: r.mesh_url, vertices: r.n_vertices, faces: r.n_faces,
           voxel_fraction: null, strategy: "restaurada", is_dsa: false,
+          // The mesh came back from a snapshot; no cleanup ran now, so there is
+          // nothing discarded to report.
+          kept_fraction: 1, fragments_removed: 0, largest_removed_mm3: 0,
         });
       }
       // The centreline geometry comes back with the snapshot; without this the
