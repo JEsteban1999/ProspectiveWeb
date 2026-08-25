@@ -377,16 +377,47 @@ def _run_morphometry_sync(
     analyzer    = MorphometricAnalyzer()
     neck_source = "auto"
     plane_arg   = None
+    neck_tilt_deg = 0.0
 
     if neck_plane is not None:
         # ── Semi-automatic closed-sac isolation ───────────────────────────── #
-        origin = (neck_plane.origin.x, neck_plane.origin.y, neck_plane.origin.z)
-        nrm    = np.asarray(neck_plane.normal, dtype=float)
-        nrm    = nrm / (np.linalg.norm(nrm) or 1.0)
-        normal = tuple(float(v) for v in nrm)
+        rim = getattr(neck_plane, "rim_points", None) or []
+
         if neck_plane.dome_seed is not None:
             seed = (neck_plane.dome_seed.x, neck_plane.dome_seed.y, neck_plane.dome_seed.z)
         else:
+            seed = None
+
+        if len(rim) >= 3 and seed is not None:
+            # Orientation from the marked rim, not from the neck→dome axis.
+            from services.sac_isolation import fit_plane_to_rim
+
+            o, n, neck_tilt_deg = fit_plane_to_rim(
+                [(p.x, p.y, p.z) for p in rim], seed,
+            )
+            origin = tuple(float(v) for v in o)
+            normal = tuple(float(v) for v in n)
+            neck_source = "rim"
+            logger.info(
+                "Neck plane fitted to %d rim points — %.1f° from the dome axis",
+                len(rim), neck_tilt_deg,
+            )
+        else:
+            origin = (neck_plane.origin.x, neck_plane.origin.y, neck_plane.origin.z)
+            nrm    = np.asarray(neck_plane.normal, dtype=float)
+            nrm    = nrm / (np.linalg.norm(nrm) or 1.0)
+            normal = tuple(float(v) for v in nrm)
+            # Replaying a saved plane: the stored origin/normal ARE the fitted
+            # ones, so a rim fit must not be relabelled as the coarser method
+            # just because the rim points are not resent.
+            if read_state(session_id, "morpho.neck_source", "") == "rim":
+                neck_source = "rim"
+                try:
+                    neck_tilt_deg = float(read_state(session_id, "morpho.neck_tilt_deg", "0") or 0)
+                except ValueError:
+                    neck_tilt_deg = 0.0
+
+        if seed is None:
             seed = tuple(origin[i] + 3.0 * normal[i] for i in range(3))
 
         # The two user clicks (neck point + dome apex) size the sac: their
@@ -441,7 +472,10 @@ def _run_morphometry_sync(
         write_vtp(sac_mesh, vtp_path.parent / "aneurysm_sac.vtp")
         poly        = sac_mesh
         plane_arg   = (origin, normal, neck_diam)
-        neck_source = "manual"
+        # "rim" already recorded that the orientation came from marked points;
+        # don't overwrite it with the coarser label.
+        if neck_source != "rim":
+            neck_source = "manual"
 
         # Persist the plane ITSELF (not just the numbers it produced) so the
         # measurement is reproducible: GET /morphometry replays it, which is
@@ -511,6 +545,7 @@ def _run_morphometry_sync(
     write_state(session_id, "morpho.compactness",      str(_clamp01(mr.compactness)))
     write_state(session_id, "morpho.rupture_risk",     mr.rupture_risk_label)
     write_state(session_id, "morpho.neck_source",      neck_source)
+    write_state(session_id, "morpho.neck_tilt_deg",     str(round(neck_tilt_deg, 2)))
 
     # ── Reliability guard (Tier 1) ────────────────────────────────────── #
     # analyze() nulls volume/neck metrics when the mesh is an open patch or the
@@ -567,6 +602,7 @@ def _run_morphometry_sync(
         rupture_risk_label= mr.rupture_risk_label,
         reliable          = mr.reliable,
         neck_source       = neck_source,
+        neck_tilt_deg     = round(neck_tilt_deg, 2),
         neck_valid        = neck_valid,
         warning           = warning,
         centroid          = Position3D(

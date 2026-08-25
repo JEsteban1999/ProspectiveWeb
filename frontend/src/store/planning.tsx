@@ -56,6 +56,9 @@ interface PlanningState {
   measurePending: Vec3 | null;
   /** Seed points placed on the volume for grow-from-seeds segmentation. */
   growSeeds: Vec3[];
+  /** Points marked around the neck rim. With three or more the neck plane is
+   *  fitted to them instead of assuming it is perpendicular to the dome axis. */
+  neckRim: Vec3[];
   /** When true, clicking an MPR slice adds a grow-from-seeds seed (place seeds on
    *  a vessel where it's clearly separable from bone — the clean path for CTA). */
   mprSeedMode: boolean;
@@ -99,6 +102,7 @@ interface PlanningState {
   setMeasurements: (m: Measurement[]) => void;
   setMeasurePending: (p: Vec3 | null) => void;
   setGrowSeeds: (s: Vec3[]) => void;
+  setNeckRim: (s: Vec3[]) => void;
   setMprSeedMode: (v: boolean) => void;
   setCropCenter: (p: Vec3 | null) => void;
   setCropRadius: (r: number) => void;
@@ -115,6 +119,7 @@ interface PlanningState {
 export type Vec3 = [number, number, number];
 export type PickMode =
   | "cl_source" | "cl_target" | "measure" | "neck_origin" | "neck_dome"
+  | "neck_rim"
   | "grow_seed" | "crop_center" | "traj_entry" | "traj_target" | null;
 
 export interface Measurement {
@@ -156,6 +161,7 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
   const [measurePending, setMeasurePending] = useState<Vec3 | null>(null);
   const [growSeeds, setGrowSeeds] = useState<Vec3[]>([]);
+  const [neckRim, setNeckRim] = useState<Vec3[]>([]);
   const [mprSeedMode, setMprSeedMode] = useState(false);
   const [cropCenter, setCropCenter] = useState<Vec3 | null>(null);
   const [cropRadius, setCropRadius] = useState(10);
@@ -184,6 +190,7 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
     setClTarget(null);
     setNeckOrigin(null);
     setNeckDome(null);
+    setNeckRim([]);
     setMeasurements([]);
     setMeasurePending(null);
     setGrowSeeds([]);
@@ -208,11 +215,11 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
         patient, caseId, caseLabel, imagingStudyId, sessionId, series, previewBand, previewMeshUrl, segmentation, candidates,
         selectedCandidate, morphometry, treatment, deviceMesh,
         centerlineMesh, centerlineArcMm, mprWl, mprVoxel, pickMode, clSource, clTarget, neckOrigin, neckDome,
-        measurements, measurePending, growSeeds, mprSeedMode, cropCenter, cropRadius, cropShape, cropInvert, trajEntry, trajTarget, morphoOverlay, captureViewport,
+        measurements, measurePending, growSeeds, neckRim, mprSeedMode, cropCenter, cropRadius, cropShape, cropInvert, trajEntry, trajTarget, morphoOverlay, captureViewport,
         setPatient, setCase, setImagingStudyId, setSession, setSeries, setPreviewBand, setPreviewMeshUrl, setSegmentation,
         setCandidates, setSelectedCandidate, setMorphometry, setTreatment,
         setDeviceMesh, setCenterlineMesh, setCenterlineArcMm, setMprWl, setMprVoxel,
-        setPickMode, setClSource, setClTarget,
+        setPickMode, setClSource, setClTarget, setNeckRim,
         setNeckOrigin, setNeckDome,
         setMeasurements, setMeasurePending, setGrowSeeds, setMprSeedMode, setCropCenter, setCropRadius, setCropShape, setCropInvert, setTrajEntry, setTrajTarget, setMorphoOverlay,
         setCaptureViewport,

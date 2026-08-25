@@ -165,11 +165,21 @@ class MorphometryResult(BaseModel):
             "plane (POST .../neck-plane) to obtain a valid closed-sac measurement."
         ),
     )
-    neck_source: Literal["auto", "manual"] = Field(
+    neck_source: Literal["auto", "manual", "rim"] = Field(
         "auto",
         description=(
             "'auto' = neck from automatic plane-slicing on the candidate; "
-            "'manual' = neck from a user-defined neck plane (closed-sac isolation)."
+            "'manual' = plane from one neck point plus the dome apex; "
+            "'rim' = plane fitted to points marked around the neck rim."
+        ),
+    )
+    neck_tilt_deg: float = Field(
+        0.0,
+        description=(
+            "Angle between the neck plane and the neck→dome axis, in degrees. "
+            "Only meaningful with neck_source='rim'. Near 0° the single-point "
+            "method would have produced the same plane; large values are the "
+            "oblique necks it gets wrong."
         ),
     )
     neck_valid: bool = Field(
@@ -226,5 +236,15 @@ class NeckPlaneRequest(BaseModel):
         description=(
             "Optional point inside the dome to disambiguate the sac side. "
             "Defaults to origin + 3·normal."
+        ),
+    )
+    rim_points: list[Position3D] = Field(
+        default_factory=list,
+        description=(
+            "Optional points around the neck rim. With three or more, the plane "
+            "is fitted to them instead of assuming it is perpendicular to the "
+            "neck→dome axis — real necks are often oblique to that axis, and a "
+            "tilted cutting plane crosses the neck diagonally and overestimates "
+            "its diameter. `origin` and `normal` are then ignored."
         ),
     )

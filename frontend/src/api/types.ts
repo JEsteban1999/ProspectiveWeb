@@ -533,7 +533,11 @@ export interface MorphometryResult {
   sr: number;
   rupture_risk_label: RiskLabel;
   reliable: boolean;
-  neck_source: "auto" | "manual";
+  neck_source: "auto" | "manual" | "rim";
+  /** Angle between the neck plane and the neck→dome axis (degrees). Only
+   *  meaningful for neck_source "rim": near 0° the two-click method would have
+   *  landed in the same place. */
+  neck_tilt_deg: number;
   neck_valid: boolean;
   warning: string | null;
   centroid: Position3D | null;
@@ -547,6 +551,10 @@ export interface NeckPlaneRequest {
   origin: Position3D;
   normal: number[];          // [x, y, z] toward the dome
   dome_seed?: Position3D | null;
+  /** Points around the neck rim. With three or more the plane is fitted to them
+   *  and `origin`/`normal` are ignored — real necks are often oblique to the
+   *  dome axis, and assuming perpendicularity overestimates the opening. */
+  rim_points?: Position3D[];
 }
 
 /* ── perforators ───────────────────────────────────────────────────────── */

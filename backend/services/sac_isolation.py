@@ -76,6 +76,65 @@ def _contour_area(loop: vtk.vtkPolyData) -> float:
     return float(mp.GetSurfaceArea())
 
 
+def fit_plane_to_rim(
+    rim_points: "np.ndarray | list",
+    dome_seed: "np.ndarray | list",
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """Least-squares plane through points marked around the neck rim.
+
+    Returns (origin, unit_normal, tilt_deg).
+
+    Why this exists: with a single neck point the plane's orientation has to be
+    inferred from the neck→dome direction, which assumes the neck is
+    perpendicular to the aneurysm's axis. Real necks — bifurcation aneurysms
+    especially — are often oblique to it, and a tilted plane cuts the neck
+    diagonally, so the contour comes out larger than the true opening. An
+    overestimated neck lowers DNR and AR and can flip the treatment
+    recommendation.
+
+    Fitting takes the orientation from the anatomy instead of assuming it. The
+    normal is the least-significant singular vector of the centred points (the
+    direction of least spread), flipped to point at the dome so downstream code
+    keeps its "positive side = sac" convention.
+
+    `tilt_deg` is the angle between the fitted normal and the centroid→dome
+    axis: near 0° both methods agree and the extra clicks bought nothing; large
+    values are exactly the cases the single-point method got wrong.
+    """
+    pts = np.asarray(rim_points, dtype=np.float64).reshape(-1, 3)
+    if pts.shape[0] < 3:
+        raise ValueError("Se necesitan al menos 3 puntos del borde del cuello.")
+
+    origin = pts.mean(axis=0)
+    # SVD of the centred points: rows span the plane, the last right-singular
+    # vector is orthogonal to the best-fit plane.
+    _u, _s, vh = np.linalg.svd(pts - origin, full_matrices=False)
+    normal = vh[-1]
+    n = float(np.linalg.norm(normal))
+    if n == 0.0 or not np.isfinite(n):
+        raise ValueError("Los puntos del cuello son degenerados (colineales o coincidentes).")
+    normal = normal / n
+
+    axis = np.asarray(dome_seed, dtype=np.float64) - origin
+    a = float(np.linalg.norm(axis))
+    # Physical tolerance, not an exact zero: the centroid of the marked points
+    # lands within floating-point noise of the ring centre, and an apex closer
+    # than half a millimetre to the neck is not a dome anyway.
+    if a < 0.5:
+        raise ValueError(
+            "El ápice del domo está sobre el plano del cuello. Márcalo en la "
+            "cúpula del saco, no en su base."
+        )
+    axis = axis / a
+
+    # Point the normal at the dome; the sign out of SVD is arbitrary.
+    if float(np.dot(normal, axis)) < 0.0:
+        normal = -normal
+
+    tilt = math.degrees(math.acos(max(-1.0, min(1.0, float(np.dot(normal, axis))))))
+    return origin, normal, tilt
+
+
 def measure_neck(
     vessel_poly: vtk.vtkPolyData,
     origin: np.ndarray,

@@ -40,6 +40,7 @@ const MEASURE_COLOR: Vector3 = [0.98, 0.75, 0.18];    // amber — caliper ruler
 const PENDING_COLOR: Vector3 = [0.98, 0.55, 0.10];    // orange — first measurement point
 const NECK_ORIGIN_COLOR: Vector3 = [0.85, 0.35, 0.85]; // magenta — neck-plane point
 const NECK_DOME_COLOR: Vector3 = [0.36, 0.85, 0.86];   // cyan — dome apex
+const NECK_RIM_COLOR: Vector3 = [0.90, 0.45, 0.95];    // violet — marked neck rim
 const GROW_SEED_COLOR: Vector3 = [0.55, 0.95, 0.35];   // lime — grow-from-seeds seeds
 const CROP_CENTER_COLOR: Vector3 = [0.98, 0.60, 0.20]; // orange — crop ROI centre
 const TRAJ_ENTRY_COLOR: Vector3 = [0.40, 0.80, 1.00];  // sky blue — approach entry
@@ -107,7 +108,7 @@ export function Viewer({ step }: { step: string }) {
   const {
     sessionId, segmentation, candidates, selectedCandidate, series, deviceMesh,
     centerlineMesh, pickMode, clSource, clTarget, setPickMode, setClSource, setClTarget,
-    neckOrigin, neckDome, setNeckOrigin, setNeckDome,
+    neckOrigin, neckDome, setNeckOrigin, setNeckDome, neckRim, setNeckRim,
     measurements, measurePending, setMeasurements, setMeasurePending, previewBand, previewMeshUrl,
     growSeeds, setGrowSeeds, cropCenter, setCropCenter,
     cropRadius, cropShape, cropInvert,
@@ -222,13 +223,14 @@ export function Viewer({ step }: { step: string }) {
     if (measurePending) out.push({ pos: measurePending, color: PENDING_COLOR });
     if (neckOrigin) out.push({ pos: neckOrigin, color: NECK_ORIGIN_COLOR });
     if (neckDome) out.push({ pos: neckDome, color: NECK_DOME_COLOR });
+    for (const r of neckRim) out.push({ pos: r, color: NECK_RIM_COLOR });
     for (const s of growSeeds) out.push({ pos: s, color: GROW_SEED_COLOR });
     if (cropCenter) out.push({ pos: cropCenter, color: CROP_CENTER_COLOR });
     if (trajEntry) out.push({ pos: trajEntry, color: TRAJ_ENTRY_COLOR });
     if (trajTarget) out.push({ pos: trajTarget, color: TRAJ_TARGET_COLOR });
     if (overlay) out.push(...overlay.markers);
     return out;
-  }, [clSource, clTarget, measurePending, neckOrigin, neckDome, growSeeds, cropCenter, trajEntry, trajTarget, overlay]);
+  }, [clSource, clTarget, measurePending, neckOrigin, neckDome, neckRim, growSeeds, cropCenter, trajEntry, trajTarget, overlay]);
 
   const lines = useMemo<MeshLine[]>(() => {
     const out: MeshLine[] = measurements
@@ -258,6 +260,8 @@ export function Viewer({ step }: { step: string }) {
       else if (pickMode === "traj_entry") { setTrajEntry(xyz); setPickMode(null); }
       else if (pickMode === "traj_target") { setTrajTarget(xyz); setPickMode(null); }
       else if (pickMode === "grow_seed") { setGrowSeeds([...growSeeds, xyz]); }  // stay armed for multiple seeds
+      // Also stays armed: the rim needs at least three points to define a plane.
+      else if (pickMode === "neck_rim") { setNeckRim([...neckRim, xyz]); }
       else if (pickMode === "measure") {
         if (!measurePending) {
           setMeasurePending(xyz);           // first click — wait for the second
@@ -399,12 +403,13 @@ export function Viewer({ step }: { step: string }) {
 
       {/* Pick-mode banner — turns into a "you missed the mesh" hint on a miss. */}
       {pickMode && meshUrl && (
-        <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", background: pickMiss ? "rgba(220,60,60,0.95)" : pickMode === "cl_source" ? "rgba(63,186,80,0.92)" : pickMode === "cl_target" ? "rgba(248,81,73,0.92)" : pickMode === "neck_origin" ? "rgba(217,89,217,0.92)" : pickMode === "neck_dome" ? "rgba(92,217,219,0.94)" : pickMode === "grow_seed" ? "rgba(140,224,90,0.94)" : pickMode === "crop_center" ? "rgba(240,150,50,0.94)" : pickMode === "traj_entry" ? "rgba(102,204,255,0.94)" : pickMode === "traj_target" ? "rgba(248,81,73,0.92)" : "rgba(234,179,8,0.94)", color: pickMiss ? "#fff" : pickMode === "measure" || pickMode === "neck_dome" || pickMode === "grow_seed" || pickMode === "traj_entry" ? "#1a1a1a" : "#fff", fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 999, pointerEvents: "none", boxShadow: "0 2px 8px rgba(0,0,0,0.35)" }}>
+        <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", background: pickMiss ? "rgba(220,60,60,0.95)" : pickMode === "cl_source" ? "rgba(63,186,80,0.92)" : pickMode === "cl_target" ? "rgba(248,81,73,0.92)" : pickMode === "neck_origin" ? "rgba(217,89,217,0.92)" : pickMode === "neck_dome" ? "rgba(92,217,219,0.94)" : pickMode === "neck_rim" ? "rgba(230,115,242,0.94)" : pickMode === "grow_seed" ? "rgba(140,224,90,0.94)" : pickMode === "crop_center" ? "rgba(240,150,50,0.94)" : pickMode === "traj_entry" ? "rgba(102,204,255,0.94)" : pickMode === "traj_target" ? "rgba(248,81,73,0.92)" : "rgba(234,179,8,0.94)", color: pickMiss ? "#fff" : pickMode === "measure" || pickMode === "neck_dome" || pickMode === "grow_seed" || pickMode === "traj_entry" ? "#1a1a1a" : "#fff", fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 999, pointerEvents: "none", boxShadow: "0 2px 8px rgba(0,0,0,0.35)" }}>
           {pickMiss && "⚠ Clic fuera de la malla — haz clic sobre la superficie 3D"}
           {!pickMiss && pickMode === "cl_source" && "Clic sobre el vaso para marcar el origen"}
           {!pickMiss && pickMode === "cl_target" && "Clic sobre el vaso para marcar el destino"}
           {!pickMiss && pickMode === "neck_origin" && "Clic sobre el cuello del aneurisma"}
           {!pickMiss && pickMode === "neck_dome" && "Clic sobre el ápice del domo"}
+          {!pickMiss && pickMode === "neck_rim" && `Clic alrededor del borde del cuello (${neckRim.length}${neckRim.length < 3 ? " · faltan " + (3 - neckRim.length) : ""})`}
           {!pickMiss && pickMode === "grow_seed" && `Clic sobre el vaso para añadir semilla (${growSeeds.length})`}
           {!pickMiss && pickMode === "crop_center" && "Clic sobre la malla para el centro del recorte"}
           {!pickMiss && pickMode === "traj_entry" && "Clic para el punto de entrada del abordaje"}

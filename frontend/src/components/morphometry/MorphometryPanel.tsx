@@ -21,6 +21,7 @@ export function MorphometryPanel({ onNext }: { onNext: () => void }) {
   const {
     sessionId, morphometry,
     pickMode, setPickMode, neckOrigin, neckDome, setNeckOrigin, setNeckDome,
+    neckRim, setNeckRim,
   } = planning;
   const [tab, setTab] = useState<string>("Métricas");
   const [busy, setBusy] = useState(false);
@@ -28,24 +29,35 @@ export function MorphometryPanel({ onNext }: { onNext: () => void }) {
   const [longi, setLongi] = useState<LongitudinalResult | null>(null);
   const [neckBusy, setNeckBusy] = useState(false);
 
+  // Three or more rim points fit the plane to the anatomy; otherwise the plane
+  // is inferred from the neck point and the apex, which assumes the neck is
+  // perpendicular to the dome axis.
+  const usesRim = neckRim.length >= 3;
+  const canMeasure = !!neckDome && (usesRim || !!neckOrigin);
+
   async function recomputeWithNeckPlane() {
-    if (!sessionId || !neckOrigin || !neckDome) return;
+    if (!sessionId || !neckDome || !canMeasure) return;
+    const anchor = usesRim ? neckRim[0]! : neckOrigin!;
     const normal: [number, number, number] = [
-      neckDome[0] - neckOrigin[0],
-      neckDome[1] - neckOrigin[1],
-      neckDome[2] - neckOrigin[2],
+      neckDome[0] - anchor[0],
+      neckDome[1] - anchor[1],
+      neckDome[2] - anchor[2],
     ];
     setNeckBusy(true);
     setError(null);
     try {
       const m = await api.morphometryNeckPlane(sessionId, {
-        origin: { x: neckOrigin[0], y: neckOrigin[1], z: neckOrigin[2] },
+        origin: { x: anchor[0], y: anchor[1], z: anchor[2] },
         normal,
         dome_seed: { x: neckDome[0], y: neckDome[1], z: neckDome[2] },
+        rim_points: usesRim
+          ? neckRim.map(([x, y, z]) => ({ x, y, z }))
+          : [],
       });
       planning.setMorphometry(m);
       setNeckOrigin(null);
       setNeckDome(null);
+      setNeckRim([]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al medir con el plano de cuello");
     } finally {
@@ -101,16 +113,24 @@ export function MorphometryPanel({ onNext }: { onNext: () => void }) {
 
           {/* Semi-automatic neck plane — shown when the automatic analysis ran on
               an open detector cap (unreliable), or to refine a manual result. */}
-          {(!m.reliable || m.neck_source === "manual") && (
+          {(!m.reliable || m.neck_source === "manual" || m.neck_source === "rim") && (
             <div style={{ background: "var(--muted, rgba(120,130,140,0.08))", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "12px 14px", marginBottom: 12 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                 <Icon name="STEP_PLAN" size={15} color="var(--muted-foreground)" />
                 <div style={{ fontSize: 12, fontWeight: 600 }}>
-                  Plano de cuello {m.neck_source === "manual" && <Badge variant="success">manual</Badge>}
+                  Plano de cuello{" "}
+                  {m.neck_source === "manual" && <Badge variant="success">manual</Badge>}
+                  {m.neck_source === "rim" && <Badge variant="success">ajustado al borde</Badge>}
                 </div>
               </div>
               <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginBottom: 10 }}>
-                {m.reliable
+                {m.neck_source === "rim"
+                  ? `Plano ajustado a los puntos del borde, a ${m.neck_tilt_deg.toFixed(0)}° del eje del domo. ${
+                      m.neck_tilt_deg < 10
+                        ? "El cuello es casi perpendicular al eje, así que dos clics habrían dado lo mismo."
+                        : "Con un solo punto el plano habría cortado el cuello en diagonal y lo habría medido más ancho de lo que es."
+                    }`
+                  : m.reliable
                   ? "Cuello definido manualmente. Recolócalo si es necesario."
                   : "La detección automática aísla una superficie abierta y no mide un cuello válido. Marca el cuello y el ápice del domo sobre el modelo 3D para medir sobre un saco cerrado."}
               </div>
@@ -132,11 +152,34 @@ export function MorphometryPanel({ onNext }: { onNext: () => void }) {
                   {neckDome ? "Ápice ✓" : "Marcar ápice del domo"}
                 </Button>
                 <Button
+                  variant={neckRim.length ? "secondary" : "outline"}
+                  onClick={() => setPickMode(pickMode === "neck_rim" ? null : "neck_rim")}
+                  leadingIcon={<Icon name={usesRim ? "STATUS_OK" : "TARGET"} size={14} />}
+                >
+                  {pickMode === "neck_rim"
+                    ? `Clic en el borde (${neckRim.length})`
+                    : neckRim.length
+                      ? `Borde del cuello (${neckRim.length})`
+                      : "Ajustar con varios puntos"}
+                </Button>
+                {neckRim.length > 0 && (
+                  <Button variant="ghost" onClick={() => { setNeckRim([]); setPickMode(null); }}>
+                    Limpiar borde
+                  </Button>
+                )}
+                <Button
                   onClick={recomputeWithNeckPlane}
-                  disabled={!neckOrigin || !neckDome || neckBusy}
+                  disabled={!canMeasure || neckBusy}
                 >
                   {neckBusy ? "Midiendo…" : "Medir saco cerrado"}
                 </Button>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 8, lineHeight: 1.5 }}>
+                {usesRim
+                  ? `El plano se ajustará a los ${neckRim.length} puntos del borde: la orientación sale de la anatomía en vez de suponerse perpendicular al eje del domo.`
+                  : neckRim.length > 0
+                    ? `Marca al menos 3 puntos del borde para ajustar el plano (llevas ${neckRim.length}). Con menos se usa el punto de cuello y el ápice.`
+                    : "Con un solo punto de cuello el plano se supone perpendicular al eje del domo. Si el cuello es oblicuo —típico en bifurcaciones— marca varios puntos de su borde."}
               </div>
               {neckBusy && <div style={{ marginTop: 8 }}><ProgressBar /></div>}
             </div>
