@@ -2,7 +2,7 @@
    Prepara la malla vascular (rellenar agujeros, suavizar, escalar), reporta
    dimensiones/volumen/estanqueidad y ajuste a la cama, y exporta un STL listo. */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
 import type { PrintBed, PrintPrepResult } from "../../api/types";
 import { Badge } from "../Badge";
@@ -26,6 +26,17 @@ export function PrintPrepPanel() {
   const [result, setResult] = useState<PrintPrepResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The STL is a snapshot of the mesh at the moment it was prepared. Editing the
+  // mesh afterwards left a download link pointing at geometry that is no longer
+  // on screen — with nothing saying so.
+  const [staleFor, setStaleFor] = useState<string | null>(null);
+  const preparedFrom = useRef<string | null>(null);
+  const meshUrl = segmentation?.mesh_url ?? null;
+
+  useEffect(() => {
+    if (!result || preparedFrom.current === null) return;
+    setStaleFor(meshUrl !== preparedFrom.current ? meshUrl : null);
+  }, [meshUrl, result]);
 
   useEffect(() => {
     api.printBeds().then((b) => {
@@ -52,6 +63,8 @@ export function PrintPrepPanel() {
         bed_z_mm: bed?.z_mm ?? 0,
       });
       setResult(res);
+      preparedFrom.current = meshUrl;
+      setStaleFor(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error preparando la malla");
     } finally {
@@ -119,15 +132,22 @@ export function PrintPrepPanel() {
               <Icon name="STATUS_WARN" color="var(--warning)" size={15} /><span>{w}</span>
             </div>
           ))}
-          <a href={result.stl_url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 10, fontSize: 12, textAlign: "center" }}>
-            Descargar STL listo para imprimir →
-          </a>
+          {staleFor ? (
+            <div style={{ marginTop: 10, fontSize: 12, color: "var(--warning)", display: "flex", gap: 6, alignItems: "flex-start", lineHeight: 1.5 }}>
+              <Icon name="STATUS_WARN" color="var(--warning)" size={15} />
+              <span>La malla cambió desde que se preparó este STL. Vuelve a prepararlo para descargar el modelo actual.</span>
+            </div>
+          ) : (
+            <a href={result.stl_url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 10, fontSize: 12, textAlign: "center" }}>
+              Descargar STL listo para imprimir →
+            </a>
+          )}
         </Card>
       )}
       <ErrorNote>{error}</ErrorNote>
 
       <Button variant="outline" style={{ marginTop: 14, width: "100%" }} onClick={() => void run()} disabled={busy} leadingIcon={<Icon name="PRINT" />}>
-        {busy ? "Preparando…" : "Preparar para impresión 3D"}
+        {busy ? "Preparando…" : staleFor ? "Volver a preparar" : "Preparar para impresión 3D"}
       </Button>
     </div>
   );

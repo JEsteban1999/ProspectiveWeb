@@ -5,6 +5,7 @@ import { createContext, useContext, useState } from "react";
 import type { ReactNode } from "react";
 import type {
   AneurysmCandidate,
+  DeviceKind,
   MorphometryResult,
   PatientSummary,
   SegmentResult,
@@ -32,8 +33,13 @@ interface PlanningState {
   selectedCandidate: number;
   morphometry: MorphometryResult | null;
   treatment: TreatmentDecisionResult | null;
-  /** URL of the last placed device mesh (clip/coil/stent), shown in the viewer. */
-  deviceMesh: string | null;
+  /** Placed device meshes by family, shown together in the viewer. One slot per
+   *  family because that is how the backend records them: planning a stent after
+   *  a clip leaves BOTH in the report, so the viewer has to show both — and each
+   *  needs its own «Limpiar» to take one off without touching the other.
+   *  The two stent planners (straight and centreline-guided) share the `stent`
+   *  slot, mirroring the single stent record the backend keeps. */
+  deviceMeshes: Record<DeviceKind, string | null>;
   /** URL of the extracted vessel centreline tube mesh, shown in the viewer. */
   centerlineMesh: string | null;
   /** Total arc length (mm) of the extracted centreline — feeds the cl-stent range sliders. */
@@ -76,6 +82,10 @@ interface PlanningState {
   morphoOverlay: boolean;
   /** Capture the live 3D viewport as a PNG data URL (set by MeshView while mounted). */
   captureViewport: (() => Promise<string | null>) | null;
+  /** True when results exist that have not been written to a saved session.
+   *  Saving is a manual action, so without this a click on the logo threw away
+   *  an afternoon's analysis with no warning at all. */
+  dirty: boolean;
 
   setPatient: (p: PatientSummary | null) => void;
   setCase: (id: number | null, label?: string) => void;
@@ -89,7 +99,9 @@ interface PlanningState {
   setSelectedCandidate: (i: number) => void;
   setMorphometry: (m: MorphometryResult | null) => void;
   setTreatment: (t: TreatmentDecisionResult | null) => void;
-  setDeviceMesh: (url: string | null) => void;
+  setDeviceMesh: (kind: DeviceKind, url: string | null) => void;
+  /** Forget placed devices locally (the API call is the panel's job). */
+  clearDeviceMeshes: (kind?: DeviceKind) => void;
   setCenterlineMesh: (url: string | null) => void;
   setCenterlineArcMm: (v: number | null) => void;
   setMprWl: (w: { wc: number; ww: number } | null) => void;
@@ -112,6 +124,8 @@ interface PlanningState {
   setTrajTarget: (p: Vec3 | null) => void;
   setMorphoOverlay: (v: boolean) => void;
   setCaptureViewport: (fn: (() => Promise<string | null>) | null) => void;
+  /** Called after a successful save — the session on disk now matches the store. */
+  markSaved: () => void;
   reset: () => void;
   resetDownstream: () => void;
 }
@@ -143,13 +157,15 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   const [series, setSeries] = useState<SeriesInfo | null>(null);
   const [previewBand, setPreviewBand] = useState<[number, number] | null>(null);
   const [previewMeshUrl, setPreviewMeshUrl] = useState<string | null>(null);
-  const [segmentation, setSegmentation] = useState<SegmentResult | null>(null);
-  const [candidates, setCandidates] = useState<AneurysmCandidate[]>([]);
+  const [segmentation, _setSegmentation] = useState<SegmentResult | null>(null);
+  const [candidates, _setCandidates] = useState<AneurysmCandidate[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState(0);
-  const [morphometry, setMorphometry] = useState<MorphometryResult | null>(null);
-  const [treatment, setTreatment] = useState<TreatmentDecisionResult | null>(null);
-  const [deviceMesh, setDeviceMesh] = useState<string | null>(null);
-  const [centerlineMesh, setCenterlineMesh] = useState<string | null>(null);
+  const [morphometry, _setMorphometry] = useState<MorphometryResult | null>(null);
+  const [treatment, _setTreatment] = useState<TreatmentDecisionResult | null>(null);
+  const [deviceMeshes, _setDeviceMeshes] = useState<Record<DeviceKind, string | null>>(
+    { clips: null, coils: null, stent: null },
+  );
+  const [centerlineMesh, _setCenterlineMesh] = useState<string | null>(null);
   const [centerlineArcMm, setCenterlineArcMm] = useState<number | null>(null);
   const [mprWl, setMprWl] = useState<{ wc: number; ww: number } | null>(null);
   const [mprVoxel, setMprVoxel] = useState({ x: 0, y: 0, z: 0 });
@@ -158,7 +174,7 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   const [clTarget, setClTarget] = useState<Vec3 | null>(null);
   const [neckOrigin, setNeckOrigin] = useState<Vec3 | null>(null);
   const [neckDome, setNeckDome] = useState<Vec3 | null>(null);
-  const [measurements, setMeasurements] = useState<Measurement[]>([]);
+  const [measurements, _setMeasurements] = useState<Measurement[]>([]);
   const [measurePending, setMeasurePending] = useState<Vec3 | null>(null);
   const [growSeeds, setGrowSeeds] = useState<Vec3[]>([]);
   const [neckRim, setNeckRim] = useState<Vec3[]>([]);
@@ -171,19 +187,40 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   const [trajTarget, setTrajTarget] = useState<Vec3 | null>(null);
   const [morphoOverlay, setMorphoOverlay] = useState(false);
   const [captureViewport, setCaptureViewport] = useState<(() => Promise<string | null>) | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const markSaved = () => setDirty(false);
+
+  // Every setter that produces a result worth keeping marks the session dirty.
+  // Wrapping them here rather than at each call site means a panel added later
+  // cannot forget to do it.
+  const touch = <T,>(set: (v: T) => void) => (v: T) => { set(v); setDirty(true); };
+  const setSegmentation = touch(_setSegmentation);
+  const setCandidates = touch(_setCandidates);
+  const setMorphometry = touch(_setMorphometry);
+  const setTreatment = touch(_setTreatment);
+  const setCenterlineMesh = touch(_setCenterlineMesh);
+  const setMeasurements = touch(_setMeasurements);
+  const setDeviceMesh = (kind: DeviceKind, url: string | null) => {
+    _setDeviceMeshes((d) => ({ ...d, [kind]: url }));
+    setDirty(true);
+  };
+  const clearDeviceMeshes = (kind?: DeviceKind) => {
+    _setDeviceMeshes((d) => (kind ? { ...d, [kind]: null } : { clips: null, coils: null, stent: null }));
+    setDirty(true);
+  };
 
   // Clear everything downstream of the DICOM upload — used when a new series is
   // uploaded in the same workspace so stale meshes/metrics don't linger.
   const resetDownstream = () => {
     setPreviewBand(null);
     setPreviewMeshUrl(null);
-    setSegmentation(null);
-    setCandidates([]);
+    _setSegmentation(null);
+    _setCandidates([]);
     setSelectedCandidate(0);
-    setMorphometry(null);
-    setTreatment(null);
-    setDeviceMesh(null);
-    setCenterlineMesh(null);
+    _setMorphometry(null);
+    _setTreatment(null);
+    _setDeviceMeshes({ clips: null, coils: null, stent: null });
+    _setCenterlineMesh(null);
     setCenterlineArcMm(null);
     setPickMode(null);
     setClSource(null);
@@ -191,7 +228,7 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
     setNeckOrigin(null);
     setNeckDome(null);
     setNeckRim([]);
-    setMeasurements([]);
+    _setMeasurements([]);
     setMeasurePending(null);
     setGrowSeeds([]);
     setMprSeedMode(false);
@@ -202,6 +239,7 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   };
 
   const reset = () => {
+    setDirty(false);
     setCase(null);
     setImagingStudyId(null);
     setSession(null);
@@ -213,16 +251,16 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
     <PlanningContext.Provider
       value={{
         patient, caseId, caseLabel, imagingStudyId, sessionId, series, previewBand, previewMeshUrl, segmentation, candidates,
-        selectedCandidate, morphometry, treatment, deviceMesh,
+        selectedCandidate, morphometry, treatment, deviceMeshes,
         centerlineMesh, centerlineArcMm, mprWl, mprVoxel, pickMode, clSource, clTarget, neckOrigin, neckDome,
-        measurements, measurePending, growSeeds, neckRim, mprSeedMode, cropCenter, cropRadius, cropShape, cropInvert, trajEntry, trajTarget, morphoOverlay, captureViewport,
+        measurements, measurePending, growSeeds, neckRim, mprSeedMode, cropCenter, cropRadius, cropShape, cropInvert, trajEntry, trajTarget, morphoOverlay, captureViewport, dirty,
         setPatient, setCase, setImagingStudyId, setSession, setSeries, setPreviewBand, setPreviewMeshUrl, setSegmentation,
         setCandidates, setSelectedCandidate, setMorphometry, setTreatment,
-        setDeviceMesh, setCenterlineMesh, setCenterlineArcMm, setMprWl, setMprVoxel,
+        setDeviceMesh, clearDeviceMeshes, setCenterlineMesh, setCenterlineArcMm, setMprWl, setMprVoxel,
         setPickMode, setClSource, setClTarget, setNeckRim,
         setNeckOrigin, setNeckDome,
         setMeasurements, setMeasurePending, setGrowSeeds, setMprSeedMode, setCropCenter, setCropRadius, setCropShape, setCropInvert, setTrajEntry, setTrajTarget, setMorphoOverlay,
-        setCaptureViewport,
+        setCaptureViewport, markSaved,
         reset, resetDownstream,
       }}
     >

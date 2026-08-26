@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +31,17 @@ from services.segmentation import read_vtp
 
 logger  = logging.getLogger(__name__)
 router  = APIRouter(prefix="/api", tags=["report"])
+
+
+def _versioned(url: str) -> str:
+    """Cache-bust a session output URL.
+
+    Reports, the DICOM SR and the STL reuse a fixed filename per session, so
+    regenerating one left the browser free to hand back the previous file from
+    cache. The mesh URLs already carry a generation token for exactly this
+    reason; these did not.
+    """
+    return f"{url}?v={int(time.time() * 1000)}"
 
 # All CPU-bound reportlab / VTK work runs off the event loop
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="report-worker")
@@ -94,7 +106,7 @@ async def generate_report(
     # We can get an approximate page count by reading the PDF trailer — simpler:
     page_count = _pdf_page_count(pdf_path)
 
-    pdf_url = f"/data/sessions/{req.session_id}/reports/{req.session_id}_report.pdf"
+    pdf_url = _versioned(f"/data/sessions/{req.session_id}/reports/{req.session_id}_report.pdf")
 
     from services.audit import audit_append, ACT_REPORT_GENERATED
     audit_append(ACT_REPORT_GENERATED, {"session_id": req.session_id, "pages": page_count},
@@ -207,7 +219,7 @@ async def generate_dicom_sr(
         logger.exception("DICOM SR generation failed for session %s", req.session_id)
         raise HTTPException(status_code=500, detail=f"DICOM SR error: {exc}") from exc
 
-    sr_url = f"/data/sessions/{req.session_id}/reports/{req.session_id}_sr.dcm"
+    sr_url = _versioned(f"/data/sessions/{req.session_id}/reports/{req.session_id}_sr.dcm")
 
     from services.audit import audit_append, ACT_SR_GENERATED
     audit_append(ACT_SR_GENERATED, {"session_id": req.session_id},
@@ -304,7 +316,7 @@ async def export_stl_endpoint(
         logger.exception("STL export failed for session %s", req.session_id)
         raise HTTPException(status_code=500, detail=f"STL export error: {exc}") from exc
 
-    stl_url = f"/data/sessions/{req.session_id}/exports/{req.session_id}_export.stl"
+    stl_url = _versioned(f"/data/sessions/{req.session_id}/exports/{req.session_id}_export.stl")
 
     logger.info(
         "STL exported — session=%s  size=%.1f KB  scale=%.2f",

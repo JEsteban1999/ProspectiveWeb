@@ -162,9 +162,16 @@ export function MorphometryPanel({ onNext }: { onNext: () => void }) {
                       ? `Borde del cuello (${neckRim.length})`
                       : "Ajustar con varios puntos"}
                 </Button>
-                {neckRim.length > 0 && (
-                  <Button variant="ghost" onClick={() => { setNeckRim([]); setPickMode(null); }}>
-                    Limpiar borde
+                {(neckRim.length > 0 || neckOrigin || neckDome) && (
+                  // Only the rim used to be clearable, so a cuello or ápice put on
+                  // the wrong spot stayed as a marker in the 3D scene with no way
+                  // to take it off — and «Medir saco cerrado» kept using it.
+                  <Button
+                    variant="ghost"
+                    onClick={() => { setNeckRim([]); setNeckOrigin(null); setNeckDome(null); setPickMode(null); }}
+                    leadingIcon={<Icon name="CLEAR" size={14} />}
+                  >
+                    Limpiar marcas
                   </Button>
                 )}
                 <Button

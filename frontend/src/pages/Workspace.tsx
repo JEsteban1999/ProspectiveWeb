@@ -1,6 +1,6 @@
 /* Sesión de planificación — rail de flujo (7 pasos) · visor 3D + MPR · panel del paso. */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { PatientSummary } from "../api/types";
 import { Badge, riskVariant } from "../components/Badge";
@@ -8,7 +8,7 @@ import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
 import type { IconName } from "../components/Icon";
 import { Topbar } from "../components/Topbar";
-import { SectionLabel, Card } from "../components/PanelHead";
+import { SectionLabel, Card, Collapsible } from "../components/PanelHead";
 import { UploadPanel } from "../components/upload/UploadPanel";
 import { SegmentPanel } from "../components/segmentation/SegmentPanel";
 import { DetectPanel } from "../components/planning/DetectPanel";
@@ -22,30 +22,55 @@ import { ReportPanel } from "../components/planning/ReportPanel";
 import { Viewer, MprStrip } from "../vtk/Viewer";
 import { usePlanning } from "../store/planning";
 
-const STEPS: { key: string; icon: IconName; label: string }[] = [
-  { key: "upload", icon: "STEP_PATIENT", label: "Carga DICOM" },
-  { key: "segment", icon: "STEP_SEGMENT", label: "Segmentación" },
-  { key: "detect", icon: "STEP_DETECT", label: "Detección" },
-  { key: "morpho", icon: "STEP_MORPHO", label: "Morfometría" },
-  { key: "treatment", icon: "STEP_PLAN", label: "Decisión" },
-  { key: "devices", icon: "CLIPS", label: "Dispositivos" },
-  { key: "report", icon: "STEP_EXPORT", label: "Informe" },
+const STEPS: { key: string; icon: IconName; label: string; short: string }[] = [
+  { key: "upload", icon: "STEP_PATIENT", label: "Carga DICOM", short: "Carga" },
+  { key: "segment", icon: "STEP_SEGMENT", label: "Segmentación", short: "Segm." },
+  { key: "detect", icon: "STEP_DETECT", label: "Detección", short: "Detec." },
+  { key: "morpho", icon: "STEP_MORPHO", label: "Morfometría", short: "Morfo." },
+  { key: "treatment", icon: "STEP_PLAN", label: "Decisión", short: "Decis." },
+  { key: "devices", icon: "CLIPS", label: "Dispositivos", short: "Disp." },
+  { key: "report", icon: "STEP_EXPORT", label: "Informe", short: "Informe" },
 ];
+
+/** What each step needs before it can say anything true, or null when it's ready.
+ *
+ *  The rail used to unlock a step just because it had been visited, so a resumed
+ *  session whose detection replay failed landed on «Informe» fully unlocked and
+ *  produced a PDF with no measurements in it. Gating on the actual results also
+ *  turns the disabled state into an instruction instead of a dead end. */
+function missingFor(
+  i: number,
+  p: Pick<ReturnType<typeof usePlanning>, "series" | "segmentation" | "candidates" | "morphometry">,
+): string | null {
+  switch (i) {
+    case 0: return null;
+    case 1: return p.series ? null : "Carga una serie DICOM primero";
+    case 2: return p.segmentation ? null : "Segmenta el vaso primero";
+    case 3: return p.candidates.length > 0 ? null : "Detecta un candidato primero";
+    default: return p.morphometry ? null : "Calcula la morfometría primero";
+  }
+}
 
 export function Workspace({
   patient,
   initialStep = 0,
   onBack,
+  onOpenPatient,
   onFinish,
 }: {
   patient: PatientSummary | null;
   initialStep?: number;
   onBack: () => void;
+  /** Open this patient's sheet — their cases and archived studies. */
+  onOpenPatient: () => void;
   onFinish: () => void;
 }) {
-  const { morphometry, sessionId, caseId, caseLabel, imagingStudyId, setPickMode, setMprSeedMode } = usePlanning();
+  const planning = usePlanning();
+  const {
+    morphometry, sessionId, caseId, caseLabel, imagingStudyId,
+    centerlineMesh, measurements, setPickMode, setMprSeedMode, markSaved,
+  } = planning;
   const [stepIdx, setStepIdx] = useState(initialStep);
-  const [maxStep, setMaxStep] = useState(initialStep);
   const [saving, setSaving] = useState<"idle" | "saving" | "saved">("idle");
   // A failed save used to reset the button to "Guardar progreso" with no notice,
   // so the user believed their work was stored when it was not.
@@ -67,6 +92,7 @@ export function Workspace({
         current_step: stepIdx,
         label: patient ? `${patient.full_name} · ${STEPS[stepIdx].label}` : STEPS[stepIdx].label,
       });
+      markSaved();
       setSaving("saved");
       setTimeout(() => setSaving("idle"), 1800);
     } catch (e) {
@@ -81,23 +107,62 @@ export function Workspace({
     setPickMode(null);
     setMprSeedMode(false);
     setStepIdx(i);
-    setMaxStep((m) => Math.max(m, i));
   };
   const next = () => go(Math.min(stepIdx + 1, STEPS.length - 1));
+
+  // Teclado: Escape cancela el modo de marcado activo (antes había que volver al
+  // panel y pulsar el mismo botón otra vez, con el banner ocupando el visor), y
+  // 1–7 saltan de paso. Se ignora mientras se escribe en un campo.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      if (e.key === "Escape") {
+        setPickMode(null);
+        setMprSeedMode(false);
+        return;
+      }
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      const n = Number(e.key);
+      if (Number.isInteger(n) && n >= 1 && n <= STEPS.length) {
+        const i = n - 1;
+        if (i === stepIdx || !missingFor(i, planning)) { e.preventDefault(); go(i); }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepIdx, planning.series, planning.segmentation, planning.candidates, planning.morphometry]);
 
   const panel = {
     upload: <UploadPanel onNext={next} />,
     segment: <SegmentPanel onNext={next} />,
     detect: <DetectPanel onNext={next} />,
     morpho: (
-      <div>
+      // Morfometría queda siempre a la vista; las tres herramientas auxiliares
+      // se pliegan y recuerdan su estado, para que la columna no pase de mil
+      // píxeles de scroll con la línea central enterrada al fondo.
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <MorphometryPanel onNext={next} />
-        <div style={{ height: 14 }} />
-        <PerforatorsPanel />
-        <div style={{ height: 14 }} />
-        <CenterlinePanel />
-        <div style={{ height: 14 }} />
-        <MeasurementPanel />
+        <Collapsible title="Perforantes" subtitle="Proximidad al cuello del aneurisma" storageKey="ws.morpho.perforators">
+          <PerforatorsPanel />
+        </Collapsible>
+        <Collapsible
+          title="Línea central del vaso"
+          subtitle="Longitud, tortuosidad y calibre · base del stent guiado"
+          storageKey="ws.morpho.centerline"
+          badge={centerlineMesh ? <Badge variant="success">Extraída</Badge> : undefined}
+        >
+          <CenterlinePanel />
+        </Collapsible>
+        <Collapsible
+          title="Mediciones 3D"
+          subtitle="Distancia entre dos puntos del modelo"
+          storageKey="ws.morpho.measurements"
+          badge={measurements.length > 0 ? <Badge variant="subtle">{measurements.length}</Badge> : undefined}
+        >
+          <MeasurementPanel />
+        </Collapsible>
       </div>
     ),
     treatment: <TreatmentPanel onNext={next} />,
@@ -107,7 +172,17 @@ export function Workspace({
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--canvas)" }}>
-      <Topbar crumb={`Pacientes / ${patient ? patient.full_name : "Sesión"}${caseLabel ? ` / ${caseLabel}` : ""}`}>
+      <Topbar
+        crumbs={[
+          { label: "Pacientes", onClick: onBack },
+          // The patient and the case both lead back to the patient sheet, which
+          // is where their cases and archived studies live. Before this the only
+          // way out was the button on the right, which drops you in the full
+          // list having forgotten which case you were planning.
+          { label: patient ? patient.full_name : "Sesión", onClick: patient ? onOpenPatient : undefined },
+          ...(caseLabel ? [{ label: caseLabel, onClick: patient ? onOpenPatient : undefined }] : []),
+        ]}
+      >
         <Button
           variant="outline"
           size="sm"
@@ -141,20 +216,71 @@ export function Workspace({
         </div>
       )}
 
+      {/* Barra de pasos compacta — sustituye al rail cuando este se oculta bajo
+          820 px. Antes simplemente desaparecía y no quedaba ninguna forma de
+          cambiar de paso: el usuario se quedaba encerrado donde estuviera. */}
+      <div
+        className="ws-steps-compact"
+        role="tablist"
+        aria-label="Flujo de planificación"
+        style={{
+          display: "none", gap: 4, padding: "8px 12px", overflowX: "auto",
+          background: "var(--background)", borderBottom: "1px solid var(--border)",
+        }}
+      >
+        {STEPS.map((s, i) => {
+          const active = i === stepIdx;
+          const missing = missingFor(i, planning);
+          const locked = !active && !!missing;
+          return (
+            <button
+              key={s.key}
+              role="tab"
+              aria-selected={active}
+              disabled={locked}
+              title={missing ?? s.label}
+              onClick={() => !locked && go(i)}
+              style={{
+                display: "flex", alignItems: "center", gap: 6, flexShrink: 0,
+                padding: "6px 11px", borderRadius: "var(--radius-full)",
+                border: "1px solid " + (active ? "transparent" : "var(--border)"),
+                background: active ? "var(--brand-deep)" : "var(--card)",
+                color: active ? "#fff" : locked ? "var(--muted-foreground)" : "var(--foreground)",
+                cursor: locked ? "not-allowed" : "pointer",
+                opacity: locked ? 0.5 : 1,
+                fontFamily: "var(--font-sans)", fontSize: 12,
+                fontWeight: active ? 700 : 500, whiteSpace: "nowrap",
+              }}
+            >
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, opacity: .8 }}>{i + 1}</span>
+              {s.short}
+            </button>
+          );
+        })}
+      </div>
+
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         {/* Rail de flujo — ancho fluido; en pantallas estrechas colapsa a iconos
             y bajo 820px se oculta (ver styles/responsive.css). */}
         <div className="ws-rail" style={{ width: "clamp(176px, 15vw, 232px)", flexShrink: 0, background: "var(--background)", borderRight: "1px solid var(--border)", padding: "18px 12px", overflowY: "auto" }}>
-          <SectionLabel className="ws-rail-label" style={{ margin: "0 6px 14px" }}>Flujo de planificación</SectionLabel>
+          <div title="Atajos: 1–7 para cambiar de paso · Esc cancela el marcado">
+            <SectionLabel className="ws-rail-label" style={{ margin: "0 6px 14px" }}>
+              Flujo de planificación
+            </SectionLabel>
+          </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {STEPS.map((s, i) => {
               const active = i === stepIdx;
-              const done = i < maxStep;
-              const locked = i > maxStep;
+              const missing = missingFor(i, planning);
+              const done = !missing && i < stepIdx;
+              // Never lock the step the user is standing on — that would strand a
+              // resumed session whose replay came back empty.
+              const locked = !active && !!missing;
               return (
                 <button
                   key={s.key}
                   disabled={locked}
+                  title={missing ?? s.label}
                   onClick={() => !locked && go(i)}
                   style={{
                     display: "flex",

@@ -50,6 +50,11 @@ finally:
 client = TestClient(app, raise_server_exceptions=True)
 
 
+def _path_of(url: str) -> str:
+    """URL without its cache-busting `?v=…` token."""
+    return url.split("?", 1)[0]
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────── #
 
 def _make_session_with_morpho() -> str:
@@ -129,7 +134,7 @@ class TestReportGeneration:
         assert resp.status_code == 200, resp.text
         data = resp.json()
         assert data["pdf_url"] is not None
-        assert data["pdf_url"].endswith("_report.pdf")
+        assert _path_of(data["pdf_url"]).endswith("_report.pdf")
         assert "generated_at" in data
 
     def test_report_pdf_file_actually_created(self):
@@ -232,7 +237,9 @@ class TestReportGeneration:
         sid  = _make_session_with_morpho()
         resp = client.post("/api/report", json={"session_id": sid})
         url  = resp.json()["pdf_url"]
-        assert url == f"/data/sessions/{sid}/reports/{sid}_report.pdf"
+        assert _path_of(url) == f"/data/sessions/{sid}/reports/{sid}_report.pdf"
+        # Regenerating must not let the browser hand back the previous PDF.
+        assert "?v=" in url
 
 
 # ── B. Treatment state persistence ────────────────────────────────────────── #
@@ -330,7 +337,7 @@ class TestSTLExport:
         assert resp.status_code == 200, resp.text
         data = resp.json()
         assert data["stl_url"] is not None
-        assert data["stl_url"].endswith("_export.stl")
+        assert _path_of(data["stl_url"]).endswith("_export.stl")
 
         # Verify STL file on disk
         stl_path = session_subdir(sid, "exports") / f"{sid}_export.stl"
@@ -356,7 +363,8 @@ class TestSTLExport:
             json={"session_id": sid, "include_vessel_tree": True},
         )
         url = resp.json()["stl_url"]
-        assert url == f"/data/sessions/{sid}/exports/{sid}_export.stl"
+        assert _path_of(url) == f"/data/sessions/{sid}/exports/{sid}_export.stl"
+        assert "?v=" in url
 
     def test_stl_scale_factor(self):
         """Scale factor > 1 produces a larger STL (more geometry)."""

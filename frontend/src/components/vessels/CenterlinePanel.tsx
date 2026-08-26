@@ -32,12 +32,14 @@ function tortuosityBadge(t: number): [string, "success" | "warning" | "destructi
 
 export function CenterlinePanel() {
   const {
-    sessionId, segmentation, pickMode, clSource, clTarget,
+    sessionId, segmentation, pickMode, clSource, clTarget, centerlineMesh,
     setPickMode, setClSource, setClTarget, setCenterlineMesh, setCenterlineArcMm,
+    clearDeviceMeshes,
   } = usePlanning();
 
   const [voxel, setVoxel] = useState("0.8");
   const [busy, setBusy] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CenterlineResult | null>(null);
 
@@ -84,7 +86,10 @@ export function CenterlinePanel() {
     }
   };
 
-  const clear = () => {
+  // Clearing only the client state left centerline.vtp (and any stent deployed
+  // along it) on disk, so «Stent CL» kept offering a centreline the panel said
+  // was gone. The backend call deletes the geometry too.
+  const clear = async () => {
     setResult(null);
     setXs(null);
     setError(null);
@@ -93,6 +98,18 @@ export function CenterlinePanel() {
     setPickMode(null);
     setCenterlineMesh(null);
     setCenterlineArcMm(null);
+    if (!sessionId) return;
+    setClearing(true);
+    try {
+      const r = await api.clearCenterline(sessionId);
+      // A centreline-guided stent goes with it — say so instead of letting the
+      // device silently vanish from the devices step.
+      if (r.removed.includes("cl_stent.vtp")) clearDeviceMeshes("stent");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo borrar la línea central del servidor");
+    } finally {
+      setClearing(false);
+    }
   };
 
   const stenosisVariant = (label: string): "success" | "warning" | "destructive" =>
@@ -166,8 +183,13 @@ export function CenterlinePanel() {
         <Button style={{ flex: 3 }} disabled={!ready} onClick={() => void extract()} leadingIcon={<Icon name="STEP_MORPHO" />}>
           {busy ? "Calculando…" : "Extraer línea central"}
         </Button>
-        <Button variant="outline" style={{ flex: 1 }} disabled={busy || (!result && !clSource)} onClick={clear}>
-          Limpiar
+        <Button
+          variant="outline" style={{ flex: 1 }}
+          disabled={busy || clearing || (!result && !clSource && !centerlineMesh)}
+          onClick={() => void clear()}
+          leadingIcon={<Icon name="CLEAR" size={14} />}
+        >
+          {clearing ? "…" : "Limpiar"}
         </Button>
       </div>
 

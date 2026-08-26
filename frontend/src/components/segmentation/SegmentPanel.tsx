@@ -35,6 +35,7 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
   // Off by default: on a 384³ study this is minutes instead of seconds.
   const [fullRes, setFullRes] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Slider range + suggested band, adapted to this volume's intensity scale.
   const [range, setRange] = useState<{ min: number; max: number }>({ min: -500, max: 3000 });
@@ -90,6 +91,24 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
     const s = suggested.current;
     setLower(Math.round(s ? s.lower : SEG_LOWER_DEFAULT));
     setUpper(Math.round(s ? s.upper : SEG_UPPER_DEFAULT));
+  };
+
+  // Going back to threshold tuning after a bad segmentation. Without this the
+  // only way out was to re-segment blind: the finished mesh hid the live 3D
+  // preview and the MPR tint, which are exactly the feedback you need to pick a
+  // better band. Detection state goes too — it describes the discarded mesh.
+  const discard = async () => {
+    setDiscarding(true);
+    setError(null);
+    try {
+      if (sessionId) await api.clearDetection(sessionId);
+    } catch {
+      /* Best effort: the next detection run overwrites this state anyway. */
+    } finally {
+      planning.setSegmentation(null);
+      planning.resetDownstream();
+      setDiscarding(false);
+    }
   };
 
   const run = async () => {
@@ -258,7 +277,7 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
         <Button
           variant={segmentation ? "outline" : "default"}
           onClick={() => void run()}
-          disabled={busy || !sessionId}
+          disabled={busy || discarding || !sessionId}
           leadingIcon={<Icon name="GROWTH" />}
           style={{ flex: 1 }}
         >
@@ -270,6 +289,17 @@ export function SegmentPanel({ onNext }: { onNext: () => void }) {
           </Button>
         )}
       </div>
+      {segmentation && (
+        <Button
+          variant="ghost"
+          style={{ marginTop: 8, width: "100%" }}
+          disabled={busy || discarding}
+          onClick={() => void discard()}
+          leadingIcon={<Icon name="CLEAR" size={14} />}
+        >
+          {discarding ? "Descartando…" : "Descartar malla y volver a los umbrales"}
+        </Button>
+      )}
     </div>
   );
 }

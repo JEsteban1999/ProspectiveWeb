@@ -63,7 +63,7 @@ export function PendingRequests({ onBack }: { onBack: () => void }) {
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--canvas)" }}>
-      <Topbar crumb="Administración / Solicitudes">
+      <Topbar crumbs={[{ label: "Pacientes", onClick: onBack }, { label: "Administración" }, { label: "Solicitudes" }]}>
         <Button variant="ghost" size="sm" onClick={onBack} leadingIcon={<Icon name="HOME" />}>
           Pacientes
         </Button>

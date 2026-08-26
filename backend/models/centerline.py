@@ -94,3 +94,15 @@ class CrossSectionResult(BaseModel):
     stenosis_pct: float = Field(..., description="(1 − ratio) × 100 — narrowing at the tightest point")
     stenosis_label: str = Field(..., description="'Sin estenosis' | 'Leve' | 'Significativa'")
     warning: str | None = None
+
+
+class CenterlineClearResult(BaseModel):
+    """Outcome of discarding the extracted centreline."""
+
+    removed: list[str] = Field(
+        default_factory=list,
+        description="Session files deleted (centreline geometry and anything built on it)",
+    )
+    had_centerline: bool = Field(
+        ..., description="False when there was no centreline to discard"
+    )

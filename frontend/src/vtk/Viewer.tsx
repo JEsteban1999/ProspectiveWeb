@@ -9,7 +9,7 @@ import { api } from "../api/client";
 import type { VolumeMeta } from "../api/types";
 import { Icon } from "../components/Icon";
 import { usePlanning } from "../store/planning";
-import type { MeshLayer, MeshMarker, MeshLine } from "./MeshView";
+import type { CameraView, MeshLayer, MeshMarker, MeshLine } from "./MeshView";
 import { MprView } from "./MprView";
 import { ObliqueMprView } from "./ObliqueMprView";
 import type { Vector3 } from "@kitware/vtk.js/types";
@@ -32,7 +32,21 @@ const STEP_SCENE: Record<string, string> = {
 
 const VESSEL_COLOR: Vector3 = [0.65, 0.7, 0.76];
 const DOME_COLOR: Vector3 = [0.32, 0.55, 0.75];
-const DEVICE_COLOR: Vector3 = [0.92, 0.82, 0.45];     // warm gold — placed clip/coil/stent
+const DEVICE_COLOR: Vector3 = [0.92, 0.82, 0.45];     // warm gold — placed clip
+const COIL_COLOR: Vector3 = [0.85, 0.55, 0.85];       // orchid — packed coils
+const STENT_COLOR: Vector3 = [0.55, 0.80, 0.95];      // steel blue — deployed stent
+const DEVICE_LABEL: Record<"clips" | "coils" | "stent", string> = {
+  clips: "clips", coils: "coils", stent: "stent",
+};
+
+/* Vistas del visor 3D, nombradas como los planos MPR del resto de la app.
+   Un segundo clic en la misma vista la mira desde el lado opuesto. */
+const CAMERA_BUTTONS: [CameraView, string, string][] = [
+  ["fit", "Ajustar", "Reencuadrar la escena completa"],
+  ["axial", "Ax", "Vista axial (desde superior)"],
+  ["coronal", "Cor", "Vista coronal (desde anterior)"],
+  ["sagital", "Sag", "Vista sagital (lateral)"],
+];
 const CENTERLINE_COLOR: Vector3 = [0.36, 0.85, 0.86]; // cyan — vessel centreline tube
 const SOURCE_COLOR: Vector3 = [0.25, 0.73, 0.31];     // green — picked source endpoint
 const TARGET_COLOR: Vector3 = [0.97, 0.32, 0.29];     // red — picked target endpoint
@@ -106,7 +120,7 @@ function ViewerLoading({ label }: { label: string }) {
 
 export function Viewer({ step }: { step: string }) {
   const {
-    sessionId, segmentation, candidates, selectedCandidate, series, deviceMesh,
+    sessionId, segmentation, candidates, selectedCandidate, series, deviceMeshes,
     centerlineMesh, pickMode, clSource, clTarget, setPickMode, setClSource, setClTarget,
     neckOrigin, neckDome, setNeckOrigin, setNeckDome, neckRim, setNeckRim,
     measurements, measurePending, setMeasurements, setMeasurePending, previewBand, previewMeshUrl,
@@ -188,6 +202,12 @@ export function Viewer({ step }: { step: string }) {
     ? { u: fracIdx(meta.shape[2], mprVoxel.x), v: fracIdx(meta.shape[1], mprVoxel.y) }
     : null;
   const [viewMode, setViewMode] = useState<"default" | "volume" | "oblique">("default");
+  // Camera controller published by MeshView while it is mounted.
+  const [setCamera, setSetCamera] = useState<((v: CameraView) => void) | null>(null);
+  const registerCamera = useCallback(
+    (fn: ((v: CameraView) => void) | null) => setSetCamera(() => fn),
+    [],
+  );
   // Transient "you clicked outside the mesh" hint — without it a missed pick is
   // silent and the tool feels broken.
   const [pickMiss, setPickMiss] = useState(false);
@@ -196,8 +216,20 @@ export function Viewer({ step }: { step: string }) {
     setTimeout(() => setPickMiss(false), 1800);
   }, []);
   useEffect(() => { if (!pickMode) setPickMiss(false); }, [pickMode]);
-  // Only show a placed device mesh once its URL points at a real session file.
-  const showDevice = step === "devices" && !!deviceMesh && deviceMesh.startsWith("/data/");
+  // Every placed device is drawn, each in its own colour: planning a stent after
+  // a clip leaves both in the plan, and a viewer showing only the last one placed
+  // hid that — the clinician saw one device while the report listed two.
+  const devices = useMemo(
+    () => ([
+      { kind: "clips" as const, url: deviceMeshes.clips, color: DEVICE_COLOR },
+      { kind: "coils" as const, url: deviceMeshes.coils, color: COIL_COLOR },
+      { kind: "stent" as const, url: deviceMeshes.stent, color: STENT_COLOR },
+    ]).filter((d): d is { kind: "clips" | "coils" | "stent"; url: string; color: Vector3 } =>
+      // Only session files: an empty plan falls back to a bundled sample mesh.
+      !!d.url && d.url.startsWith("/data/")),
+    [deviceMeshes],
+  );
+  const showDevice = step === "devices" && devices.length > 0;
   const showCenterline = !!centerlineMesh && centerlineMesh.startsWith("/data/");
 
   const layers = useMemo<MeshLayer[]>(() => {
@@ -207,14 +239,14 @@ export function Viewer({ step }: { step: string }) {
     if (candidate?.dome_mesh_url && step !== "segment" && step !== "upload") {
       out.push({ url: candidate.dome_mesh_url, color: DOME_COLOR, opacity: showDevice ? 0.5 : 1 });
     }
-    if (showDevice && deviceMesh) {
-      out.push({ url: deviceMesh, color: DEVICE_COLOR, opacity: 1 });
+    if (showDevice) {
+      for (const d of devices) out.push({ url: d.url, color: d.color, opacity: 1 });
     }
     if (showCenterline && centerlineMesh) {
       out.push({ url: centerlineMesh, color: CENTERLINE_COLOR, opacity: 1 });
     }
     return out;
-  }, [displayMeshUrl, candidate?.dome_mesh_url, step, showDevice, deviceMesh, showCenterline, centerlineMesh, pickMode]);
+  }, [displayMeshUrl, candidate?.dome_mesh_url, step, showDevice, devices, showCenterline, centerlineMesh, pickMode]);
 
   const markers = useMemo<MeshMarker[]>(() => {
     const out: MeshMarker[] = [];
@@ -287,7 +319,7 @@ export function Viewer({ step }: { step: string }) {
         <ObliqueMprView sessionId={sessionId} wc={mprWl?.wc ?? meta.wc} ww={mprWl?.ww ?? meta.ww} />
       ) : meshVisible ? (
         <Suspense fallback={<ViewerLoading label="Cargando visor 3D…" />}>
-          <MeshView layers={layers} markers={markers} lines={lines} cropPreview={cropPreview} referenceDiameterMm={referenceDiameterMm} pickMode={pickMode !== null} onPick={onPick} onPickMiss={onPickMiss} focusUrl={focusUrl} registerCapture={setCaptureViewport} />
+          <MeshView layers={layers} markers={markers} lines={lines} cropPreview={cropPreview} referenceDiameterMm={referenceDiameterMm} pickMode={pickMode !== null} onPick={onPick} onPickMiss={onPickMiss} focusUrl={focusUrl} registerCapture={setCaptureViewport} registerCamera={registerCamera} />
         </Suspense>
       ) : sessionId && meta ? (
         <MprView
@@ -401,6 +433,29 @@ export function Viewer({ step }: { step: string }) {
         </div>
       )}
 
+      {/* Vistas estándar + reencuadre. Sin esto, perder la orientación rotando no
+          tenía vuelta atrás: la cámara solo se reajustaba al reconstruir la escena. */}
+      {viewMode === "default" && meshVisible && setCamera && !pickMode && (
+        <div style={{ position: "absolute", top: 46, right: 14, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+          <div style={{ display: "flex", gap: 2, background: "rgba(20,24,28,0.72)", borderRadius: 999, padding: 3 }}>
+            {CAMERA_BUTTONS.map(([view, label, title]) => (
+              <button
+                key={view}
+                onClick={() => setCamera(view)}
+                title={title}
+                style={{
+                  padding: "4px 9px", fontSize: 11, fontWeight: 600, borderRadius: 999,
+                  border: "none", cursor: "pointer", background: "transparent",
+                  color: "rgba(200,210,220,0.85)", fontFamily: "var(--font-sans)",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Pick-mode banner — turns into a "you missed the mesh" hint on a miss. */}
       {pickMode && meshUrl && (
         <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", background: pickMiss ? "rgba(220,60,60,0.95)" : pickMode === "cl_source" ? "rgba(63,186,80,0.92)" : pickMode === "cl_target" ? "rgba(248,81,73,0.92)" : pickMode === "neck_origin" ? "rgba(217,89,217,0.92)" : pickMode === "neck_dome" ? "rgba(92,217,219,0.94)" : pickMode === "neck_rim" ? "rgba(230,115,242,0.94)" : pickMode === "grow_seed" ? "rgba(140,224,90,0.94)" : pickMode === "crop_center" ? "rgba(240,150,50,0.94)" : pickMode === "traj_entry" ? "rgba(102,204,255,0.94)" : pickMode === "traj_target" ? "rgba(248,81,73,0.92)" : "rgba(234,179,8,0.94)", color: pickMiss ? "#fff" : pickMode === "measure" || pickMode === "neck_dome" || pickMode === "grow_seed" || pickMode === "traj_entry" ? "#1a1a1a" : "#fff", fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 999, pointerEvents: "none", boxShadow: "0 2px 8px rgba(0,0,0,0.35)" }}>
@@ -425,6 +480,19 @@ export function Viewer({ step }: { step: string }) {
           <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: "rgb(255,140,26)" }} />H domo {morphometry.dome_height_mm.toFixed(1)} mm</span>
           <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: "rgb(217,51,51)" }} />Ø máx {morphometry.max_diameter_mm.toFixed(1)} mm</span>
           <span style={{ color: "rgba(200,210,220,0.75)" }}>AR {morphometry.ar.toFixed(2)} · DNR {morphometry.dnr.toFixed(2)}</span>
+        </div>
+      )}
+
+      {/* Placed-device legend — names what each colour in the scene is, so a
+          plan holding a clip AND a stent reads as two devices, not one blob. */}
+      {viewMode === "default" && meshVisible && showDevice && (
+        <div style={{ position: "absolute", top: 38, right: 16, display: "flex", flexDirection: "column", gap: 3, background: "rgba(20,24,28,0.72)", border: "1px solid rgba(120,140,160,0.4)", borderRadius: 8, padding: "8px 11px", pointerEvents: "none", fontSize: 11, fontFamily: "var(--font-mono)", color: "#DCE6EE" }}>
+          {devices.map((d) => (
+            <span key={d.kind} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ width: 9, height: 9, borderRadius: 2, background: `rgb(${d.color.map((c) => Math.round(c * 255)).join(",")})` }} />
+              {DEVICE_LABEL[d.kind]}
+            </span>
+          ))}
         </div>
       )}
 

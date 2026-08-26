@@ -9,8 +9,8 @@ import numpy as np
 from fastapi import APIRouter, HTTPException
 
 from models.centerline import (
-    CenterlineRequest, CenterlineResult, CrossSectionRequest, CrossSectionResult,
-    ClStentRequest, ClStentResult,
+    CenterlineClearResult, CenterlineRequest, CenterlineResult,
+    CrossSectionRequest, CrossSectionResult, ClStentRequest, ClStentResult,
 )
 from services.centerline import extract_centerline
 from services.cross_section import compute_cross_sections
@@ -231,3 +231,45 @@ async def deploy_cl_stent(session_id: str, req: ClStentRequest) -> ClStentResult
         total_arc_mm=round(result.total_arc_mm, 1),
         warning=warning,
     )
+
+
+# ── DELETE /centerline/{session_id} ───────────────────────────────────────── #
+
+@router.delete(
+    "/centerline/{session_id}",
+    response_model=CenterlineClearResult,
+    summary="Discard the extracted centreline",
+    description=(
+        "Deletes the centreline tube, its cached medial-axis points and any stent "
+        "deployed along it. The centreline-guided stent is built from those points, "
+        "so leaving it behind would keep a device following a centreline that no "
+        "longer exists — which is why both go in one call.\n\n"
+        "Idempotent: succeeds with `had_centerline=false` when nothing was extracted."
+    ),
+)
+async def clear_centerline(session_id: str) -> CenterlineClearResult:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    meshes_dir = session_subdir(session_id, "meshes")
+    had = (meshes_dir / "centerline.vtp").exists() or (meshes_dir / "centerline_points.npz").exists()
+
+    removed: list[str] = []
+    for name in ("centerline.vtp", "centerline_points.npz", "cl_stent.vtp"):
+        path = meshes_dir / name
+        if path.exists():
+            try:
+                path.unlink()
+                removed.append(name)
+            except OSError as exc:  # noqa: BLE001
+                logger.warning("Could not delete %s for %s: %s", name, session_id, exc)
+
+    # A centreline-guided stent is recorded as the session's stent; dropping its
+    # geometry without the record would leave the report describing a phantom.
+    if "cl_stent.vtp" in removed:
+        from services.device_state import read_stent, save_stent
+        if (read_stent(session_id) or {}).get("kind") == "centerline":
+            save_stent(session_id, None)
+
+    logger.info("Cleared centreline for session=%s (%s)", session_id, removed or "nothing")
+    return CenterlineClearResult(removed=removed, had_centerline=had)

@@ -81,6 +81,10 @@ backend/user_files/
 backend/study_files/
 # Comprimidos de estudios (pueden contener datos de paciente).
 *.zip
+# Informes de avance generados en la raíz: sus tablas etiquetan los casos con el
+# apellido real del paciente (tal y como vienen las carpetas DICOM), así que son
+# datos identificables aunque el PDF hable del proyecto y no de un paciente.
+/Informe-*.pdf
 
 # ── Large binary meshes (use Git LFS or external storage) ────────────────── #
 *.stl

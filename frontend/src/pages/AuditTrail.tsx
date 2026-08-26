@@ -1,20 +1,30 @@
 /* SkullChain audit trail (Feature 5) — admin view of the tamper-evident log
    with an integrity check. */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { AuditBlock, AuditVerifyResult } from "../api/types";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
+import { Input } from "../components/Input";
+import { Select } from "../components/Select";
 import { Topbar } from "../components/Topbar";
 import { PanelHead, SectionLabel, Card, ErrorNote } from "../components/PanelHead";
+
+/** Rows added per «Mostrar más». The chain is append-only and unbounded. */
+const PAGE = 50;
 
 export function AuditTrail({ onBack }: { onBack: () => void }) {
   const [blocks, setBlocks] = useState<AuditBlock[]>([]);
   const [verify, setVerify] = useState<AuditVerifyResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The chain only grows, so rendering every block put thousands of rows in one
+  // table with no way to find anything in them.
+  const [q, setQ] = useState("");
+  const [action, setAction] = useState("");
+  const [shown, setShown] = useState(PAGE);
 
   const load = () => {
     api.auditBlocks().then(setBlocks).catch((e) => setError(e instanceof Error ? e.message : "Error"));
@@ -34,9 +44,32 @@ export function AuditTrail({ onBack }: { onBack: () => void }) {
     }
   };
 
+  // Distinct actions actually present, so the filter never offers a dead option.
+  const actions = useMemo(
+    () => Array.from(new Set(blocks.map((b) => b.action))).sort(),
+    [blocks],
+  );
+
+  const rows = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return blocks.filter((b) => {
+      if (action && b.action !== action) return false;
+      if (!needle) return true;
+      return `${b.id} ${b.username} ${b.action} ${b.iso_ts} ${b.block_hash}`
+        .toLowerCase()
+        .includes(needle);
+    });
+  }, [blocks, q, action]);
+
+  // Newest first: an audit trail is read from the most recent event backwards.
+  const ordered = useMemo(() => [...rows].reverse(), [rows]);
+  const page = ordered.slice(0, shown);
+
+  useEffect(() => setShown(PAGE), [q, action]);
+
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--canvas)" }}>
-      <Topbar crumb="Auditoría · SkullChain">
+      <Topbar crumbs={[{ label: "Pacientes", onClick: onBack }, { label: "Auditoría · SkullChain" }]}>
         <Button variant="ghost" size="sm" onClick={onBack} leadingIcon={<Icon name="HOME" />}>Pacientes</Button>
       </Topbar>
 
@@ -72,7 +105,29 @@ export function AuditTrail({ onBack }: { onBack: () => void }) {
 
         <ErrorNote>{error}</ErrorNote>
 
-        <SectionLabel style={{ marginTop: 8 }}>Bloques ({blocks.length})</SectionLabel>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginTop: 14 }}>
+          <div style={{ flex: "1 1 260px", minWidth: 0 }}>
+            <Input
+              label="Buscar"
+              placeholder="Usuario, acción, hash o fecha…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </div>
+          <div style={{ flex: "0 1 220px" }}>
+            <Select
+              label="Acción"
+              options={[{ value: "", label: `Todas (${blocks.length})` },
+                        ...actions.map((a) => ({ value: a, label: a }))]}
+              value={action}
+              onChange={(e) => setAction(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <SectionLabel style={{ marginTop: 14 }}>
+          Bloques ({rows.length}{rows.length !== blocks.length ? ` de ${blocks.length}` : ""})
+        </SectionLabel>
         <div className="table-scroll" style={{ marginTop: 8 }}>
           <table style={{ width: "100%", minWidth: 560, borderCollapse: "collapse", fontSize: 12 }}>
             <thead>
@@ -85,7 +140,7 @@ export function AuditTrail({ onBack }: { onBack: () => void }) {
               </tr>
             </thead>
             <tbody>
-              {blocks.map((b) => (
+              {page.map((b) => (
                 <tr key={b.id} style={{ borderTop: "1px solid var(--border)" }}>
                   <td style={{ padding: "6px 8px", fontFamily: "var(--font-mono)" }}>{b.id}</td>
                   <td style={{ padding: "6px 8px", fontFamily: "var(--font-mono)", color: "var(--muted-foreground)" }}>{b.iso_ts}</td>
@@ -99,6 +154,23 @@ export function AuditTrail({ onBack }: { onBack: () => void }) {
             </tbody>
           </table>
         </div>
+
+        {rows.length === 0 && (
+          <div style={{ fontSize: 12, color: "var(--muted-foreground)", padding: "18px 0", textAlign: "center" }}>
+            {blocks.length === 0 ? "La cadena está vacía." : "Ningún bloque coincide con el filtro."}
+          </div>
+        )}
+
+        {page.length < ordered.length && (
+          <div style={{ display: "flex", justifyContent: "center", marginTop: 14 }}>
+            <Button variant="outline" size="sm" onClick={() => setShown((n) => n + PAGE)}>
+              Mostrar {Math.min(PAGE, ordered.length - page.length)} más
+              <span style={{ marginLeft: 6, color: "var(--muted-foreground)" }}>
+                ({page.length} de {ordered.length})
+              </span>
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

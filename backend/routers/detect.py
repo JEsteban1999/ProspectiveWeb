@@ -73,6 +73,88 @@ def _detector_for_modality(modality: str) -> AneurysmDetector:
 
 # ── POST /detect/{session_id} ──────────────────────────────────────────────── #
 
+# ── Clearing detection + morphometry ──────────────────────────────────────── #
+
+#: Morphometry state is written per-metric rather than as one blob, so clearing
+#: it means listing the keys. `morpho.plane_*` matters most: a manually marked
+#: neck plane is REUSED by every later morphometry call, so a plane left over
+#: from an edited mesh keeps re-measuring against geometry that has moved.
+_MORPHO_STATE_KEYS = (
+    "morpho.plane_origin_x", "morpho.plane_origin_y", "morpho.plane_origin_z",
+    "morpho.plane_normal_x", "morpho.plane_normal_y", "morpho.plane_normal_z",
+    "morpho.plane_seed_x", "morpho.plane_seed_y", "morpho.plane_seed_z",
+    "morpho.neck_origin_x", "morpho.neck_origin_y", "morpho.neck_origin_z",
+    "morpho.axis_x", "morpho.axis_y", "morpho.axis_z",
+    "morpho.max_diameter_mm", "morpho.neck_mm", "morpho.dome_height_mm",
+    "morpho.volume_mm3", "morpho.surface_area_mm2",
+    "morpho.ar", "morpho.dnr", "morpho.bf", "morpho.ui",
+    "morpho.compactness", "morpho.rupture_risk",
+    "morpho.neck_source", "morpho.neck_tilt_deg", "morpho.parent_artery_mm",
+)
+
+
+def _clear_detection_state(session_id: str, meshes_dir: Path, *, morphometry: bool) -> int:
+    """Drop candidate meshes + their state. Returns how many files were deleted.
+
+    Re-running the detector used to leave the previous run's candidate files and
+    `detect.cand_*` keys in place, so a run that found fewer candidates than the
+    last one kept the extra ones on disk and in the state the report reads.
+    """
+    removed = 0
+    for path in meshes_dir.glob("aneurysm_cand_*.vtp"):
+        try:
+            path.unlink()
+            removed += 1
+        except OSError as exc:  # noqa: BLE001
+            logger.warning("Could not delete %s: %s", path.name, exc)
+
+    # Candidate indices are 1-based and bounded by the previous run's count.
+    try:
+        previous = int(read_state(session_id, "detect.n_candidates", "0") or 0)
+    except ValueError:
+        previous = 0
+    for i in range(1, max(previous, removed) + 1):
+        prefix = f"detect.cand_{i:03d}"
+        for suffix in ("vtp_name", "url", "centroid_x", "centroid_y", "centroid_z",
+                       "diameter_mm", "score"):
+            write_state(session_id, f"{prefix}.{suffix}", "")
+    write_state(session_id, "detect.n_candidates", "0")
+    write_state(session_id, "detect.best_vtp_name", "")
+
+    if morphometry:
+        for key in _MORPHO_STATE_KEYS:
+            write_state(session_id, key, "")
+        # The recommendation and the PHASES score are computed FROM the
+        # morphometry, so they describe measurements that no longer exist.
+        # Leaving them behind made the PDF recommend a treatment for an
+        # aneurysm the same PDF reported as unmeasured.
+        from routers.treatment import clear_treatment_state
+        clear_treatment_state(session_id)
+
+    return removed
+
+
+@router.delete(
+    "/detect/{session_id}",
+    summary="Clear detected candidates and their morphometry",
+    description=(
+        "Removes the candidate dome meshes, the detection state and the "
+        "morphometry derived from them — including a manually marked neck "
+        "plane, which is otherwise reapplied to every later measurement. "
+        "Use it to start the analysis over on an edited mesh. Idempotent."
+    ),
+)
+async def clear_detection(session_id: str) -> dict:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    meshes_dir = session_subdir(session_id, "meshes")
+    removed = await asyncio.to_thread(
+        _clear_detection_state, session_id, meshes_dir, morphometry=True
+    )
+    logger.info("Cleared detection for session=%s (%d candidate mesh(es))", session_id, removed)
+    return {"status": "cleared", "candidate_meshes_removed": removed}
+
+
 @router.post(
     "/detect/{session_id}",
     response_model=AneurysmDetectionResult,
@@ -126,6 +208,10 @@ def _run_detection_sync(
     meshes_dir: Path,
 ) -> AneurysmDetectionResult:
     """Load VTP → run AneurysmDetector → write candidate VTPs → update state."""
+    # Start from a clean slate: a run that finds fewer candidates than the last
+    # one must not leave the extra domes on disk and in the report's state.
+    _clear_detection_state(session_id, meshes_dir, morphometry=False)
+
     poly = read_vtp(vtp_path)
 
     if poly.GetNumberOfPoints() == 0:

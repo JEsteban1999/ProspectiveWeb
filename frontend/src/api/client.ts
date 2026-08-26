@@ -5,6 +5,7 @@ import type {
   AneurysmDetectionResult,
   AuditBlock,
   AuditVerifyResult,
+  CenterlineClearResult,
   CenterlineRequest,
   CenterlineResult,
   CrossSectionRequest,
@@ -19,6 +20,8 @@ import type {
   CoilLibraryItem,
   CoilPlacement,
   CoilPlanResult,
+  DeviceClearResult,
+  DeviceKind,
   ExportRequest,
   GrowRequest,
   GrowResult,
@@ -26,6 +29,9 @@ import type {
   LongitudinalResult,
   MeshCropRequest,
   MeshCropResult,
+  MeshHistoryResult,
+  MeshRestoreResult,
+  MeshRestoreScope,
   MorphometryResult,
   NeckPlaneRequest,
   PendingUser,
@@ -33,6 +39,7 @@ import type {
   PhasesResult,
   PreprocessRequest,
   PreprocessResult,
+  PreprocessStatus,
   PrintBed,
   PrintPrepRequest,
   PrintPrepResult,
@@ -235,6 +242,12 @@ export const api = {
     post<PreviewResult>(`/api/segment/preview/${sessionId}`, req),
   segmentGrow: (sessionId: string, req: GrowRequest) =>
     post<GrowResult>(`/api/segment/grow/${sessionId}`, req),
+  /** Step the working mesh back: "undo" one crop/grow, or "original" for the
+      mesh the segmentation produced. Cheap file ops — no re-segmentation. */
+  meshRestore: (sessionId: string, scope: MeshRestoreScope) =>
+    post<MeshRestoreResult>(`/api/mesh-restore/${sessionId}`, { scope }),
+  meshHistory: (sessionId: string) =>
+    get<MeshHistoryResult>(`/api/mesh-restore/${sessionId}`),
   meshCrop: (sessionId: string, req: MeshCropRequest) =>
     post<MeshCropResult>(`/api/mesh-crop/${sessionId}`, req),
   detect: (sessionId: string) =>
@@ -248,8 +261,17 @@ export const api = {
   longitudinal: (sessionId: string) =>
     get<LongitudinalResult>(`/api/longitudinal/${sessionId}`),
   phases: (req: PhasesRequest) => post<PhasesResult>("/api/phases", req),
+  /** Drop the candidate domes and the morphometry derived from them (including a
+      manually marked neck plane, which is otherwise reused by every later run). */
+  clearDetection: (sessionId: string) =>
+    request<{ status: string; candidate_meshes_removed: number }>(
+      `/api/detect/${sessionId}`, { method: "DELETE" },
+    ),
   centerline: (sessionId: string, req: CenterlineRequest) =>
     post<CenterlineResult>(`/api/centerline/${sessionId}`, req),
+  /** Discard the centreline, its cached points and any stent built along it. */
+  clearCenterline: (sessionId: string) =>
+    request<CenterlineClearResult>(`/api/centerline/${sessionId}`, { method: "DELETE" }),
   crossSection: (sessionId: string, req: CrossSectionRequest) =>
     post<CrossSectionResult>(`/api/cross-section/${sessionId}`, req),
   deployClStent: (sessionId: string, req: ClStentRequest) =>
@@ -260,6 +282,12 @@ export const api = {
     request<void>(`/api/trajectory/${sessionId}`, { method: "DELETE" }),
   preprocess: (sessionId: string, req: PreprocessRequest) =>
     post<PreprocessResult>(`/api/preprocess/${sessionId}`, req),
+  preprocessStatus: (sessionId: string) =>
+    get<PreprocessStatus>(`/api/preprocess/${sessionId}`),
+  /** Rebuild the volume from the DICOM still in the session — a full undo of the
+      HU clip / resample / smooth, without re-uploading the study. */
+  revertPreprocess: (sessionId: string) =>
+    request<PreprocessResult>(`/api/preprocess/${sessionId}`, { method: "DELETE" }),
   printBeds: () => get<PrintBed[]>("/api/print-prep/beds"),
   printPrep: (sessionId: string, req: PrintPrepRequest) =>
     post<PrintPrepResult>(`/api/print-prep/${sessionId}`, req),
@@ -283,12 +311,24 @@ export const api = {
   },
 
   /* treatment planning */
+  /** Forget the recommendation, its clinical context and the PHASES score, so
+      none of them reach the PDF describing morphometry that no longer exists. */
+  clearTreatment: (sessionId: string) =>
+    request<{ status: string }>(`/api/treatment-decision/${sessionId}`, { method: "DELETE" }),
   treatmentDecision: (req: TreatmentDecisionRequest) =>
     post<TreatmentDecisionResult>("/api/treatment-decision", req),
   listClips: () => get<ClipLibraryItem[]>("/api/clips"),
   clipRecommendations: (sessionId: string) =>
     get<ClipRecommendation[]>(`/api/clips/recommendations/${sessionId}`),
   planClips: (req: ClipPlanRequest) => post<ClipPlanResult>("/api/clips/plan", req),
+  listCustomClips: (sessionId: string) =>
+    get<CustomClipInfo[]>(`/api/clips/custom/${sessionId}`),
+  /** Remove an imported clip from the session catalogue (geometry included). */
+  deleteCustomClip: (sessionId: string, clipId: string) =>
+    request<CustomClipInfo[]>(
+      `/api/clips/custom/${sessionId}/${clipId.replace("custom:", "")}`,
+      { method: "DELETE" },
+    ),
   uploadCustomClip: (sessionId: string, file: File) => {
     const fd = new FormData();
     fd.append("file", file, file.name);
@@ -298,6 +338,15 @@ export const api = {
   planCoils: (sessionId: string, placements: CoilPlacement[]) =>
     post<CoilPlanResult>("/api/coils/plan", { session_id: sessionId, placements }),
   listStents: () => get<StentLibraryItem[]>("/api/stents"),
+  /** Which device families still hold a plan (used after resuming a session). */
+  placedDevices: (sessionId: string) =>
+    get<DeviceClearResult>(`/api/devices/${sessionId}`),
+  /** Remove a placed device family — mesh AND the record the report reads — so
+      another device can be planned on a clean scene. Omit `kind` to clear all. */
+  clearDevices: (sessionId: string, kind?: DeviceKind) =>
+    request<DeviceClearResult>(
+      `/api/devices/${sessionId}${kind ? `?kind=${kind}` : ""}`, { method: "DELETE" },
+    ),
   planStent: (sessionId: string, stent: StentParams) =>
     post<StentPlanResult>("/api/plan", { session_id: sessionId, stent }),
 

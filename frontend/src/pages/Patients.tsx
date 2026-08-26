@@ -2,6 +2,7 @@
    create / edit / delete a patient, and view its past planning sessions. */
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import type { FormEvent } from "react";
 import { api } from "../api/client";
 import type { PatientSummary, PatientSessionInfo, StudyCard, StudySummary } from "../api/types";
@@ -11,6 +12,7 @@ import { Icon } from "../components/Icon";
 import { Input } from "../components/Input";
 import { Select } from "../components/Select";
 import { Sheet } from "../components/Sheet";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Topbar } from "../components/Topbar";
 import { ErrorNote, Card } from "../components/PanelHead";
 import { useAuth } from "../store/auth";
@@ -202,6 +204,11 @@ function PatientSheet({
                           compact
                           emptyHint="Sin imágenes archivadas todavía."
                           onOpen={(img) => { onClose(); onOpenStudy?.(img); }}
+                          onResume={(img) => {
+                            if (!img.resumable_session_id) return;
+                            onClose();
+                            onResume?.(img.resumable_session_id);
+                          }}
                         />
                         <div style={{ marginTop: 10 }}>
                           <Button
@@ -283,39 +290,24 @@ function PatientSheet({
       onClose={() => { setStudyOpen(false); setEditStudy(null); }}
       onCreated={reloadStudies}
     />
-    {delStudy && (
-      <div
-        onClick={() => setDelStudy(null)}
-        style={{ position: "fixed", inset: 0, zIndex: 320, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
-      >
-        <div
-          onClick={(e) => e.stopPropagation()}
-          style={{ width: 380, maxWidth: "90%", background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow-lg)", padding: "22px 24px" }}
-        >
-          <div style={{ fontSize: 16, fontWeight: 800, color: "var(--foreground)" }}>Eliminar estudio</div>
-          <div style={{ fontSize: 13, color: "var(--muted-foreground)", marginTop: 8, lineHeight: 1.5 }}>
-            ¿Seguro que quieres eliminar el estudio <b style={{ color: "var(--foreground)" }}>{delStudy.dx_principal || "Estudio"}</b>?
-            {delStudy.session_count > 0 && <> Sus {delStudy.session_count} sesión(es) de planificación se conservarán pero quedarán desvinculadas.</>} Esta acción no se puede deshacer.
-          </div>
-          <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
-            <Button variant="outline" onClick={() => setDelStudy(null)} disabled={delBusy}>Cancelar</Button>
-            <Button
-              variant="destructive"
-              disabled={delBusy}
-              onClick={async () => {
-                if (patientId === null) return;
-                setDelBusy(true);
-                try { await api.deleteStudy(patientId, delStudy.id); setDelStudy(null); reloadStudies(); }
-                catch (e) { setError(e instanceof Error ? e.message : "Error al eliminar el estudio"); setDelStudy(null); }
-                finally { setDelBusy(false); }
-              }}
-            >
-              {delBusy ? "Eliminando…" : "Eliminar"}
-            </Button>
-          </div>
-        </div>
-      </div>
-    )}
+    <ConfirmDialog
+      open={!!delStudy}
+      title="Eliminar estudio"
+      destructive
+      busy={delBusy}
+      confirmLabel={delBusy ? "Eliminando…" : "Eliminar"}
+      onCancel={() => setDelStudy(null)}
+      onConfirm={async () => {
+        if (patientId === null || !delStudy) return;
+        setDelBusy(true);
+        try { await api.deleteStudy(patientId, delStudy.id); setDelStudy(null); reloadStudies(); }
+        catch (e) { setError(e instanceof Error ? e.message : "Error al eliminar el estudio"); setDelStudy(null); }
+        finally { setDelBusy(false); }
+      }}
+    >
+      ¿Seguro que quieres eliminar el estudio <b style={{ color: "var(--foreground)" }}>{delStudy?.dx_principal || "Estudio"}</b>?
+      {(delStudy?.session_count ?? 0) > 0 && <> Sus {delStudy?.session_count} sesión(es) de planificación se conservarán pero quedarán desvinculadas.</>} Esta acción no se puede deshacer.
+    </ConfirmDialog>
     </>
   );
 }
@@ -331,31 +323,18 @@ function DeleteConfirm({
 }) {
   const [busy, setBusy] = useState(false);
   return (
-    <div
-      onClick={onCancel}
-      style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
+    <ConfirmDialog
+      open
+      title="Eliminar paciente"
+      destructive
+      busy={busy}
+      confirmLabel={busy ? "Eliminando…" : "Eliminar"}
+      onCancel={onCancel}
+      onConfirm={async () => { setBusy(true); await onConfirm(); }}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: 380, maxWidth: "90%", background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow-lg)", padding: "22px 24px" }}
-      >
-        <div style={{ fontSize: 16, fontWeight: 800, color: "var(--foreground)" }}>Eliminar paciente</div>
-        <div style={{ fontSize: 13, color: "var(--muted-foreground)", marginTop: 8, lineHeight: 1.5 }}>
-          ¿Seguro que quieres eliminar a <b style={{ color: "var(--foreground)" }}>{patient.full_name}</b>? Se
-          borrarán también sus estudios y sesiones de planificación. Esta acción no se puede deshacer.
-        </div>
-        <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
-          <Button variant="outline" onClick={onCancel} disabled={busy}>Cancelar</Button>
-          <Button
-            variant="destructive"
-            disabled={busy}
-            onClick={async () => { setBusy(true); await onConfirm(); }}
-          >
-            {busy ? "Eliminando…" : "Eliminar"}
-          </Button>
-        </div>
-      </div>
-    </div>
+      ¿Seguro que quieres eliminar a <b style={{ color: "var(--foreground)" }}>{patient.full_name}</b>? Se
+      borrarán también sus estudios y sesiones de planificación. Esta acción no se puede deshacer.
+    </ConfirmDialog>
   );
 }
 
@@ -402,6 +381,17 @@ export function Patients({
       .finally(() => setLoading(false));
   };
   useEffect(load, []);
+
+  // ?paciente=<id> opens that patient's sheet on arrival, so the breadcrumb in
+  // the workspace can lead back to the case instead of just the list.
+  const [params, setParams] = useSearchParams();
+  useEffect(() => {
+    const id = Number(params.get("paciente"));
+    if (!Number.isFinite(id) || id <= 0) return;
+    setSheetPatientId(id);
+    setSheetOpen(true);
+    setParams({}, { replace: true });
+  }, [params, setParams]);
 
   const openCreate = () => { setSheetPatientId(null); setSheetOpen(true); };
   const openEdit = (id: number) => { setSheetPatientId(id); setSheetOpen(true); };

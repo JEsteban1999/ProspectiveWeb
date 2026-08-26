@@ -120,6 +120,10 @@ def snapshot_session(session_id: str) -> float:
     if dst.exists():
         shutil.rmtree(dst, ignore_errors=True)
     _clone_tree(src, dst)
+    # The mesh edit history is a working convenience, not part of the saved
+    # state: carrying all twelve snapshots multiplied the size of every save.
+    from services.mesh_backup import prune_for_snapshot
+    prune_for_snapshot(dst / "meshes")
     total = sum(f.stat().st_size for f in dst.rglob("*") if f.is_file())
     return round(total / 1024, 1)
 
@@ -152,17 +156,35 @@ def delete_saved_session(session_id: str) -> None:
 
 # ── State helpers ──────────────────────────────────────────────────────────── #
 
+# The state file has to be read and written as UTF-8 explicitly. Without it
+# Python picks the platform default — cp1252 on Windows — and any character
+# outside that codepage raises on write: a Greek sigma in a note, an em dash in a
+# scanner's series description, a name the locale cannot represent. It surfaced
+# as a 500 from whichever endpoint happened to be storing the text.
+_STATE_ENCODING = "utf-8"
+
+
 def write_state(session_id: str, key: str, value: str) -> None:
     """Persist a simple key=value string in the session state file."""
     state_file = SESSIONS_ROOT / session_id / "state.txt"
     lines: dict[str, str] = {}
     if state_file.exists():
-        for line in state_file.read_text().splitlines():
+        for line in _read_state_text(state_file).splitlines():
             if "=" in line:
                 k, v = line.split("=", 1)
                 lines[k.strip()] = v.strip()
     lines[key] = value
-    state_file.write_text("\n".join(f"{k}={v}" for k, v in lines.items()))
+    state_file.write_text(
+        "\n".join(f"{k}={v}" for k, v in lines.items()), encoding=_STATE_ENCODING
+    )
+
+
+def _read_state_text(state_file: Path) -> str:
+    """Decode the state file, tolerating sessions written before UTF-8 was pinned.
+
+    Replacing one undecodable byte beats losing the whole session's state.
+    """
+    return state_file.read_text(encoding=_STATE_ENCODING, errors="replace")
 
 
 def read_state(session_id: str, key: str, default: str = "") -> str:
@@ -170,7 +192,7 @@ def read_state(session_id: str, key: str, default: str = "") -> str:
     state_file = SESSIONS_ROOT / session_id / "state.txt"
     if not state_file.exists():
         return default
-    for line in state_file.read_text().splitlines():
+    for line in _read_state_text(state_file).splitlines():
         if "=" in line:
             k, v = line.split("=", 1)
             if k.strip() == key:

@@ -5,7 +5,7 @@
    completo. El mismo componente `StudyGallery` se reutiliza dentro de la ficha
    del paciente pasando `patientId`. */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { StudyCard } from "../api/types";
 import { Badge, riskVariant } from "../components/Badge";
@@ -59,6 +59,7 @@ export function StudyGallery({
   patientId,
   caseId,
   onOpen,
+  onResume,
   compact = false,
   emptyHint,
 }: {
@@ -67,6 +68,8 @@ export function StudyGallery({
   /** Restrict to one clinical case — a case can hold several acquisitions. */
   caseId?: number;
   onOpen: (study: StudyCard) => void;
+  /** Restore the study's saved session instead of starting a new one. */
+  onResume?: (study: StudyCard) => void;
   compact?: boolean;
   /** Message shown when this scope has no imaging studies yet. */
   emptyHint?: string;
@@ -76,24 +79,22 @@ export function StudyGallery({
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
 
+  // The search goes to the server (debounced). Filtering only on the client
+  // searched whatever page happened to be loaded, so on a real archive an older
+  // patient came back empty with nothing to explain why.
   useEffect(() => {
     let alive = true;
-    setLoading(true);
-    api.listStudies("", patientId, caseId)
-      .then((s) => { if (alive) setStudies(s); })
-      .catch((e) => { if (alive) setError(e instanceof Error ? e.message : "Error cargando estudios"); })
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, [patientId, caseId]);
+    const t = setTimeout(() => {
+      setLoading(true);
+      api.listStudies(q.trim(), patientId, caseId)
+        .then((s) => { if (alive) setStudies(s); })
+        .catch((e) => { if (alive) setError(e instanceof Error ? e.message : "Error cargando estudios"); })
+        .finally(() => { if (alive) setLoading(false); });
+    }, q.trim() ? 280 : 0);
+    return () => { alive = false; clearTimeout(t); };
+  }, [patientId, caseId, q]);
 
-  // Filter on the client: the list is small and it keeps typing instant.
-  const rows = useMemo(() => {
-    const n = q.trim().toLowerCase();
-    if (!n) return studies;
-    return studies.filter((s) =>
-      `${s.patient_name} ${s.hospital_id} ${s.description} ${s.dx_principal}`.toLowerCase().includes(n),
-    );
-  }, [studies, q]);
+  const rows = studies;
 
   return (
     <div>
@@ -113,9 +114,9 @@ export function StudyGallery({
         <div style={{ color: "var(--muted-foreground)", fontSize: 13 }}>Cargando estudios…</div>
       ) : rows.length === 0 ? (
         <div style={{ color: "var(--muted-foreground)", fontSize: compact ? 11 : 13, padding: compact ? "6px 0" : "24px 0", textAlign: compact ? "left" : "center" }}>
-          {studies.length === 0
-            ? (emptyHint ?? "Aún no hay estudios archivados. Carga un DICOM en el pipeline y pulsa «Guardar estudio».")
-            : "Ningún estudio coincide con la búsqueda."}
+          {q.trim()
+            ? `Ningún estudio coincide con «${q.trim()}».`
+            : (emptyHint ?? "Aún no hay estudios archivados. Carga un DICOM en el pipeline y pulsa «Guardar estudio».")}
         </div>
       ) : (
         <div style={{
@@ -123,22 +124,28 @@ export function StudyGallery({
           gridTemplateColumns: `repeat(auto-fill, minmax(${compact ? 150 : 190}px, 1fr))`,
           gap: 14,
         }}>
-          {rows.map((s) => (
-            <button
+          {rows.map((s) => {
+            const canResume = !!s.resumable_session_id && !!onResume;
+            return (
+            <div
               key={s.id}
-              type="button"
-              onClick={() => onOpen(s)}
               title={`${s.patient_name} · ${s.description}`}
               style={{
                 display: "flex", flexDirection: "column", textAlign: "left", padding: 0,
                 background: "var(--card)", border: "1px solid var(--border)",
-                borderRadius: "var(--radius-lg)", overflow: "hidden", cursor: "pointer",
+                borderRadius: "var(--radius-lg)", overflow: "hidden",
                 fontFamily: "var(--font-sans)", boxShadow: "var(--shadow-sm)",
               }}
               onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--brand-deep)")}
               onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
             >
-              <Thumbnail study={s} />
+              <button
+                type="button"
+                onClick={() => (canResume ? onResume?.(s) : onOpen(s))}
+                style={{ display: "block", padding: 0, border: "none", background: "transparent", cursor: "pointer", width: "100%" }}
+              >
+                <Thumbnail study={s} />
+              </button>
               <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
                 {/* Inside a case the patient is already known, so the card leads
                     with what distinguishes one acquisition from another. */}
@@ -182,19 +189,61 @@ export function StudyGallery({
                     ? `Último paso: ${STEP_LABELS[s.last_step] ?? s.last_step}`
                     : s.archived ? "Sin procesar" : "No archivado"}
                 </div>
+
+                {/* The card advertises progress, so the primary action has to be
+                    the one that keeps it. «Abrir» starts a fresh session at step 1
+                    and says so, instead of doing it silently behind one click. */}
+                <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                  {canResume && (
+                    <button
+                      type="button"
+                      onClick={() => onResume?.(s)}
+                      title={s.last_step != null ? `Reanudar en «${STEP_LABELS[s.last_step] ?? s.last_step}»` : "Reanudar la sesión guardada"}
+                      style={{
+                        flex: 1, padding: "5px 8px", fontSize: 11, fontWeight: 700,
+                        borderRadius: "var(--radius-md)", border: "none", cursor: "pointer",
+                        background: "var(--brand-deep)", color: "#fff",
+                        fontFamily: "var(--font-sans)", whiteSpace: "nowrap",
+                      }}
+                    >
+                      Reanudar
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onOpen(s)}
+                    title={canResume ? "Empezar una sesión nueva desde el paso 1" : undefined}
+                    style={{
+                      flex: canResume ? "0 0 auto" : 1, padding: "5px 10px", fontSize: 11,
+                      fontWeight: 600, borderRadius: "var(--radius-md)",
+                      border: "1px solid var(--border)", cursor: "pointer",
+                      background: "transparent", color: "var(--foreground)",
+                      fontFamily: "var(--font-sans)", whiteSpace: "nowrap",
+                    }}
+                  >
+                    {canResume ? "De cero" : "Abrir"}
+                  </button>
+                </div>
               </div>
-            </button>
-          ))}
+            </div>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-export function Studies({ onOpen, onBack }: { onOpen: (study: StudyCard) => void; onBack: () => void }) {
+export function Studies({
+  onOpen, onResume, onBack,
+}: {
+  onOpen: (study: StudyCard) => void;
+  onResume: (study: StudyCard) => void;
+  onBack: () => void;
+}) {
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--canvas)" }}>
-      <Topbar crumb="Pacientes / Estudios">
+      <Topbar crumbs={[{ label: "Pacientes", onClick: onBack }, { label: "Estudios" }]}>
         <Button variant="ghost" size="sm" onClick={onBack} leadingIcon={<Icon name="HOME" />}>
           Pacientes
         </Button>
@@ -207,7 +256,7 @@ export function Studies({ onOpen, onBack }: { onOpen: (study: StudyCard) => void
               Estudios cargados y archivados · haz clic en uno para abrirlo
             </div>
           </div>
-          <StudyGallery onOpen={onOpen} />
+          <StudyGallery onOpen={onOpen} onResume={onResume} />
         </div>
       </div>
     </div>

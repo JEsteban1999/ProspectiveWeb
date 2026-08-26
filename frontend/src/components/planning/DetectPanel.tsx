@@ -58,6 +58,7 @@ export function DetectPanel({ onNext }: { onNext: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ran, setRan] = useState(candidates.length > 0);
+  const [clearing, setClearing] = useState(false);
   const [diag, setDiag] = useState<DetectionDiagnostics | null>(null);
 
   const run = async () => {
@@ -75,6 +76,29 @@ export function DetectPanel({ onNext }: { onNext: () => void }) {
       setError(err instanceof Error ? err.message : "Error en la detección");
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Take the candidate domes out of the scene and off the record — including the
+  // morphometry (and any hand-marked neck plane) measured on them, which the
+  // backend otherwise reapplies to every later measurement. Needed before
+  // re-detecting on an edited mesh, and to clear a wrong candidate from the plan.
+  const clear = async () => {
+    if (!sessionId) return;
+    setClearing(true);
+    setError(null);
+    try {
+      await api.clearDetection(sessionId);
+      planning.setCandidates([]);
+      planning.setSelectedCandidate(0);
+      planning.setMorphometry(null);
+      planning.setTreatment(null);
+      setDiag(null);
+      setRan(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudieron limpiar los candidatos");
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -177,7 +201,7 @@ export function DetectPanel({ onNext }: { onNext: () => void }) {
       })()}
 
       <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
-        <Button variant="outline" onClick={() => void run()} disabled={busy || !sessionId} leadingIcon={<Icon name="REFRESH" />}>
+        <Button variant="outline" onClick={() => void run()} disabled={busy || clearing || !sessionId} leadingIcon={<Icon name="REFRESH" />}>
           Re-detectar
         </Button>
         <Button
@@ -189,6 +213,17 @@ export function DetectPanel({ onNext }: { onNext: () => void }) {
           Analizar morfometría
         </Button>
       </div>
+      {(candidates.length > 0 || ran) && (
+        <Button
+          variant="ghost"
+          style={{ marginTop: 8, width: "100%" }}
+          disabled={busy || clearing || !sessionId}
+          onClick={() => void clear()}
+          leadingIcon={<Icon name="CLEAR" size={14} />}
+        >
+          {clearing ? "Limpiando…" : "Limpiar candidatos y morfometría"}
+        </Button>
+      )}
     </div>
   );
 }

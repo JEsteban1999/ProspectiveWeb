@@ -68,3 +68,23 @@ def read_stent(session_id: str) -> dict:
 def clear_devices(session_id: str) -> None:
     for k in (_CLIPS_KEY, _COILS_KEY, _STENT_KEY):
         write_state(session_id, k, "")
+
+
+#: Device kind → (state key, mesh files written by its planner). The meshes are
+#: deleted alongside the state so a cleared device also leaves the 3D viewer and
+#: the STL export, not just the PDF.
+DEVICE_KINDS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "clips":  (_CLIPS_KEY, ("clips_placed.vtp",)),
+    "coils":  (_COILS_KEY, ("coils_placed.vtp",)),
+    # Both stent planners share one state slot, so clearing either clears both
+    # meshes — otherwise the report would describe a stent whose geometry is gone.
+    "stent":  (_STENT_KEY, ("stent_deployed.vtp", "cl_stent.vtp")),
+}
+
+
+def clear_device(session_id: str, kind: str) -> None:
+    """Forget one placed device kind ('clips' | 'coils' | 'stent')."""
+    entry = DEVICE_KINDS.get(kind)
+    if entry is None:
+        raise ValueError(f"Unknown device kind: {kind!r}")
+    write_state(session_id, entry[0], "")

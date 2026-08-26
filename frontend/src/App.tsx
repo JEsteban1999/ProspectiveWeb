@@ -1,6 +1,7 @@
 /* PROSPECTIVE Web — root: splash → Login/Signup → Pacientes → Sesión → Solicitudes. */
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useBlocker, useLocation, useNavigate } from "react-router-dom";
 import { api } from "./api/client";
 import type { PatientSummary, StudyCard, StudySummary } from "./api/types";
 import { Login } from "./pages/Login";
@@ -13,26 +14,63 @@ import { UsersAdmin } from "./pages/UsersAdmin";
 import { AuditTrail } from "./pages/AuditTrail";
 import { VideoSplash } from "./components/VideoSplash";
 import { LoadingScreen } from "./components/LoadingScreen";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { AuthProvider, useAuth } from "./store/auth";
 import { PlanningProvider, usePlanning } from "./store/planning";
-import { NavProvider } from "./store/nav";
+import { NavProvider, SCREEN_PATH, screenFromPath } from "./store/nav";
 import type { Screen } from "./store/nav";
 
 function Router() {
   const { user, ready, expiredNotice } = useAuth();
   const planning = usePlanning();
-  const [screen, setScreen] = useState<Screen>("login");
+  const location = useLocation();
+  const navigate = useNavigate();
+  // The URL is the source of truth for which screen is showing, so Back/Forward,
+  // a refresh and a shared link all land where the user expects.
+  const screen = screenFromPath(location.pathname);
+  const setScreen = useCallback(
+    (s: Screen) => navigate(SCREEN_PATH[s]),
+    [navigate],
+  );
   const [patient, setPatient] = useState<PatientSummary | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [loginNotice, setLoginNotice] = useState<string | null>(null);
   const [loadingIn, setLoadingIn] = useState(false);
   const [resumeStep, setResumeStep] = useState(0);
+  // Leaving the pipeline throws the session away: the store resets on the next
+  // patient. Saving is manual, so an accidental click on the logo — or on the
+  // browser's Back button — used to cost an entire analysis without a word.
+  const dirtyWorkspace = screen === "workspace" && planning.dirty;
 
-  if (!ready) return null; // restoring stored token
+  // useBlocker catches EVERY router navigation, including Back/Forward, which a
+  // hand-rolled guard around our own click handlers could never see.
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      dirtyWorkspace && currentLocation.pathname !== nextLocation.pathname,
+  );
+
+  useEffect(() => {
+    if (!dirtyWorkspace) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirtyWorkspace]);
 
   // When logged out, only login/signup are reachable.
   const loggedOut: Screen = screen === "signup" ? "signup" : "login";
   const effective: Screen = user ? (screen === "login" || screen === "signup" ? "patients" : screen) : loggedOut;
+
+  // Keep the URL honest when the effective screen differs from the one the path
+  // names — a logged-out visitor deep-linking to /app/sesion, or bare /app.
+  // `replace`, not push: this correction must not become a Back destination.
+  useEffect(() => {
+    if (!ready) return;
+    if (SCREEN_PATH[effective] !== location.pathname) {
+      navigate(SCREEN_PATH[effective], { replace: true });
+    }
+  }, [ready, effective, location.pathname, navigate]);
+
+  if (!ready) return null; // restoring stored token
 
   const openPatient = (p: PatientSummary) => {
     planning.reset();
@@ -127,10 +165,34 @@ function Router() {
         catch { /* leave morphometry empty */ }
       }
       setResumeStep(Math.min(Math.max(r.current_step, 0), 6));
+      // The store now mirrors what is on disk, so the session is NOT dirty: it
+      // was, because rehydrating goes through the same setters a real edit does,
+      // and resuming then immediately asked "tienes cambios sin guardar" before
+      // the user had touched anything.
+      planning.markSaved();
       setToast(null);
       setScreen("workspace");
     } catch (e) {
       setToast(e instanceof Error ? e.message : "No se pudo restaurar la sesión");
+      setTimeout(() => setToast(null), 3000);
+    }
+  };
+
+  // Resuming straight from a gallery card: the card knows its session, but
+  // resumeSession needs the patient record the workspace header reads from.
+  const resumeStudySession = async (study: StudyCard) => {
+    if (!study.resumable_session_id) return void openStudy(study);
+    try {
+      const patients = await api.listPatients();
+      const p = patients.find((x) => x.id === study.patient_id);
+      if (!p) {
+        setToast("No se encontró el paciente de este estudio");
+        setTimeout(() => setToast(null), 3000);
+        return;
+      }
+      await resumeSession(study.resumable_session_id, p);
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : "No se pudo reanudar la sesión");
       setTimeout(() => setToast(null), 3000);
     }
   };
@@ -162,17 +224,46 @@ function Router() {
     );
   else if (effective === "patients")
     view = <Patients onOpenPatient={openPatient} onResume={resumeSession} onPlanCase={planCase} onOpenStudy={(s) => void openStudy(s)} onOpenPending={() => setScreen("pending")} />;
-  else if (effective === "studies") view = <Studies onOpen={(s) => void openStudy(s)} onBack={() => setScreen("patients")} />;
+  else if (effective === "studies")
+    view = (
+      <Studies
+        onOpen={(s) => void openStudy(s)}
+        onResume={(s) => void resumeStudySession(s)}
+        onBack={() => setScreen("patients")}
+      />
+    );
   else if (effective === "pending") view = <PendingRequests onBack={() => setScreen("patients")} />;
   else if (effective === "users") view = <UsersAdmin onBack={() => setScreen("patients")} />;
   else if (effective === "audit") view = <AuditTrail onBack={() => setScreen("patients")} />;
-  else view = <Workspace patient={patient} initialStep={resumeStep} onBack={() => setScreen("patients")} onFinish={finish} />;
+  else
+    view = (
+      <Workspace
+        patient={patient}
+        initialStep={resumeStep}
+        onBack={() => setScreen("patients")}
+        onOpenPatient={() => navigate(`${SCREEN_PATH.patients}?paciente=${patient?.id ?? ""}`)}
+        onFinish={finish}
+      />
+    );
 
   return (
-    <NavProvider value={{ screen: effective, go: (s) => setScreen(s) }}>
+    <NavProvider value={{ screen: effective, go: setScreen }}>
     <div style={{ height: "100%", position: "relative" }}>
       {view}
       {loadingIn && <LoadingScreen onDone={() => setLoadingIn(false)} />}
+      <ConfirmDialog
+        open={blocker.state === "blocked"}
+        title="Tienes cambios sin guardar"
+        destructive
+        cancelLabel="Seguir aquí"
+        confirmLabel="Salir sin guardar"
+        onCancel={() => blocker.reset?.()}
+        onConfirm={() => blocker.proceed?.()}
+      >
+        Esta sesión tiene resultados que no se han guardado. Si sales ahora se
+        perderán: usa <b style={{ color: "var(--foreground)" }}>Guardar progreso</b> en
+        la barra superior para poder reanudarla después.
+      </ConfirmDialog>
       {toast && (
         <div
           style={{

@@ -48,6 +48,7 @@ export function TreatmentPanel({ onNext }: { onNext: () => void }) {
   const [age, setAge] = useState<string>(() => ageFromDob(patient?.dob));
   const [comorbid, setComorbid] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const run = async () => {
@@ -67,6 +68,22 @@ export function TreatmentPanel({ onNext }: { onNext: () => void }) {
       setError(err instanceof Error ? err.message : "Error en la decisión terapéutica");
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Re-evaluar sobrescribe la recomendación, pero no había forma de quitarla:
+  // una evaluación hecha con la localización equivocada se quedaba en el PDF.
+  const clear = async () => {
+    if (!sessionId) return;
+    setClearing(true);
+    setError(null);
+    try {
+      await api.clearTreatment(sessionId);
+      planning.setTreatment(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo limpiar la decisión");
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -112,9 +129,19 @@ export function TreatmentPanel({ onNext }: { onNext: () => void }) {
         </span>
       </div>
 
-      <Button style={{ marginTop: 14, width: "100%" }} variant={t ? "outline" : "default"} onClick={() => void run()} disabled={busy || !sessionId}>
+      <Button style={{ marginTop: 14, width: "100%" }} variant={t ? "outline" : "default"} onClick={() => void run()} disabled={busy || clearing || !sessionId}>
         {busy ? "Evaluando…" : t ? "Re-evaluar" : "Evaluar CLIP vs ENDOVASCULAR"}
       </Button>
+      {t && (
+        <Button
+          variant="ghost" style={{ marginTop: 8, width: "100%" }}
+          disabled={busy || clearing}
+          onClick={() => void clear()}
+          leadingIcon={<Icon name="CLEAR" size={14} />}
+        >
+          {clearing ? "Limpiando…" : "Limpiar decisión y PHASES"}
+        </Button>
+      )}
       <ErrorNote>{error}</ErrorNote>
 
       {t && (

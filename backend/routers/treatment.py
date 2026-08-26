@@ -84,3 +84,45 @@ async def compute_treatment_decision(
                 "1" if req.has_comorbidities else "0")
 
     return TreatmentDecisionResult(**result)
+
+
+# ── DELETE /treatment-decision/{session_id} ───────────────────────────────── #
+
+#: Everything the decision engine and its clinical context write. The report
+#: reads these keys directly, so clearing the recommendation on screen without
+#: clearing them left the PDF recommending a treatment for an aneurysm whose
+#: measurements had already been discarded.
+TREATMENT_STATE_KEYS = (
+    "treatment.recommendation", "treatment.recommendation_key",
+    "treatment.confidence", "treatment.clip_pct", "treatment.endo_pct",
+    "treatment.factors_json",
+    "clinical.patient_age", "clinical.has_comorbidities",
+)
+
+#: The PHASES score is a rupture risk built on the same morphometry, so it goes
+#: whenever the decision does.
+PHASES_STATE_KEYS = ("phases.json",)
+
+
+def clear_treatment_state(session_id: str) -> None:
+    """Forget the recommendation, its clinical context and the PHASES score."""
+    for key in (*TREATMENT_STATE_KEYS, *PHASES_STATE_KEYS):
+        write_state(session_id, key, "")
+
+
+@router.delete(
+    "/treatment-decision/{session_id}",
+    summary="Clear the treatment recommendation",
+    description=(
+        "Removes the CLIP vs ENDOVASCULAR recommendation, the clinical context "
+        "recorded alongside it and the PHASES score, so none of them reach the "
+        "PDF or the DICOM SR.\n\n"
+        "Called on its own from the decision step, and automatically whenever the "
+        "morphometry underneath is discarded. Idempotent."
+    ),
+)
+async def clear_treatment(session_id: str) -> dict:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    clear_treatment_state(session_id)
+    return {"status": "cleared"}

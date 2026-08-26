@@ -16,7 +16,9 @@ from fastapi import APIRouter, HTTPException
 
 from models.mesh_edit import (
     GrowRequest, GrowResult, MeshCropRequest, MeshCropResult,
+    MeshHistoryResult, MeshHistoryStep, MeshRestoreRequest, MeshRestoreResult,
 )
+from services import mesh_backup
 from services.grow import grow_from_seeds
 from services.mesh_crop import clip_box, clip_sphere
 from services.segmentation import (
@@ -31,6 +33,17 @@ router = APIRouter(prefix="/api", tags=["mesh-edit"])
 
 def _versioned(session_id: str, name: str) -> str:
     return f"{mesh_url(session_id, name)}?v={int(time.time() * 1000)}"
+
+
+def _invalidate_derived(session_id: str) -> None:
+    """Forget everything measured on the mesh that just changed.
+
+    The panel cleared its own screen state, but the session kept the candidate
+    domes, the morphometry and the recommendation — so a report generated after a
+    crop described an aneurysm from the mesh as it was before the crop.
+    """
+    from routers.detect import _clear_detection_state
+    _clear_detection_state(session_id, session_subdir(session_id, "meshes"), morphometry=True)
 
 
 # ── POST /mesh-crop/{session_id} ────────────────────────────────────────────── #
@@ -88,6 +101,10 @@ async def mesh_crop(session_id: str, req: MeshCropRequest) -> MeshCropResult:
             status_code=409, detail="No hay malla vascular. Ejecuta la segmentación primero."
         )
 
+    # Snapshot first: the crop overwrites the mesh in place, and without a copy
+    # the only way back is a full re-segmentation.
+    await asyncio.to_thread(mesh_backup.snapshot, session_id, "crop")
+
     try:
         _out, n_before, n_after, n_faces = await asyncio.to_thread(
             _run_crop, vessel_path, req
@@ -100,12 +117,14 @@ async def mesh_crop(session_id: str, req: MeshCropRequest) -> MeshCropResult:
 
     write_state(session_id, "seg.n_vertices", str(n_after))
     write_state(session_id, "seg.n_faces", str(n_faces))
+    _invalidate_derived(session_id)
 
     return MeshCropResult(
         mesh_url=_versioned(session_id, "vessel_tree.vtp"),
         vertices=n_after,
         faces=n_faces,
         removed_vertices=max(0, n_before - n_after),
+        undo_depth=mesh_backup.depth(session_id),
     )
 
 
@@ -211,6 +230,9 @@ def _run_grow(session_id: str, meshes_dir: Path, req: GrowRequest) -> GrowResult
     )
 
     vtp_path = meshes_dir / "vessel_tree.vtp"
+    # The grow replaces the whole mesh; keep the previous one so a seed placed on
+    # the wrong vessel costs one click to undo instead of a re-segmentation.
+    mesh_backup.snapshot(session_id, "grow")
     write_vtp(result.poly_data, vtp_path)
 
     # Persist state so detection/morphometry can run on the grown mesh. Volume
@@ -227,6 +249,7 @@ def _run_grow(session_id: str, meshes_dir: Path, req: GrowRequest) -> GrowResult
     write_state(session_id, "dicom.spacing_z", str(spacing[0]))
     write_state(session_id, "dicom.spacing_y", str(spacing[1]))
     write_state(session_id, "dicom.spacing_x", str(spacing[2]))
+    _invalidate_derived(session_id)
 
     return GrowResult(
         mesh_url=_versioned(session_id, "vessel_tree.vtp"),
@@ -237,6 +260,7 @@ def _run_grow(session_id: str, meshes_dir: Path, req: GrowRequest) -> GrowResult
         seeds=len(seeds),
         band_lower=round(float(lower), 1),
         band_upper=round(float(upper), 1),
+        undo_depth=mesh_backup.depth(session_id),
     )
 
 
@@ -272,3 +296,89 @@ async def segment_grow(session_id: str, req: GrowRequest) -> GrowResult:
     except Exception as exc:  # noqa: BLE001
         logger.exception("Grow-from-seeds failed")
         raise HTTPException(status_code=500, detail=f"Error en crecimiento por semillas: {exc}")
+
+
+# ── Mesh edit history: undo one edit / restore the segmentation output ─────── #
+
+def _mesh_counts(path: Path) -> tuple[int, int]:
+    mesh = read_vtp(path)
+    return mesh.GetNumberOfPoints(), mesh.GetNumberOfPolys()
+
+
+@router.get(
+    "/mesh-restore/{session_id}",
+    response_model=MeshHistoryResult,
+    summary="How far the vessel mesh can be rolled back",
+    description=(
+        "Reports how many crop/grow edits are still undoable for this session, so "
+        "the mesh-tools panel can enable «Deshacer» and «Restaurar malla original» "
+        "instead of guessing (a resumed session starts with no client-side history)."
+    ),
+)
+async def mesh_history(session_id: str) -> MeshHistoryResult:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    d = mesh_backup.depth(session_id)
+    return MeshHistoryResult(
+        undo_depth=d,
+        redo_depth=mesh_backup.redo_depth(session_id),
+        has_original=d > 0,
+        steps=[
+            MeshHistoryStep(label=st.label, title=st.title, vertices=st.vertices, at=st.at)
+            for st in mesh_backup.history(session_id)
+        ],
+    )
+
+
+@router.post(
+    "/mesh-restore/{session_id}",
+    response_model=MeshRestoreResult,
+    summary="Undo a mesh edit / restore the segmented mesh",
+    description=(
+        "`scope='undo'` puts back the mesh as it was before the last ROI crop or "
+        "grow-from-seeds. `scope='original'` restores the mesh the segmentation "
+        "produced, discarding every interactive edit.\n\n"
+        "Both are cheap file operations — no re-segmentation. Everything derived "
+        "from the mesh (candidates, morphometry, centreline) must be re-run, which "
+        "is what the frontend does after calling this."
+    ),
+)
+async def mesh_restore(session_id: str, req: MeshRestoreRequest) -> MeshRestoreResult:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    vessel_path = session_subdir(session_id, "meshes") / "vessel_tree.vtp"
+
+    if req.scope == "original":
+        ok = await asyncio.to_thread(mesh_backup.restore_baseline, session_id)
+        detail = "No hay una malla anterior guardada: aún no se ha editado esta malla."
+    elif req.scope == "redo":
+        ok = await asyncio.to_thread(mesh_backup.redo, session_id)
+        detail = "No hay ninguna edición deshecha que rehacer."
+    else:
+        ok = await asyncio.to_thread(mesh_backup.undo, session_id)
+        detail = "No hay ninguna edición de malla que deshacer."
+    if not ok:
+        raise HTTPException(status_code=409, detail=detail)
+
+    if not vessel_path.exists():
+        raise HTTPException(status_code=500, detail="La malla restaurada no está disponible.")
+
+    try:
+        n_vertices, n_faces = await asyncio.to_thread(_mesh_counts, vessel_path)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Could not read the restored mesh")
+        raise HTTPException(status_code=500, detail=f"Error leyendo la malla restaurada: {exc}")
+
+    write_state(session_id, "seg.n_vertices", str(n_vertices))
+    write_state(session_id, "seg.n_faces", str(n_faces))
+    _invalidate_derived(session_id)
+
+    return MeshRestoreResult(
+        mesh_url=_versioned(session_id, "vessel_tree.vtp"),
+        vertices=n_vertices,
+        faces=n_faces,
+        scope=req.scope,
+        undo_depth=mesh_backup.depth(session_id),
+        redo_depth=mesh_backup.redo_depth(session_id),
+    )

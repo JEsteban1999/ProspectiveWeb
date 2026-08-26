@@ -10,6 +10,7 @@ import { Icon } from "../Icon";
 import { SectionLabel, ErrorNote, Card } from "../PanelHead";
 import { Slider } from "../Slider";
 import { SEG_LOWER_DEFAULT, SEG_UPPER_DEFAULT } from "./SegmentPanel";
+import type { MeshHistoryResult } from "../../api/types";
 import { usePlanning } from "../../store/planning";
 
 export function MeshEditTools() {
@@ -29,9 +30,14 @@ export function MeshEditTools() {
   const [upper, setUpper] = useState(SEG_UPPER_DEFAULT);
   const [autoBand, setAutoBand] = useState(true);   // derive band from the seed
   const [huRange, setHuRange] = useState<{ min: number; max: number }>({ min: -200, max: 3000 });
-  const [busy, setBusy] = useState<"grow" | "crop" | null>(null);
+  const [busy, setBusy] = useState<"grow" | "crop" | "undo" | "redo" | "original" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // The edit history as the backend knows it. Asked for on mount so a resumed
+  // session — whose browser has no memory of the edits — still offers «Deshacer».
+  const [hist, setHist] = useState<MeshHistoryResult>({
+    undo_depth: 0, redo_depth: 0, has_original: false, steps: [],
+  });
 
   // Adapt the grow HU band + slider range to this volume's intensity scale
   // (so it works for 3DRA/CT alike, not a fixed HU window).
@@ -56,6 +62,15 @@ export function MeshEditTools() {
     return () => clearTimeout(t);
   }, [lower, upper, segmentation, setPreviewBand]);
   useEffect(() => () => setPreviewBand(null), [setPreviewBand]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    let alive = true;
+    api.meshHistory(sessionId)
+      .then((h) => { if (alive) setHist(h); })
+      .catch(() => { /* no history yet */ });
+    return () => { alive = false; };
+  }, [sessionId]);
 
   if (!segmentation) return null;
 
@@ -91,6 +106,7 @@ export function MeshEditTools() {
         kept_fraction: 1, fragments_removed: 0, largest_removed_mm3: 0, downsample_factor: 1,
       });
       clearDownstream();
+      void refreshHistory();
       setGrowSeeds([]);
       // Show the band that was actually used (derived from the seed when auto).
       if (autoBand) { setLower(Math.round(res.band_lower)); setUpper(Math.round(res.band_upper)); }
@@ -119,10 +135,46 @@ export function MeshEditTools() {
       });
       setSegmentation({ ...segmentation, mesh_url: res.mesh_url, vertices: res.vertices, faces: res.faces });
       clearDownstream();
+      void refreshHistory();
       setCropCenter(null);
       setNote(`Malla recortada: ${res.vertices.toLocaleString("es")} vértices (${res.removed_vertices.toLocaleString("es")} eliminados).`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al recortar la malla");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const refreshHistory = async () => {
+    if (!sessionId) return;
+    try { setHist(await api.meshHistory(sessionId)); } catch { /* keep what we have */ }
+  };
+
+  const restore = async (scope: "undo" | "redo" | "original") => {
+    if (!sessionId) return;
+    setBusy(scope);
+    setError(null);
+    setNote(null);
+    setPickMode(null);
+    setMprSeedMode(false);
+    try {
+      const res = await api.meshRestore(sessionId, scope);
+      setSegmentation({ ...segmentation, mesh_url: res.mesh_url, vertices: res.vertices, faces: res.faces });
+      // The restored mesh is different geometry, so candidates, morphometry and
+      // the centreline measured on the edited one no longer describe it.
+      clearDownstream();
+      void refreshHistory();
+      setCropCenter(null);
+      setGrowSeeds([]);
+      setNote(
+        scope === "original"
+          ? `Malla original restaurada: ${res.vertices.toLocaleString("es")} vértices. Vuelve a detectar para medir sobre ella.`
+          : scope === "redo"
+            ? `Edición rehecha: ${res.vertices.toLocaleString("es")} vértices.`
+            : `Edición deshecha: ${res.vertices.toLocaleString("es")} vértices. Quedan ${res.undo_depth} por deshacer.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo restaurar la malla");
     } finally {
       setBusy(null);
     }
@@ -150,6 +202,22 @@ export function MeshEditTools() {
         <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginBottom: 10, lineHeight: 1.5 }}>
           Marca 1–2 semillas <b style={{ color: "var(--foreground)" }}>sobre un vaso en los cortes MPR</b> de abajo
           (donde el vaso se separa del cráneo) y crece solo lo conectado dentro del rango HU: el hueso desconectado queda fuera.
+        </div>
+        <div
+          className="mpr-gone-note"
+          style={{
+            display: "none", gap: 6, alignItems: "flex-start", marginBottom: 8,
+            padding: "8px 10px", borderRadius: "var(--radius-md)",
+            background: "var(--warning-bg)", color: "var(--warning)",
+            border: "1px solid color-mix(in srgb, var(--warning) 35%, transparent)",
+            fontSize: 11, lineHeight: 1.5,
+          }}
+        >
+          <Icon name="STATUS_WARN" size={13} color="var(--warning)" />
+          <span>
+            La franja de cortes MPR no cabe en esta ventana. Agranda la ventana para
+            sembrar sobre los cortes, o usa la opción de semilla sobre la malla 3D.
+          </span>
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <button
@@ -246,6 +314,70 @@ export function MeshEditTools() {
         >
           {busy === "crop" ? "Recortando…" : "Recortar malla"}
         </Button>
+      </Card>
+
+      {/* ── Historial de la malla ────────────────────────────────────────── */}
+      {/* Recortar, crecer y re-segmentar reescriben vessel_tree.vtp en el sitio.
+          Antes, volver atrás de un recorte exigía re-segmentar, y re-segmentar
+          borraba todo el refinamiento sin aviso. Ahora las tres son un paso más
+          del historial, con nombre. */}
+      <Card style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)", marginBottom: 4 }}>
+          Historial de la malla
+        </div>
+        <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginBottom: 10, lineHeight: 1.5 }}>
+          {hist.undo_depth > 0
+            ? "Volver atrás no re-segmenta: se recupera la malla guardada antes del paso. Deshacer también es reversible."
+            : "Sin pasos que deshacer. En cuanto recortes, crezcas o vuelvas a segmentar, podrás volver atrás desde aquí."}
+        </div>
+
+        {hist.steps.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 10 }}>
+            {hist.steps.map((st, i) => (
+              <div
+                key={`${st.at}-${i}`}
+                style={{
+                  display: "flex", alignItems: "baseline", gap: 8, padding: "4px 8px",
+                  borderRadius: "var(--radius-sm)", background: "var(--muted)",
+                  fontSize: 11, color: "var(--muted-foreground)",
+                }}
+              >
+                <span style={{ fontFamily: "var(--font-mono)", opacity: 0.7 }}>{i + 1}</span>
+                <span style={{ flex: 1, color: "var(--foreground)", fontWeight: 600 }}>{st.title}</span>
+                <span style={{ fontFamily: "var(--font-mono)" }}>
+                  {st.vertices.toLocaleString("es")} v
+                </span>
+              </div>
+            ))}
+            <div style={{ fontSize: 10, color: "var(--muted-foreground)", marginTop: 2 }}>
+              Estados guardados, del más antiguo al más reciente. Deshacer vuelve al último de la lista.
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => void restore("undo")}
+            disabled={busy !== null || hist.undo_depth === 0}
+            style={{ ...toolBtn(false), opacity: hist.undo_depth === 0 || busy !== null ? 0.5 : 1 }}
+          >
+            {busy === "undo" ? "Deshaciendo…" : "↺ Deshacer"}
+          </button>
+          <button
+            onClick={() => void restore("redo")}
+            disabled={busy !== null || hist.redo_depth === 0}
+            style={{ ...toolBtn(false), opacity: hist.redo_depth === 0 || busy !== null ? 0.5 : 1 }}
+          >
+            {busy === "redo" ? "Rehaciendo…" : "↻ Rehacer"}
+          </button>
+          <button
+            onClick={() => void restore("original")}
+            disabled={busy !== null || hist.undo_depth === 0}
+            style={{ ...toolBtn(false), opacity: hist.undo_depth === 0 || busy !== null ? 0.5 : 1 }}
+          >
+            {busy === "original" ? "Restaurando…" : "⊘ Al inicio"}
+          </button>
+        </div>
       </Card>
 
       {note && (

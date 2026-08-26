@@ -25,6 +25,8 @@ export const GLYPHS = {
   ATTACH: "⊕",
   LINK: "⊕",
   REFRESH: "↻",
+  CLEAR: "⊘",
+  UNDO: "↺",
   LOCK: "⊟",
   SEARCH: "◎",
   AUDIT: "⊟",
@@ -85,8 +87,21 @@ export const GLYPHS = {
 
 export type IconName = keyof typeof GLYPHS;
 
-const ICON_FONT =
-  "'Segoe UI Symbol', 'Segoe UI', 'Arial Unicode MS', 'DejaVu Sans', sans-serif";
+// La pila arrancaba en 'Segoe UI Symbol' y saltaba a 'sans-serif': fuera de
+// Windows varios glifos caían a la fuente de interfaz genérica, que los dibuja
+// con otro peso y otra métrica, y la iconografía perdía consistencia. Se añaden
+// las fuentes de símbolos de macOS y Linux antes del fallback genérico.
+const ICON_FONT = [
+  "'Segoe UI Symbol'",          // Windows
+  "'Apple Symbols'",            // macOS
+  "'Noto Sans Symbols 2'",      // Linux / Android
+  "'Noto Sans Symbols'",
+  "'Symbola'",
+  "'DejaVu Sans'",
+  "'Arial Unicode MS'",
+  "'Segoe UI'",
+  "sans-serif",
+].join(", ");
 
 export interface IconProps {
   name: IconName;

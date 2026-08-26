@@ -18,6 +18,8 @@
 - [Environment Variables](#environment-variables)
 - [Data Model](#data-model)
 - [Session Lifecycle](#session-lifecycle)
+- [Undoing Work](#undoing-work)
+- [Navigation & Unsaved Work](#navigation--unsaved-work)
 - [API Reference](#api-reference)
 - [Running Tests](#running-tests)
 - [Development Scripts](#development-scripts)
@@ -42,6 +44,13 @@ pipeline, with every step rendered live in 3D:
 All medical image processing runs on the server (VTK + SimpleITK); the browser
 renders meshes with vtk.js and 2D slices as server-rendered PNGs.
 
+Every step of that pipeline is **reversible**: the mesh carries an undo/redo
+history, the preprocessing can be rolled back to the original DICOM, and the
+detection, morphometry, centreline, treatment decision and placed devices can each
+be cleared without restarting the study. Nothing derived from a result outlives
+the result itself, so the 3D scene, the measurements and the PDF can never
+disagree with one another.
+
 Beyond the pipeline the platform covers the surrounding clinical workflow:
 patient registry, clinical cases, a durable archive of imaging studies with a
 searchable preview gallery, resumable planning sessions, user signup with admin
@@ -53,9 +62,9 @@ approval, and a tamper-evident audit chain.
 
 | | |
 |---|---|
-| Backend tests | **335 passing** (`pytest`, 26 files) |
-| Frontend | `tsc -b` clean · production build clean |
-| REST endpoints | **77** operations across 69 paths (21 routers), all authenticated except login/signup/logout |
+| Backend tests | **423 passing** (`pytest`, 33 files) |
+| Frontend tests | **41 passing** (`vitest`, 6 files) · `tsc -b` clean · production build clean |
+| REST endpoints | **87** operations across 72 paths (22 routers), all authenticated except login/signup/logout |
 | Feature parity with desktop | **Complete** |
 
 ---
@@ -90,9 +99,9 @@ ProspectiveWeb/
 │   ├── main.py             # FastAPI app: lifespan, CORS, static mounts, guarded routers
 │   ├── requirements.txt
 │   ├── models/    (20)     # Pydantic request/response schemas
-│   ├── routers/   (21)     # Route handlers, one file per domain
-│   ├── services/  (32)     # Qt-free business logic, shared with the desktop app
-│   ├── test_*.py  (26)     # pytest suites
+│   ├── routers/   (22)     # Route handlers, one file per domain
+│   ├── services/  (33)     # Qt-free business logic, shared with the desktop app
+│   ├── test_*.py  (33)     # pytest suites
 │   ├── data/               # PUBLIC static mount — sessions, meshes, reports
 │   ├── study_files/        # PRIVATE archive: DICOM of archived studies (gitignored)
 │   ├── user_files/         # PRIVATE: signup photos and CVs (gitignored)
@@ -105,6 +114,7 @@ ProspectiveWeb/
     │   ├── components/     # Design-system primitives + one panel per pipeline step
     │   ├── vtk/            # MeshView · VolumeView · MprView · ObliqueMprView · Viewer
     │   ├── store/          # planning · auth · nav · theme contexts
+    │   ├── *.test.*  (6)   # vitest + Testing Library suites
     │   └── styles/tokens/  # Design tokens (light/dark via [data-theme])
     └── public/media/       # Intro / loading / landing videos
 ```
@@ -132,6 +142,8 @@ Key backend services (all ported from the desktop `prospective/processing`):
 | `report_generator.py` / `dicom_sr.py` / `mesh_exporter.py` | PDF · DICOM SR · STL |
 | `audit.py` | SkullChain SHA-256 tamper-evident event chain |
 | `storage.py` / `study_archive.py` | Durable study archive (local or S3) + previews |
+| `mesh_backup.py` | Undo/redo stacks for the working mesh, with a labelled manifest |
+| `device_state.py` | Which devices a session has placed; clearing one family |
 | `sessions.py` | Session dirs, TTL purge, durable snapshot / rehydrate |
 
 ---
@@ -244,9 +256,15 @@ Patient  ──<  Study (clinical case)  ──<  ImagingStudy (one acquisition)
   the acquisition it analysed, resumable from the step it was saved at.
 
 The **Studies gallery** (the "Estudios" tab, and inside each patient sheet) lists
-archived imaging studies as preview cards, filterable by patient name, hospital ID
-or diagnosis. Clicking one restores its DICOM into a fresh working session and
-opens the pipeline.
+archived imaging studies as preview cards. The search runs **on the server**, so
+it covers the whole archive — filtering only the page that happened to be loaded
+made an older patient come back empty with nothing to explain why.
+
+Each card shows the step its planning reached and offers two actions:
+**«Reanudar»** restores the saved session at that step, and **«De cero»** starts a
+fresh session at step 1 and says so. A card only offers to resume when the
+snapshot is really on disk: sessions saved before durable saving existed, or
+purged since, would otherwise fail on restore.
 
 ---
 
@@ -260,6 +278,8 @@ backend/data/sessions/{uuid}/
 ├── state.txt            # Key-value store (dicom.*, seg.*, morpho.*, treatment.*)
 ├── dicom/               # Uploaded DICOM files
 ├── meshes/              # Meshes (.vtp) + cached volume (_volume.npy)
+│   ├── _undo/           # Mesh edit history + index.json manifest
+│   └── _redo/           # States stepped back past, replayable
 ├── reports/             # Generated PDFs
 └── exports/             # Exported STL files
 ```
@@ -273,7 +293,9 @@ mechanisms make work survive that sweep:
   `data/session_saves/{uuid}`. The DICOM is hard-linked rather than copied
   (studies are ~1 GB and copying them filled the disk); meshes and the volume
   cache are copied, because re-running a step rewrites them in place and a
-  snapshot must stay a point-in-time image.
+  snapshot must stay a point-in-time image. The mesh undo/redo stacks are pruned
+  out of the snapshot — they are a working convenience, and carrying every
+  intermediate state multiplied the size of each save.
 
 Typical flow:
 
@@ -295,9 +317,74 @@ since those directories also hold the uploaded DICOM.
 
 ---
 
+## Undoing Work
+
+A planning session is exploratory: thresholds get retuned, a seed lands on the
+wrong vessel, a case is evaluated with the wrong location. Every step therefore
+has a way back that does not cost a re-upload or a re-segmentation.
+
+| What | How to undo it | Cost |
+|---|---|---|
+| ROI crop · grow from seeds · re-segmentation | «Deshacer» — `POST /api/mesh-restore/{sid}` `scope=undo` | file copy |
+| Every interactive mesh edit at once | «Restaurar malla original» — `scope=original` | file copy |
+| An undo taken one step too far | «Rehacer» — `scope=redo` | file copy |
+| HU clipping · resampling · smoothing · bone subtraction | «Revertir» — `DELETE /api/preprocess/{sid}` | rebuild from the session's DICOM |
+| Candidates + morphometry + the neck plane | «Limpiar detección» — `DELETE /api/detect/{sid}` | instant |
+| Neck or dome marker placed on the wrong spot | Clear that one marker in the morphometry panel | instant |
+| The medial axis and any stent deployed along it | `DELETE /api/centerline/{sid}` | instant |
+| The recommendation, its clinical context and PHASES | `DELETE /api/treatment-decision/{sid}` | instant |
+| A placed clip, coil packing or stent | `DELETE /api/devices/{sid}?kind=…` | instant |
+| A wrongly imported custom clip | `DELETE /api/clips/custom/{sid}/{index}` | instant |
+
+Two rules keep the session honest while all of this happens:
+
+- **Nothing derived outlives its source.** Restoring a mesh clears the candidates,
+  morphometry and centreline measured on the old one; clearing the detection also
+  clears the treatment recommendation and the PHASES score, because both are
+  computed *from* the morphometry. Leaving them behind produced a PDF that
+  recommended a treatment for an aneurysm the same PDF reported as unmeasured.
+- **Generated outputs are cache-busted and dated.** A PDF, a DICOM SR and an STL
+  are snapshots of the mesh, the measurements and the devices at the moment they
+  were written. The filename is fixed per session, so the URLs carry a version
+  token and the panel says when a download no longer matches what is on screen.
+
+The mesh history lives inside the session directory, so a session that is saved
+and resumed still offers «Deshacer» — the browser has no memory of edits it did
+not make, and `GET /api/mesh-restore/{sid}` is what the panel asks on mount. The
+same applies to the preprocessing (`GET /api/preprocess/{sid}`), the placed
+devices (`GET /api/devices/{sid}`) and the imported clips
+(`GET /api/clips/custom/{sid}`).
+
+---
+
+## Navigation & Unsaved Work
+
+The frontend uses a **data router** (`createBrowserRouter`), and the URL is the
+source of truth for which screen is showing — Back/Forward, a refresh and a
+shared link all land where the user expects, instead of resetting to the patient
+list.
+
+That matters because saving is manual. Leaving the pipeline throws the working
+session away, so an accidental click on the logo — or a press of the browser's
+Back button — used to cost an entire analysis without a word. The workspace now
+marks itself dirty as soon as a step produces a result worth keeping, and:
+
+- `useBlocker` intercepts **every** router navigation, including Back/Forward,
+  and raises a confirmation dialog. A hand-rolled guard around the app's own
+  click handlers could never see the browser's buttons.
+- `beforeunload` covers closing the tab or reloading.
+- Resuming a saved session marks it clean again. Rehydration replays the saved
+  results through the same setters a real edit uses, so without this a resumed
+  session asked to confirm before the user had touched anything.
+
+The dirty flag is set inside the store's setters rather than at each call site,
+so a panel added later cannot forget to do it.
+
+---
+
 ## API Reference
 
-77 operations under `/api`. Full spec in `openapi.json` or at `/docs`.
+87 operations under `/api`. Full spec in `openapi.json` or at `/docs`.
 
 **Everything except `POST /api/auth/login`, `/signup` and `/logout` requires a
 token.** It travels as `Authorization: Bearer …` or as the `prospective_token`
@@ -357,12 +444,14 @@ patient imaging.
 | `POST` | `/api/segment` | Full Marching Cubes segmentation |
 | `POST` | `/api/segment/grow/{sid}` | Region-grow from picked seeds |
 | `POST` | `/api/mesh-crop/{sid}` | Box / sphere ROI crop of the mesh |
-| `POST` | `/api/preprocess/{sid}` | Resample · smooth · bone subtraction |
-| `POST` | `/api/detect/{sid}` | Aneurysm candidate detection |
+| `GET` `POST` `DELETE` | `/api/preprocess/{sid}` | Status · resample/smooth/bone subtraction · revert to the DICOM |
+| `GET` `POST` | `/api/mesh-restore/{sid}` | Mesh edit history · undo / redo / restore the segmented mesh |
+| `POST` `DELETE` | `/api/detect/{sid}` | Candidate detection · clear candidates, morphometry and everything derived |
 | `GET` | `/api/morphometry/{sid}` | Morphometric indices with reliability flags |
-| `POST` | `/api/morphometry/{sid}/neck-plane` | Two-click sac isolation → reliable metrics |
+| `POST` | `/api/morphometry/{sid}/neck-plane` | Neck plane from two clicks, or fitted to points marked around the rim |
 | `GET` | `/api/perforators/{sid}` | Perforator risk candidates |
-| `POST` | `/api/centerline/{sid}` · `/api/cross-section/{sid}` | Medial axis · diameter profile |
+| `POST` `DELETE` | `/api/centerline/{sid}` | Medial axis · discard it and any stent deployed along it |
+| `POST` | `/api/cross-section/{sid}` | Diameter profile · stenosis |
 | `GET` | `/api/longitudinal/{sid}` | Growth history + alert if Δ > 1 mm/year |
 
 ### Treatment planning
@@ -370,10 +459,13 @@ patient imaging.
 | Method | Endpoint | Description |
 |---|---|---|
 | `POST` | `/api/treatment-decision` | 8-factor CLIP vs ENDOVASCULAR scoring |
+| `DELETE` | `/api/treatment-decision/{sid}` | Drop the recommendation, its context and the PHASES score |
 | `POST` | `/api/phases` | PHASES 5-year rupture risk |
+| `GET` `DELETE` | `/api/devices/{sid}` | What the plan has placed · remove one family (`kind=clips\|coils\|stent`) |
 | `GET` | `/api/clips` · `/api/coils` · `/api/stents` | Device catalogues |
 | `GET` | `/api/clips/recommendations/{sid}` | Ranked clip recommendations |
-| `POST` | `/api/clips/plan` · `/api/clips/custom/{sid}` | Placement + real VTK collision |
+| `POST` | `/api/clips/plan` | Placement + real VTK collision |
+| `GET` `POST` `DELETE` | `/api/clips/custom/{sid}` | Imported clip library: list · upload · remove one |
 | `POST` | `/api/coils/plan` · `/api/plan` | Coil packing · stent deployment |
 | `POST` | `/api/cl-stent/{sid}` | Centerline-guided stent along vessel curvature |
 | `POST` `DELETE` | `/api/trajectory/{sid}` | Surgical trajectory |
@@ -394,16 +486,17 @@ patient imaging.
 
 ```bash
 cd backend
-.venv\Scripts\python -m pytest -q                        # all 335 tests
+.venv\Scripts\python -m pytest -q                        # all 423 tests
 .venv\Scripts\python -m pytest test_session_abc.py -v    # one suite
 ```
 
-Expected: **335 passed, 0 failed** (~1–2 min; VTK and SimpleITK do real work).
+Expected: **423 passed, 0 failed** (~3–4 min; VTK and SimpleITK do real work).
 
 Frontend checks:
 
 ```bash
 cd frontend
+npx vitest run          # 41 unit tests (vitest + Testing Library, jsdom)
 npx tsc -b --noEmit     # type check
 npm run build           # production build
 ```
@@ -444,10 +537,16 @@ counterpart under `backend/services`, and every desktop panel has a web panel.
 | Auth | local SQLite + signup approval | JWT + SQLite, same approval flow |
 | Password change / reset | yes | yes (self-service + admin reset, audited) |
 | Session persistence | `.prospective` file on disk | DB record + durable server-side snapshot |
+| Undo a mesh edit | no | labelled undo/redo history, survives save + resume |
+| Revert the preprocessing | no | rebuilt from the session's DICOM, no re-upload |
+| Clear a step's result | no | detection, morphometry, centreline, decision and devices |
+| Unsaved-work guard | n/a (autosaves to file) | confirmation on navigation, Back and tab close |
 | Study archive & gallery | no | local or S3, with preview thumbnails |
 | Case ↔ imaging separation | one study per case | several acquisitions per clinical case |
 | Live HU threshold preview | no | tinted MPR overlay while dragging sliders |
 | Series selector | no | picks among all series in a study |
+| Standard 3D viewpoints | no | axial/coronal/sagittal ± opposite, plus refit |
+| Multiple devices on screen | last one placed | every placed device at once, colour-coded with a legend |
 | Public landing page | no | yes |
 | Access | local machine | browser / any HTTP client |
 

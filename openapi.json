@@ -1214,7 +1214,7 @@
           "studies"
         ],
         "summary": "List studies for the gallery",
-        "description": "Every study with its patient identity, archive state and pipeline progress. `q` filters by patient name or national ID (historia clínica); `patient_id` restricts the list to one patient.",
+        "description": "Every study with its patient identity, archive state and pipeline progress. `q` filters in the database by surname, given name, national ID (historia clínica), series description or the case diagnosis; `patient_id` restricts the list to one patient.",
         "operationId": "list_studies_api_studies_get",
         "security": [
           {
@@ -1770,6 +1770,54 @@
       }
     },
     "/api/detect/{session_id}": {
+      "delete": {
+        "tags": [
+          "detection"
+        ],
+        "summary": "Clear detected candidates and their morphometry",
+        "description": "Removes the candidate dome meshes, the detection state and the morphometry derived from them — including a manually marked neck plane, which is otherwise reapplied to every later measurement. Use it to start the analysis over on an edited mesh. Idempotent.",
+        "operationId": "clear_detection_api_detect__session_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Clear Detection Api Detect  Session Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "tags": [
           "detection"
@@ -2066,6 +2114,56 @@
         ]
       }
     },
+    "/api/treatment-decision/{session_id}": {
+      "delete": {
+        "tags": [
+          "treatment"
+        ],
+        "summary": "Clear the treatment recommendation",
+        "description": "Removes the CLIP vs ENDOVASCULAR recommendation, the clinical context recorded alongside it and the PHASES score, so none of them reach the PDF or the DICOM SR.\n\nCalled on its own from the decision step, and automatically whenever the morphometry underneath is discarded. Idempotent.",
+        "operationId": "clear_treatment_api_treatment_decision__session_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Clear Treatment Api Treatment Decision  Session Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/clips": {
       "get": {
         "tags": [
@@ -2205,6 +2303,56 @@
             }
           }
         }
+      },
+      "get": {
+        "tags": [
+          "clips"
+        ],
+        "summary": "Custom clips imported in this session",
+        "description": "The imported clips survive in the session directory, but the browser forgets them on resume, so the dropdown lost geometry that was still on disk. This restores the list.",
+        "operationId": "list_custom_clips_api_clips_custom__session_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CustomClipInfo"
+                  },
+                  "title": "Response List Custom Clips Api Clips Custom  Session Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/clips/plan": {
@@ -2252,6 +2400,67 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/clips/custom/{session_id}/{clip_index}": {
+      "delete": {
+        "tags": [
+          "clips"
+        ],
+        "summary": "Remove an imported custom clip",
+        "description": "Deletes the imported geometry and its catalogue entry. Without it a mis-imported file stayed in the dropdown for the rest of the session. Returns the remaining custom clips.\n\nClips already placed in the plan are untouched — clear those from the devices step.",
+        "operationId": "delete_custom_clip_api_clips_custom__session_id___clip_index__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "clip_index",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Clip Index"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CustomClipInfo"
+                  },
+                  "title": "Response Delete Custom Clip Api Clips Custom  Session Id   Clip Index  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/coils": {
@@ -3220,6 +3429,52 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "centerline"
+        ],
+        "summary": "Discard the extracted centreline",
+        "description": "Deletes the centreline tube, its cached medial-axis points and any stent deployed along it. The centreline-guided stent is built from those points, so leaving it behind would keep a device following a centreline that no longer exists — which is why both go in one call.\n\nIdempotent: succeeds with `had_centerline=false` when nothing was extracted.",
+        "operationId": "clear_centerline_api_centerline__session_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CenterlineClearResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/cross-section/{session_id}": {
@@ -3586,6 +3841,110 @@
         }
       }
     },
+    "/api/mesh-restore/{session_id}": {
+      "get": {
+        "tags": [
+          "mesh-edit"
+        ],
+        "summary": "How far the vessel mesh can be rolled back",
+        "description": "Reports how many crop/grow edits are still undoable for this session, so the mesh-tools panel can enable «Deshacer» and «Restaurar malla original» instead of guessing (a resumed session starts with no client-side history).",
+        "operationId": "mesh_history_api_mesh_restore__session_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeshHistoryResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "mesh-edit"
+        ],
+        "summary": "Undo a mesh edit / restore the segmented mesh",
+        "description": "`scope='undo'` puts back the mesh as it was before the last ROI crop or grow-from-seeds. `scope='original'` restores the mesh the segmentation produced, discarding every interactive edit.\n\nBoth are cheap file operations — no re-segmentation. Everything derived from the mesh (candidates, morphometry, centreline) must be re-run, which is what the frontend does after calling this.",
+        "operationId": "mesh_restore_api_mesh_restore__session_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeshRestoreRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeshRestoreResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/print-prep/beds": {
       "get": {
         "tags": [
@@ -3730,6 +4089,210 @@
             }
           }
         }
+      },
+      "get": {
+        "tags": [
+          "preprocess"
+        ],
+        "summary": "Whether this session's volume has been preprocessed",
+        "description": "Lets the panel offer «Revertir» after a session is resumed, when the browser has no memory of the operations that were applied.",
+        "operationId": "preprocess_status_api_preprocess__session_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreprocessStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "preprocess"
+        ],
+        "summary": "Revert the volume to the original DICOM",
+        "description": "Discards the preprocessed volume and rebuilds it from the DICOM still stored in the session — a complete undo of HU clipping, resampling and smoothing, with no re-upload. The segmentation and everything downstream must be re-run, since they were derived from the altered volume.",
+        "operationId": "revert_preprocess_api_preprocess__session_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreprocessResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/{session_id}": {
+      "get": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Which devices are currently placed",
+        "description": "Lists the device kinds with a saved plan in this session. The devices panel uses it to enable its «Limpiar» actions after a session is resumed, when the browser has no memory of what was placed.",
+        "operationId": "list_placed_devices_api_devices__session_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceClearResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Remove placed devices from the plan",
+        "description": "Deletes the placed device meshes and the state records that feed the PDF report and the DICOM SR, so another device can be planned on a clean scene. `kind` clears one family (`clips`, `coils` or `stent` — the latter covers both the straight catalogue stent and the centreline-guided one); omit it to clear every device.\n\nIdempotent: clearing a device that was never placed succeeds and reports nothing removed.",
+        "operationId": "clear_devices_endpoint_api_devices__session_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Device family to clear: 'clips', 'coils' or 'stent'. Omit for all.",
+              "title": "Kind"
+            },
+            "description": "Device family to clear: 'clips', 'coils' or 'stent'. Omit for all."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceClearResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/health": {
@@ -3818,6 +4381,10 @@
             "type": "array",
             "title": "Candidates",
             "description": "All detected aneurysm candidates, ordered by confidence (descending)"
+          },
+          "diagnostics": {
+            "$ref": "#/components/schemas/DetectionDiagnostics",
+            "description": "Region counts per rejection reason — explains an empty result"
           }
         },
         "type": "object",
@@ -4355,6 +4922,29 @@
         "type": "object",
         "title": "CaseCreate",
         "description": "Full 'Nuevo Caso' payload — creates a Patient + a Study in one call."
+      },
+      "CenterlineClearResult": {
+        "properties": {
+          "removed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Removed",
+            "description": "Session files deleted (centreline geometry and anything built on it)"
+          },
+          "had_centerline": {
+            "type": "boolean",
+            "title": "Had Centerline",
+            "description": "False when there was no centreline to discard"
+          }
+        },
+        "type": "object",
+        "required": [
+          "had_centerline"
+        ],
+        "title": "CenterlineClearResult",
+        "description": "Outcome of discarding the extracted centreline."
       },
       "CenterlineRequest": {
         "properties": {
@@ -5137,6 +5727,111 @@
         "title": "DecisionFactor",
         "description": "One contributing factor in the CLIP vs ENDO scoring."
       },
+      "DetectionDiagnostics": {
+        "properties": {
+          "regions_analyzed": {
+            "type": "integer",
+            "title": "Regions Analyzed",
+            "description": "High-curvature regions examined before the shape gates",
+            "default": 0
+          },
+          "rejected_too_few_points": {
+            "type": "integer",
+            "title": "Rejected Too Few Points",
+            "default": 0
+          },
+          "rejected_size": {
+            "type": "integer",
+            "title": "Rejected Size",
+            "description": "Equivalent radius outside the accepted range",
+            "default": 0
+          },
+          "rejected_mean_curvature": {
+            "type": "integer",
+            "title": "Rejected Mean Curvature",
+            "default": 0
+          },
+          "rejected_positive_gauss": {
+            "type": "integer",
+            "title": "Rejected Positive Gauss",
+            "default": 0
+          },
+          "rejected_compactness": {
+            "type": "integer",
+            "title": "Rejected Compactness",
+            "default": 0
+          },
+          "rejected_sphericity": {
+            "type": "integer",
+            "title": "Rejected Sphericity",
+            "default": 0
+          },
+          "merged": {
+            "type": "integer",
+            "title": "Merged",
+            "description": "Regions merged into a neighbouring candidate",
+            "default": 0
+          },
+          "removed_components": {
+            "type": "integer",
+            "title": "Removed Components",
+            "description": "Disconnected mesh fragments dropped before analysis",
+            "default": 0
+          },
+          "min_radius_mm": {
+            "type": "number",
+            "title": "Min Radius Mm",
+            "description": "Lower bound of the size gate",
+            "default": 0.0
+          },
+          "max_radius_mm": {
+            "type": "number",
+            "title": "Max Radius Mm",
+            "description": "Upper bound of the size gate",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "title": "DetectionDiagnostics",
+        "description": "Why the detector kept or rejected what it did.\n\nThe detector always computed this breakdown but never returned it, so an\nempty result was indistinguishable from a crash. It is what tells a\nclinician whether to crop the region of interest, widen the mesh or accept\nthat this study has no dome to find."
+      },
+      "DeviceClearResult": {
+        "properties": {
+          "cleared": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cleared",
+            "description": "Device families this call cleared ('clips' | 'coils' | 'stent')"
+          },
+          "remaining": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Remaining",
+            "description": "Device families that still hold a plan after the call"
+          },
+          "meshes_removed": {
+            "type": "integer",
+            "title": "Meshes Removed",
+            "description": "Device mesh files (.vtp) deleted from the session",
+            "default": 0
+          },
+          "mesh_urls": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Mesh Urls",
+            "description": "Mesh URL per still-placed device family. Lets a resumed session put its devices back in the 3D viewer, which otherwise showed an empty scene while the report still listed them."
+          }
+        },
+        "type": "object",
+        "title": "DeviceClearResult",
+        "description": "Outcome of removing placed devices from a session's plan."
+      },
       "ExportRequest": {
         "properties": {
           "session_id": {
@@ -5270,6 +5965,12 @@
             "title": "Band Upper",
             "description": "Upper HU bound actually used",
             "default": 0.0
+          },
+          "undo_depth": {
+            "type": "integer",
+            "title": "Undo Depth",
+            "description": "Mesh edits that can still be undone after this one",
+            "default": 0
           }
         },
         "type": "object",
@@ -5409,13 +6110,43 @@
             "type": "string",
             "format": "date",
             "title": "Session Date",
-            "description": "Date of this planning session"
+            "description": "Acquisition date, or the session date if unknown"
           },
           "session_label": {
             "type": "string",
             "title": "Session Label",
             "description": "User label for this session",
             "default": ""
+          },
+          "imaging_study_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imaging Study Id",
+            "description": "Acquisition this point measures (one point per acquisition)"
+          },
+          "case_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id",
+            "description": "Clinical case the acquisition belongs to"
+          },
+          "n_sessions": {
+            "type": "integer",
+            "title": "N Sessions",
+            "description": "Saved sessions on this acquisition; only the latest is plotted",
+            "default": 1
           },
           "max_diameter_mm": {
             "type": "number",
@@ -5468,13 +6199,25 @@
             ],
             "title": "Patient Id"
           },
+          "case_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id",
+            "description": "Set when the series was restricted to one clinical case"
+          },
           "entries": {
             "items": {
               "$ref": "#/components/schemas/LongitudinalEntry"
             },
             "type": "array",
             "title": "Entries",
-            "description": "All historical sessions for this patient, ordered by date"
+            "description": "One point per imaging study, ordered by acquisition date. Re-running the pipeline on the same images is not a new time point — it would read as growth when nothing changed — so repeated sessions on one acquisition collapse to the most recent."
           },
           "deltas": {
             "items": {
@@ -5581,6 +6324,12 @@
             "type": "integer",
             "title": "Removed Vertices",
             "description": "Vertices removed by the crop"
+          },
+          "undo_depth": {
+            "type": "integer",
+            "title": "Undo Depth",
+            "description": "Mesh edits that can still be undone after this one",
+            "default": 0
           }
         },
         "type": "object",
@@ -5591,6 +6340,138 @@
           "removed_vertices"
         ],
         "title": "MeshCropResult"
+      },
+      "MeshHistoryResult": {
+        "properties": {
+          "undo_depth": {
+            "type": "integer",
+            "title": "Undo Depth",
+            "description": "Edits that can be undone"
+          },
+          "redo_depth": {
+            "type": "integer",
+            "title": "Redo Depth",
+            "description": "Undone edits that can be replayed",
+            "default": 0
+          },
+          "has_original": {
+            "type": "boolean",
+            "title": "Has Original",
+            "description": "True when an earlier mesh state can be restored"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/MeshHistoryStep"
+            },
+            "type": "array",
+            "title": "Steps",
+            "description": "The undo stack, oldest first — «quedan 3» alone said nothing about what they were"
+          }
+        },
+        "type": "object",
+        "required": [
+          "undo_depth",
+          "has_original"
+        ],
+        "title": "MeshHistoryResult",
+        "description": "What the mesh-edit panel needs to drive its undo/redo controls."
+      },
+      "MeshHistoryStep": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "description": "Raw kind: 'segment' | 'crop' | 'grow' | 'edit'"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Human-readable name of the step"
+          },
+          "vertices": {
+            "type": "integer",
+            "title": "Vertices",
+            "description": "Vertex count of that state"
+          },
+          "at": {
+            "type": "number",
+            "title": "At",
+            "description": "Unix timestamp when it was recorded"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "title",
+          "vertices",
+          "at"
+        ],
+        "title": "MeshHistoryStep",
+        "description": "One recoverable mesh state, as the panel lists it."
+      },
+      "MeshRestoreRequest": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "undo",
+              "redo",
+              "original"
+            ],
+            "title": "Scope",
+            "description": "'undo' restores the mesh as it was before the last edit (crop, grow or re-segmentation); 'redo' replays the last undone edit; 'original' goes back to the oldest state still kept — the first segmentation's output. All three are reversible.",
+            "default": "undo"
+          }
+        },
+        "type": "object",
+        "title": "MeshRestoreRequest",
+        "description": "Step the working vessel mesh back or forward through the edit history."
+      },
+      "MeshRestoreResult": {
+        "properties": {
+          "mesh_url": {
+            "type": "string",
+            "title": "Mesh Url",
+            "description": "URL of the restored mesh (.vtp), cache-busted"
+          },
+          "vertices": {
+            "type": "integer",
+            "title": "Vertices"
+          },
+          "faces": {
+            "type": "integer",
+            "title": "Faces"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "undo",
+              "redo",
+              "original"
+            ],
+            "title": "Scope"
+          },
+          "undo_depth": {
+            "type": "integer",
+            "title": "Undo Depth",
+            "description": "Edits that can still be undone"
+          },
+          "redo_depth": {
+            "type": "integer",
+            "title": "Redo Depth",
+            "description": "Undone edits that can be replayed",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "mesh_url",
+          "vertices",
+          "faces",
+          "scope",
+          "undo_depth"
+        ],
+        "title": "MeshRestoreResult"
       },
       "MorphometryResult": {
         "properties": {
@@ -5707,11 +6588,18 @@
             "type": "string",
             "enum": [
               "auto",
-              "manual"
+              "manual",
+              "rim"
             ],
             "title": "Neck Source",
-            "description": "'auto' = neck from automatic plane-slicing on the candidate; 'manual' = neck from a user-defined neck plane (closed-sac isolation).",
+            "description": "'auto' = neck from automatic plane-slicing on the candidate; 'manual' = plane from one neck point plus the dome apex; 'rim' = plane fitted to points marked around the neck rim.",
             "default": "auto"
+          },
+          "neck_tilt_deg": {
+            "type": "number",
+            "title": "Neck Tilt Deg",
+            "description": "Angle between the neck plane and the neck→dome axis, in degrees. Only meaningful with neck_source='rim'. Near 0° the single-point method would have produced the same plane; large values are the oblique necks it gets wrong.",
+            "default": 0.0
           },
           "neck_valid": {
             "type": "boolean",
@@ -5814,6 +6702,14 @@
               }
             ],
             "description": "Optional point inside the dome to disambiguate the sac side. Defaults to origin + 3·normal."
+          },
+          "rim_points": {
+            "items": {
+              "$ref": "#/components/schemas/Position3D"
+            },
+            "type": "array",
+            "title": "Rim Points",
+            "description": "Optional points around the neck rim. With three or more, the plane is fitted to them instead of assuming it is perpendicular to the neck→dome axis — real necks are often oblique to that axis, and a tilted cutting plane crosses the neck diagonally and overestimates its diameter. `origin` and `normal` are then ignored."
           }
         },
         "type": "object",
@@ -6600,6 +7496,27 @@
         ],
         "title": "PreprocessResult"
       },
+      "PreprocessStatus": {
+        "properties": {
+          "applied": {
+            "type": "boolean",
+            "title": "Applied",
+            "description": "True when the cached volume was rewritten"
+          },
+          "ops": {
+            "type": "string",
+            "title": "Ops",
+            "description": "Human-readable list of the operations applied",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "applied"
+        ],
+        "title": "PreprocessStatus",
+        "description": "Whether this session's volume has been preprocessed, and with what.\n\nA resumed session has no client-side memory of it, so «Revertir» would look\nunavailable on a volume that had in fact been altered."
+      },
       "PreviewRequest": {
         "properties": {
           "lower": {
@@ -7026,6 +7943,12 @@
             "title": "Cleanup",
             "description": "Cleanup level 0–10 (removes disconnected mesh fragments)",
             "default": 3
+          },
+          "full_resolution": {
+            "type": "boolean",
+            "title": "Full Resolution",
+            "description": "Segment at the volume's native resolution instead of downsampling the longest axis to 256. Halving a volume also halves the tree's connectivity — measured on case 9 the largest connected component falls from 69% to 42% — so thin vessels break into fragments that the cleanup then removes, leaving visible gaps. Costs minutes instead of seconds on a 384³ or larger study.",
+            "default": false
           }
         },
         "type": "object",
@@ -7077,6 +8000,30 @@
             "type": "integer",
             "title": "Faces",
             "description": "Number of triangular faces in the output mesh"
+          },
+          "kept_fraction": {
+            "type": "number",
+            "title": "Kept Fraction",
+            "description": "Share of the thresholded volume that survived the cleanup filter (0–1). Below ~0.9 the mesh may be missing vessel branches.",
+            "default": 1.0
+          },
+          "fragments_removed": {
+            "type": "integer",
+            "title": "Fragments Removed",
+            "description": "Connected components discarded by the cleanup filter",
+            "default": 0
+          },
+          "downsample_factor": {
+            "type": "integer",
+            "title": "Downsample Factor",
+            "description": "Voxel-decimation factor used (1 = native resolution). Above 1 the tree is measurably less connected, so gaps in the mesh are expected.",
+            "default": 1
+          },
+          "largest_removed_mm3": {
+            "type": "number",
+            "title": "Largest Removed Mm3",
+            "description": "Volume of the biggest discarded component, in mm³. A few mm³ is a speck; tens of mm³ is a vessel segment that left the mesh.",
+            "default": 0.0
           }
         },
         "type": "object",
@@ -7709,6 +8656,18 @@
               }
             ],
             "title": "Rupture Risk Label"
+          },
+          "resumable_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resumable Session Id",
+            "description": "Id of the most recent session that can actually be resumed (its files are still on disk). The card shows pipeline progress, so without this the only action it offered — open the study — silently restarted from step 1 and discarded that progress."
           }
         },
         "type": "object",

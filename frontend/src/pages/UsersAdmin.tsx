@@ -263,7 +263,7 @@ export function UsersAdmin({ onBack }: { onBack: () => void }) {
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--canvas)" }}>
-      <Topbar crumb="Administración / Usuarios">
+      <Topbar crumbs={[{ label: "Pacientes", onClick: onBack }, { label: "Administración" }, { label: "Usuarios" }]}>
         <div style={{ width: 220, marginRight: 8 }}>
           <Input icon={<Icon name="SEARCH" />} placeholder="Buscar usuario…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>

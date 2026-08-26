@@ -49,7 +49,8 @@ class TestDicomSR:
         r = client.post("/api/report/dicom-sr", json={"session_id": sid, "patient_name": "TEST^A"})
         assert r.status_code == 200, r.text
         d = r.json()
-        assert d["dicom_sr_url"] and d["dicom_sr_url"].endswith(".dcm")
+        assert d["dicom_sr_url"]
+        assert d["dicom_sr_url"].split("?", 1)[0].endswith(".dcm")
 
         # The written file must be a valid, re-readable Comprehensive SR.
         path = session_subdir(sid, "reports") / f"{sid}_sr.dcm"

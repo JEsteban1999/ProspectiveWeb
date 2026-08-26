@@ -76,3 +76,27 @@ class StentLibraryItem(BaseModel):
     type: str = Field(
         ..., description="Stent type: 'flow_diverter' | 'coil_assist' | 'neck_bridge'"
     )
+
+
+class DeviceClearResult(BaseModel):
+    """Outcome of removing placed devices from a session's plan."""
+
+    cleared: list[str] = Field(
+        default_factory=list,
+        description="Device families this call cleared ('clips' | 'coils' | 'stent')",
+    )
+    remaining: list[str] = Field(
+        default_factory=list,
+        description="Device families that still hold a plan after the call",
+    )
+    meshes_removed: int = Field(
+        0, description="Device mesh files (.vtp) deleted from the session"
+    )
+    mesh_urls: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Mesh URL per still-placed device family. Lets a resumed session put "
+            "its devices back in the 3D viewer, which otherwise showed an empty "
+            "scene while the report still listed them."
+        ),
+    )

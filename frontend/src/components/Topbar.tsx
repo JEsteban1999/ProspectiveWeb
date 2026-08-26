@@ -210,7 +210,23 @@ function MenuItem({
   );
 }
 
-export function Topbar({ crumb, children }: { crumb?: string; children?: ReactNode }) {
+/** One breadcrumb segment: a label plus, optionally, where clicking it goes. */
+export interface Crumb {
+  label: string;
+  onClick?: () => void;
+}
+
+export function Topbar({
+  crumb,
+  crumbs,
+  children,
+}: {
+  /** Plain-text breadcrumb (legacy call sites). */
+  crumb?: string;
+  /** Segmented breadcrumb — segments with an `onClick` navigate. */
+  crumbs?: Crumb[];
+  children?: ReactNode;
+}) {
   const nav = useNav();
   return (
     <div
@@ -240,17 +256,41 @@ export function Topbar({ crumb, children }: { crumb?: string; children?: ReactNo
           WEB
         </span>
       </button>
-      {crumb && (
+      {/* Migas de pan. Eran una sola cadena de texto plano, así que volver al
+          paciente exigía el botón de la derecha, que lleva a la lista completa y
+          pierde el contexto del caso. Los segmentos con destino ahora navegan. */}
+      {(crumbs?.length || crumb) && (
         <>
           <span style={{ color: "var(--border)", fontSize: 18, flexShrink: 0 }}>/</span>
           {/* Truncate: the topbar has a fixed height, so a long patient name that
               wraps would overflow it vertically on narrow screens. */}
           <span
             className="truncate"
-            title={crumb}
-            style={{ fontSize: 13, color: "var(--muted-foreground)", whiteSpace: "nowrap", minWidth: 0, maxWidth: "32vw" }}
+            style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--muted-foreground)", whiteSpace: "nowrap", minWidth: 0, maxWidth: "42vw" }}
           >
-            {crumb}
+            {crumbs?.length
+              ? crumbs.map((c, i) => (
+                  <span key={i} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                    {i > 0 && <span style={{ color: "var(--border)", flexShrink: 0 }}>/</span>}
+                    {c.onClick ? (
+                      <button
+                        onClick={c.onClick}
+                        title={c.label}
+                        className="truncate"
+                        style={{
+                          background: "transparent", border: "none", padding: 0, minWidth: 0,
+                          cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: 13,
+                          color: "var(--brand-deep)", fontWeight: 600, textAlign: "left",
+                        }}
+                      >
+                        {c.label}
+                      </button>
+                    ) : (
+                      <span className="truncate" title={c.label} style={{ minWidth: 0 }}>{c.label}</span>
+                    )}
+                  </span>
+                ))
+              : <span className="truncate" title={crumb}>{crumb}</span>}
           </span>
         </>
       )}

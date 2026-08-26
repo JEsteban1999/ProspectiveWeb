@@ -5,6 +5,7 @@
    viewport. The topbar is a glass bar (backdrop-filter), so a sheet opened from
    the user menu collapsed to the topbar's 66 px and clipped its own form. */
 
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 import { Icon } from "./Icon";
@@ -22,6 +23,22 @@ export function Sheet({
   width?: number;
   children: ReactNode;
 }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Escape closed the user menu but not this, so the only ways out were the ✕
+  // and the scrim — and keyboard focus stayed behind on the page underneath.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    const previous = document.activeElement as HTMLElement | null;
+    panelRef.current?.focus();
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      previous?.focus?.();
+    };
+  }, [open, onClose]);
+
   if (!open) return null;
   return createPortal(
     <div style={{ position: "fixed", inset: 0, zIndex: 100 }}>
@@ -31,7 +48,13 @@ export function Sheet({
       />
       <div
         className="fade-rise"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
         style={{
+          outline: "none",
           position: "absolute",
           top: 0,
           right: 0,

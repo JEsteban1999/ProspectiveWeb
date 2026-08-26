@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException
 
 from models import AutoThresholdResult, SegmentRequest, SegmentResult
 from models.segmentation import SuggestedBand, PreviewRequest, PreviewResult
+from services              import mesh_backup
 from services.sessions     import read_state, session_exists, session_subdir, write_state, mesh_url
 from services.thresholds   import compute_auto_thresholds, strategy_hint
 from services.dicom_loader import load_series
@@ -429,6 +430,10 @@ def _run_segmentation_sync(
     # ── Write VTP mesh ────────────────────────────────────────────────────── #
     vtp_name = "vessel_tree.vtp"
     vtp_path = meshes_dir / vtp_name
+    # Re-segmenting used to wipe the history, so twenty minutes of cropping and
+    # growing vanished the moment someone tried another threshold band. It is an
+    # edit like any other: snapshot first, and it can be undone.
+    mesh_backup.snapshot(session_id, "segment")
     write_vtp(seg_result.poly_data, vtp_path)
 
     url = mesh_url(session_id, vtp_name)

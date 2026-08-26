@@ -183,3 +183,12 @@ class StudyCard(BaseModel):
     last_step: int | None = Field(None, description="Step of the most recent session")
     max_diameter_mm: float | None = None
     rupture_risk_label: str | None = None
+    resumable_session_id: str | None = Field(
+        None,
+        description=(
+            "Id of the most recent session that can actually be resumed (its files "
+            "are still on disk). The card shows pipeline progress, so without this "
+            "the only action it offered — open the study — silently restarted from "
+            "step 1 and discarded that progress."
+        ),
+    )

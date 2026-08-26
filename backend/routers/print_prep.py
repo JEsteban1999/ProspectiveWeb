@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -83,5 +84,10 @@ async def print_prep(session_id: str, req: PrintPrepRequest) -> PrintPrepResult:
         logger.exception("Print-prep failed")
         raise HTTPException(status_code=500, detail=f"Error en la preparación de impresión: {exc}")
 
-    result.stl_url = f"/data/sessions/{session_id}/exports/{session_id}_print.stl"
+    # Cache-busted: the filename is fixed per session, so without a token the
+    # browser can hand back the STL prepared before the last mesh edit.
+    result.stl_url = (
+        f"/data/sessions/{session_id}/exports/{session_id}_print.stl"
+        f"?v={int(time.time() * 1000)}"
+    )
     return result

@@ -36,6 +36,9 @@ class MeshCropResult(BaseModel):
     vertices: int = Field(..., description="Vertex count after cropping")
     faces: int = Field(..., description="Triangle count after cropping")
     removed_vertices: int = Field(..., description="Vertices removed by the crop")
+    undo_depth: int = Field(
+        0, description="Mesh edits that can still be undone after this one"
+    )
 
 
 class GrowRequest(BaseModel):
@@ -67,3 +70,52 @@ class GrowResult(BaseModel):
     seeds: int = Field(..., description="Number of seeds used")
     band_lower: float = Field(0.0, description="Lower HU bound actually used (derived when auto_band)")
     band_upper: float = Field(0.0, description="Upper HU bound actually used")
+    undo_depth: int = Field(
+        0, description="Mesh edits that can still be undone after this one"
+    )
+
+
+class MeshRestoreRequest(BaseModel):
+    """Step the working vessel mesh back or forward through the edit history."""
+
+    scope: Literal["undo", "redo", "original"] = Field(
+        "undo",
+        description=(
+            "'undo' restores the mesh as it was before the last edit (crop, grow "
+            "or re-segmentation); 'redo' replays the last undone edit; 'original' "
+            "goes back to the oldest state still kept — the first segmentation's "
+            "output. All three are reversible."
+        ),
+    )
+
+
+class MeshRestoreResult(BaseModel):
+    mesh_url: str = Field(..., description="URL of the restored mesh (.vtp), cache-busted")
+    vertices: int
+    faces: int
+    scope: Literal["undo", "redo", "original"]
+    undo_depth: int = Field(..., description="Edits that can still be undone")
+    redo_depth: int = Field(0, description="Undone edits that can be replayed")
+
+
+class MeshHistoryStep(BaseModel):
+    """One recoverable mesh state, as the panel lists it."""
+
+    label: str = Field(..., description="Raw kind: 'segment' | 'crop' | 'grow' | 'edit'")
+    title: str = Field(..., description="Human-readable name of the step")
+    vertices: int = Field(..., description="Vertex count of that state")
+    at: float = Field(..., description="Unix timestamp when it was recorded")
+
+
+class MeshHistoryResult(BaseModel):
+    """What the mesh-edit panel needs to drive its undo/redo controls."""
+
+    undo_depth: int = Field(..., description="Edits that can be undone")
+    redo_depth: int = Field(0, description="Undone edits that can be replayed")
+    has_original: bool = Field(
+        ..., description="True when an earlier mesh state can be restored"
+    )
+    steps: list[MeshHistoryStep] = Field(
+        default_factory=list,
+        description="The undo stack, oldest first — «quedan 3» alone said nothing about what they were",
+    )

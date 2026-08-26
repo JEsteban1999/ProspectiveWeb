@@ -25,3 +25,14 @@ class PreprocessResult(BaseModel):
     spacing_before: list[float]
     spacing_after: list[float]
     note: str = Field(..., description="What changed; downstream segmentation must be re-run")
+
+
+class PreprocessStatus(BaseModel):
+    """Whether this session's volume has been preprocessed, and with what.
+
+    A resumed session has no client-side memory of it, so «Revertir» would look
+    unavailable on a volume that had in fact been altered.
+    """
+
+    applied: bool = Field(..., description="True when the cached volume was rewritten")
+    ops: str = Field("", description="Human-readable list of the operations applied")

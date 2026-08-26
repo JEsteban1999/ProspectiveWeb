@@ -20,7 +20,7 @@ from models.patient import StudyCard
 from services.auth_service import get_current_user
 from services.database import get_db
 from services.db_models import ImagingStudy, PlanningSession, Patient, Study, User
-from services.sessions import create_session, session_subdir
+from services.sessions import create_session, has_saved_session, session_subdir
 from services.storage import get_storage
 from services.study_archive import archive_session_dicom, restore_study_to_session
 
@@ -52,6 +52,13 @@ def _to_card(img: ImagingStudy, latest: PlanningSession | None) -> StudyCard:
         last_step=(latest.current_step if latest else None),
         max_diameter_mm=(latest.max_diameter_mm if latest else None),
         rupture_risk_label=(latest.rupture_risk_label if latest else None),
+        # Only offer resuming when the snapshot is really there: sessions saved
+        # before durable saving existed, or purged since, would 409 on restore.
+        resumable_session_id=(
+            latest.session_id
+            if latest is not None and has_saved_session(latest.session_id)
+            else None
+        ),
     )
 
 
@@ -61,8 +68,9 @@ def _to_card(img: ImagingStudy, latest: PlanningSession | None) -> StudyCard:
     summary="List studies for the gallery",
     description=(
         "Every study with its patient identity, archive state and pipeline "
-        "progress. `q` filters by patient name or national ID (historia "
-        "clínica); `patient_id` restricts the list to one patient."
+        "progress. `q` filters in the database by surname, given name, national "
+        "ID (historia clínica), series description or the case diagnosis; "
+        "`patient_id` restricts the list to one patient."
     ),
 )
 async def list_studies(
@@ -77,20 +85,29 @@ async def list_studies(
         query = query.filter(ImagingStudy.patient_id == patient_id)
     if case_id is not None:
         query = query.filter(ImagingStudy.case_id == case_id)
+
+    # `q` has to narrow the query BEFORE the limit. Filtering afterwards searched
+    # only the newest `limit` rows, so on a real archive a patient from last year
+    # simply came back empty — with nothing to say why.
+    needle = q.strip()
+    if needle:
+        like = f"%{needle}%"
+        query = (
+            query.outerjoin(Patient, ImagingStudy.patient_id == Patient.id)
+                 .outerjoin(Study, ImagingStudy.case_id == Study.id)
+                 .filter(
+                     Patient.surname.ilike(like)
+                     | Patient.given_name.ilike(like)
+                     | Patient.hospital_id.ilike(like)
+                     | ImagingStudy.description.ilike(like)
+                     | Study.dx_principal.ilike(like)
+                 )
+        )
+
     images = query.order_by(ImagingStudy.created_at.desc()).limit(limit).all()
 
-    needle = q.strip().lower()
     cards: list[StudyCard] = []
     for img in images:
-        p = img.patient
-        if needle:
-            case = img.case
-            hay = (
-                f"{p.full_name if p else ''} {p.hospital_id if p else ''} "
-                f"{img.description} {case.dx_principal if case else ''}"
-            ).lower()
-            if needle not in hay:
-                continue
         latest = None
         if img.sessions:
             latest = max(img.sessions, key=lambda x: x.updated_at or x.created_at)

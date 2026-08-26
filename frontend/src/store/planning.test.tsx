@@ -97,3 +97,100 @@ describe("3D picking modes", () => {
     expect(result.current.pickMode).toBeNull();
   });
 });
+
+describe("placed devices", () => {
+  it("keeps one slot per family so a clip and a stent coexist", () => {
+    // The store used to hold a single device URL, so planning a stent after a
+    // clip hid the clip in the viewer while the report still listed both.
+    const { result } = renderHook(() => usePlanning(), { wrapper });
+
+    act(() => {
+      result.current.setDeviceMesh("clips", "/data/s/meshes/clips_placed.vtp");
+      result.current.setDeviceMesh("stent", "/data/s/meshes/stent_deployed.vtp");
+    });
+
+    expect(result.current.deviceMeshes.clips).toContain("clips_placed");
+    expect(result.current.deviceMeshes.stent).toContain("stent_deployed");
+    expect(result.current.deviceMeshes.coils).toBeNull();
+  });
+
+  it("clears one family without touching the others", () => {
+    const { result } = renderHook(() => usePlanning(), { wrapper });
+    act(() => {
+      result.current.setDeviceMesh("clips", "/data/a.vtp");
+      result.current.setDeviceMesh("coils", "/data/b.vtp");
+    });
+
+    act(() => result.current.clearDeviceMeshes("clips"));
+
+    expect(result.current.deviceMeshes.clips).toBeNull();
+    expect(result.current.deviceMeshes.coils).toBe("/data/b.vtp");
+  });
+
+  it("clears every family when no kind is given", () => {
+    const { result } = renderHook(() => usePlanning(), { wrapper });
+    act(() => {
+      result.current.setDeviceMesh("clips", "/data/a.vtp");
+      result.current.setDeviceMesh("stent", "/data/b.vtp");
+    });
+
+    act(() => result.current.clearDeviceMeshes());
+
+    expect(result.current.deviceMeshes).toEqual({ clips: null, coils: null, stent: null });
+  });
+
+  it("forgets the devices when the study is reset", () => {
+    // Otherwise the next patient's scene opens with the previous plan's hardware.
+    const { result } = renderHook(() => usePlanning(), { wrapper });
+    act(() => result.current.setDeviceMesh("clips", "/data/a.vtp"));
+
+    act(() => result.current.reset());
+
+    expect(result.current.deviceMeshes.clips).toBeNull();
+  });
+});
+
+describe("unsaved-changes flag", () => {
+  it("starts clean and only turns dirty on a real result", () => {
+    const { result } = renderHook(() => usePlanning(), { wrapper });
+    expect(result.current.dirty).toBe(false);
+
+    act(() => result.current.setSession("sesion-1"));
+    expect(result.current.dirty).toBe(false); // opening a session is not a change
+
+    act(() => result.current.setSegmentation(fakeMesh));
+    expect(result.current.dirty).toBe(true);
+  });
+
+  it("goes clean again after a save", () => {
+    const { result } = renderHook(() => usePlanning(), { wrapper });
+    act(() => result.current.setMorphometry(fakeMorpho));
+    expect(result.current.dirty).toBe(true);
+
+    act(() => result.current.markSaved());
+    expect(result.current.dirty).toBe(false);
+  });
+
+  it("lets a rehydrated session be marked clean", () => {
+    // Resuming replays the saved results through the same setters a real edit
+    // uses, so the store came back dirty and leaving immediately asked to
+    // confirm before the user had touched anything. App calls markSaved() once
+    // the rehydration finishes, which is what this guarantees is possible.
+    const { result } = renderHook(() => usePlanning(), { wrapper });
+    act(() => {
+      result.current.setSegmentation(fakeMesh);
+      result.current.setMorphometry(fakeMorpho);
+      result.current.markSaved();
+    });
+
+    expect(result.current.dirty).toBe(false);
+    expect(result.current.segmentation).not.toBeNull();
+  });
+
+  it("forgets unsaved changes when the study is reset", () => {
+    const { result } = renderHook(() => usePlanning(), { wrapper });
+    act(() => result.current.setSegmentation(fakeMesh));
+    act(() => result.current.reset());
+    expect(result.current.dirty).toBe(false);
+  });
+});

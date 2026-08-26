@@ -370,6 +370,7 @@ export interface MeshCropResult {
   vertices: number;
   faces: number;
   removed_vertices: number;
+  undo_depth: number;
 }
 
 export interface GrowRequest {
@@ -390,6 +391,57 @@ export interface GrowResult {
   seeds: number;
   band_lower: number;
   band_upper: number;
+  undo_depth: number;
+}
+
+/* ── undoing mesh edits ────────────────────────────────────────────────── */
+/** "undo" steps back one crop/grow; "original" returns to the segmented mesh. */
+export type MeshRestoreScope = "undo" | "redo" | "original";
+
+export interface MeshRestoreResult {
+  mesh_url: string;
+  vertices: number;
+  faces: number;
+  scope: MeshRestoreScope;
+  undo_depth: number;
+  redo_depth: number;
+}
+
+/** One recoverable mesh state, named by what produced it. */
+export interface MeshHistoryStep {
+  label: "segment" | "crop" | "grow" | "edit";
+  title: string;
+  vertices: number;
+  at: number;
+}
+
+export interface MeshHistoryResult {
+  undo_depth: number;
+  redo_depth: number;
+  has_original: boolean;
+  steps: MeshHistoryStep[];
+}
+
+/* ── clearing placed devices ───────────────────────────────────────────── */
+/** "stent" covers both the straight catalogue stent and the centreline-guided one. */
+export type DeviceKind = "clips" | "coils" | "stent";
+
+export interface DeviceClearResult {
+  cleared: DeviceKind[];
+  remaining: DeviceKind[];
+  meshes_removed: number;
+  /** Mesh URL per still-placed family — lets a resumed session redraw its devices. */
+  mesh_urls: Partial<Record<DeviceKind, string>>;
+}
+
+export interface PreprocessStatus {
+  applied: boolean;
+  ops: string;
+}
+
+export interface CenterlineClearResult {
+  removed: string[];
+  had_centerline: boolean;
 }
 
 /* ── surgical approach trajectory ──────────────────────────────────────── */
@@ -837,6 +889,8 @@ export interface StudyCard {
   last_step: number | null;
   max_diameter_mm: number | null;
   rupture_risk_label: string | null;
+  /** Most recent session that can actually be restored, or null. */
+  resumable_session_id: string | null;
 }
 
 export interface OpenStudyResult {

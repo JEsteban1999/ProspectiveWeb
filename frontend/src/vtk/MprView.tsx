@@ -144,6 +144,10 @@ export function MprView({
         display: "flex", alignItems: "center", justifyContent: "center",
         cursor: onWindowLevel ? "crosshair" : "default",
       }}
+      // La rueda cambia de corte y arrastrar ajusta ventana/nivel, pero nada lo
+      // decía: el visor 3D sí muestra su pista y estos, que son la vista
+      // principal durante toda la carga y el umbralizado, no.
+      title={onWindowLevel ? "Rueda: cambiar de corte · Arrastrar: ventana/nivel" : undefined}
     >
       <img
         ref={imgRef}
@@ -162,6 +166,12 @@ export function MprView({
       {seedDots.map((d, i) => (
         <SeedDotOverlay key={i} imgRef={imgRef} u={d.u} v={d.v} />
       ))}
+
+      {!compact && onWindowLevel && (
+        <span style={{ position: "absolute", top: 8, right: 10, fontSize: 10, fontFamily: "var(--font-mono)", color: "rgba(168,184,198,0.5)", pointerEvents: "none" }}>
+          rueda: corte · arrastra: ventana/nivel
+        </span>
+      )}
 
       {showPlaneLabel && (
         <span style={{ position: "absolute", top: 8, left: 10, fontSize: compact ? 10 : 11, fontFamily: "var(--font-mono)", color: "rgba(168,184,198,0.85)", pointerEvents: "none" }}>

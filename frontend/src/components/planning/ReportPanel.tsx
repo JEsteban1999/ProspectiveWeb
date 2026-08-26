@@ -1,6 +1,6 @@
 /* Paso 7 — Informe y exportación. POST /api/report · /api/export/stl · /api/sessions/save. */
 
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { api } from "../../api/client";
 import type { ReportResult } from "../../api/types";
 import { Badge, riskVariant } from "../Badge";
@@ -14,9 +14,38 @@ import { PrintPrepPanel } from "./PrintPrepPanel";
 import { useAuth } from "../../store/auth";
 import { usePlanning } from "../../store/planning";
 
+/** Index of this step in the workspace rail — what a session saved here resumes at. */
+const REPORT_STEP = 6;
+
+/** A download link that stops offering a file once the plan has moved on.
+ *
+ *  Handing someone a link to a PDF describing a mesh they have since recropped
+ *  is worse than offering nothing: the file opens, looks right, and is wrong. */
+function OutputLink({
+  href, stale, children,
+}: { href: string; stale: boolean; children: React.ReactNode }) {
+  if (stale) {
+    return (
+      <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, color: "var(--warning)", lineHeight: 1.5 }}>
+        <Icon name="STATUS_WARN" size={14} color="var(--warning)" />
+        <span>El plan cambió desde que se generó este archivo. Vuelve a generarlo para descargar la versión actual.</span>
+      </div>
+    );
+  }
+  return (
+    <a href={href} target="_blank" rel="noreferrer" style={{ fontSize: 12, textAlign: "center" }}>
+      {children}
+    </a>
+  );
+}
+
 export function ReportPanel({ onFinish }: { onFinish: () => void }) {
   const { user } = useAuth();
-  const { sessionId, patient, morphometry, treatment, captureViewport } = usePlanning();
+  const planning = usePlanning();
+  const {
+    sessionId, patient, caseId, imagingStudyId, morphometry, treatment,
+    captureViewport, markSaved,
+  } = planning;
   const [includeShot, setIncludeShot] = useState(true);
   const [surgeon, setSurgeon] = useState(user?.full_name ?? "");
   const [notes, setNotes] = useState("");
@@ -25,6 +54,21 @@ export function ReportPanel({ onFinish }: { onFinish: () => void }) {
   const [sr, setSr] = useState<ReportResult | null>(null);
   const [busy, setBusy] = useState<"pdf" | "stl" | "sr" | "save" | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // What the outputs describe. A PDF is a snapshot of the mesh, the measurements
+  // and the devices at the moment it was generated; editing any of them left a
+  // download link pointing at a plan that no longer matched the screen.
+  const planSignature = useMemo(() => JSON.stringify({
+    mesh: planning.segmentation?.mesh_url ?? null,
+    morpho: morphometry?.max_diameter_mm ?? null,
+    neck: morphometry?.neck_mm ?? null,
+    plan: treatment?.recommendation_key ?? null,
+    devices: planning.deviceMeshes,
+  }), [planning.segmentation?.mesh_url, morphometry, treatment, planning.deviceMeshes]);
+
+  const generatedFrom = useRef<Record<string, string>>({});
+  const stale = (kind: "pdf" | "stl" | "sr") =>
+    generatedFrom.current[kind] !== undefined && generatedFrom.current[kind] !== planSignature;
 
   const genPdf = async () => {
     if (!sessionId) return;
@@ -53,6 +97,7 @@ export function ReportPanel({ onFinish }: { onFinish: () => void }) {
           screenshot_png_b64: shotB64 ?? undefined,
         })
       );
+      generatedFrom.current.pdf = planSignature;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error generando el informe");
     } finally {
@@ -66,6 +111,7 @@ export function ReportPanel({ onFinish }: { onFinish: () => void }) {
     setError(null);
     try {
       setStl(await api.exportStl({ session_id: sessionId }));
+      generatedFrom.current.stl = planSignature;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error exportando STL");
     } finally {
@@ -87,6 +133,7 @@ export function ReportPanel({ onFinish }: { onFinish: () => void }) {
         surgeon_name: surgeon,
         institution: patient?.institution ?? user?.institution ?? "",
       }));
+      generatedFrom.current.sr = planSignature;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error generando el DICOM SR");
     } finally {
@@ -94,6 +141,10 @@ export function ReportPanel({ onFinish }: { onFinish: () => void }) {
     }
   };
 
+  // Saving from the last step used to file the session under step 5 and drop the
+  // case link, so a finished plan came back listed as «Dispositivos» and its
+  // acquisition lost the case the gallery reads progress from. Same payload as
+  // «Guardar progreso» in the topbar, at the step the user is actually on.
   const save = async () => {
     if (!sessionId) return;
     setBusy("save");
@@ -101,10 +152,13 @@ export function ReportPanel({ onFinish }: { onFinish: () => void }) {
     try {
       await api.saveSession({
         session_id: sessionId,
-        label: patient ? `Planificación ${patient.full_name}` : "Planificación",
+        label: patient ? `${patient.full_name} · Informe` : "Informe",
         patient_id: patient?.id ?? null,
-        current_step: 5,
+        study_id: caseId,
+        imaging_study_id: imagingStudyId,
+        current_step: REPORT_STEP,
       });
+      markSaved();
       onFinish();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error guardando la sesión");
@@ -154,28 +208,26 @@ export function ReportPanel({ onFinish }: { onFinish: () => void }) {
           Incluir captura 3D de la escena en el PDF
         </label>
         <Button leadingIcon={<Icon name="DOC" />} onClick={() => void genPdf()} disabled={busy !== null}>
-          {busy === "pdf" ? "Generando…" : "Generar informe PDF"}
+          {busy === "pdf" ? "Generando…" : stale("pdf") ? "Regenerar informe PDF" : "Generar informe PDF"}
         </Button>
         {report?.pdf_url && (
-          <a href={report.pdf_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, textAlign: "center" }}>
+          <OutputLink href={report.pdf_url} stale={stale("pdf")}>
             Descargar PDF {report.page_count ? `(${report.page_count} páginas)` : ""} →
-          </a>
+          </OutputLink>
         )}
         <Button variant="outline" leadingIcon={<Icon name="SAVE" />} onClick={() => void genStl()} disabled={busy !== null}>
-          {busy === "stl" ? "Exportando…" : "Exportar malla STL"}
+          {busy === "stl" ? "Exportando…" : stale("stl") ? "Volver a exportar STL" : "Exportar malla STL"}
         </Button>
         {stl?.stl_url && (
-          <a href={stl.stl_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, textAlign: "center" }}>
-            Descargar STL →
-          </a>
+          <OutputLink href={stl.stl_url} stale={stale("stl")}>Descargar STL →</OutputLink>
         )}
         <Button variant="outline" leadingIcon={<Icon name="DATABASE" />} onClick={() => void genSr()} disabled={busy !== null}>
-          {busy === "sr" ? "Generando…" : "Generar DICOM SR"}
+          {busy === "sr" ? "Generando…" : stale("sr") ? "Regenerar DICOM SR" : "Generar DICOM SR"}
         </Button>
         {sr?.dicom_sr_url && (
-          <a href={sr.dicom_sr_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, textAlign: "center" }}>
+          <OutputLink href={sr.dicom_sr_url} stale={stale("sr")}>
             Descargar informe estructurado DICOM (.dcm) →
-          </a>
+          </OutputLink>
         )}
         <Separator style={{ margin: "6px 0" }} />
         <Button variant="secondary" leadingIcon={<Icon name="SAVE" />} onClick={() => void save()} disabled={busy !== null}>

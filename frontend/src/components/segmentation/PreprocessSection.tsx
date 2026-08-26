@@ -2,10 +2,11 @@
    isotrópico y suavizado gaussiano (port de dicom/preprocessor.py). Se aplica
    antes de segmentar; reescribe el volumen de la sesión y limpia lo posterior. */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import type { PreprocessResult } from "../../api/types";
 import { Button } from "../Button";
+import { Icon } from "../Icon";
 import { SectionLabel, ErrorNote } from "../PanelHead";
 import { Slider } from "../Slider";
 import { usePlanning } from "../../store/planning";
@@ -25,8 +26,22 @@ export function PreprocessSection() {
   const [smooth, setSmooth] = useState(false);
   const [sigma, setSigma] = useState(0.5);
   const [busy, setBusy] = useState(false);
+  const [reverting, setReverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [res, setRes] = useState<PreprocessResult | null>(null);
+  // What was applied to the volume, straight from the session — a resumed
+  // session has no client-side memory of it, and «Revertir» would look
+  // unavailable on a volume that had in fact been altered.
+  const [applied, setApplied] = useState("");
+
+  useEffect(() => {
+    if (!sessionId) return;
+    let alive = true;
+    api.preprocessStatus(sessionId)
+      .then((st) => { if (alive) setApplied(st.ops); })
+      .catch(() => { /* nothing applied */ });
+    return () => { alive = false; };
+  }, [sessionId]);
 
   const apply = async () => {
     if (!sessionId) return;
@@ -39,10 +54,29 @@ export function PreprocessSection() {
       });
       setRes(r);
       resetDownstream();  // volume changed → mesh/metrics stale
+      setApplied(await api.preprocessStatus(sessionId).then((st) => st.ops).catch(() => "aplicado"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error en el preprocesamiento");
     } finally {
       setBusy(false);
+    }
+  };
+
+  // The DICOM never leaves the session, so dropping the rewritten volume cache
+  // is a complete undo — no re-upload, no losing the study.
+  const revert = async () => {
+    if (!sessionId) return;
+    setReverting(true);
+    setError(null);
+    try {
+      const r = await api.revertPreprocess(sessionId);
+      setRes(r);
+      setApplied("");
+      resetDownstream();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo restaurar el volumen");
+    } finally {
+      setReverting(false);
     }
   };
 
@@ -97,10 +131,26 @@ export function PreprocessSection() {
               <div style={{ fontFamily: "var(--font-sans)", marginTop: 4 }}>{res.note}</div>
             </div>
           )}
+          {applied && (
+            <div style={{ fontSize: 11, color: "var(--warning)", background: "var(--warning-bg)", border: "1px solid color-mix(in srgb, var(--warning) 35%, transparent)", borderRadius: "var(--radius-md)", padding: "8px 12px", marginBottom: 10, lineHeight: 1.5 }}>
+              Este volumen ya está preprocesado ({applied}). Restaurarlo lo reconstruye
+              desde el DICOM original de la sesión.
+            </div>
+          )}
           <ErrorNote>{error}</ErrorNote>
-          <Button variant="outline" style={{ width: "100%" }} disabled={busy || !sessionId || (!clip && !iso && !smooth)} onClick={() => void apply()}>
+          <Button variant="outline" style={{ width: "100%" }} disabled={busy || reverting || !sessionId || (!clip && !iso && !smooth)} onClick={() => void apply()}>
             {busy ? "Procesando…" : "Aplicar preprocesamiento"}
           </Button>
+          {applied && (
+            <Button
+              variant="ghost" style={{ width: "100%", marginTop: 8 }}
+              disabled={busy || reverting}
+              onClick={() => void revert()}
+              leadingIcon={<Icon name="UNDO" size={14} />}
+            >
+              {reverting ? "Restaurando…" : "Restaurar volumen original"}
+            </Button>
+          )}
         </div>
       )}
     </div>

@@ -13,11 +13,14 @@ import logging
 import numpy as np
 from fastapi import APIRouter, HTTPException
 
-from models.preprocess import PreprocessRequest, PreprocessResult
-from services.sessions import session_exists
+from models.preprocess import PreprocessRequest, PreprocessResult, PreprocessStatus
+from services.sessions import read_state, session_exists, write_state
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["preprocess"])
+
+#: Set once the cached volume has been rewritten; cleared by the revert below.
+_OPS_KEY = "preprocess.ops"
 
 
 def _run(session_id: str, req: PreprocessRequest) -> PreprocessResult:
@@ -88,6 +91,7 @@ def _run(session_id: str, req: PreprocessRequest) -> PreprocessResult:
         ops.append(f"remuestreo isotrópico {req.target_spacing_mm} mm")
     if req.smooth:
         ops.append(f"suavizado σ={req.smooth_sigma}")
+    write_state(session_id, _OPS_KEY, ", ".join(ops))
     note = f"Aplicado: {', '.join(ops)}. Vuelve a segmentar para usar el volumen preprocesado."
     if clip_skipped:
         note = (
@@ -125,3 +129,108 @@ async def preprocess(session_id: str, req: PreprocessRequest) -> PreprocessResul
     except Exception as exc:  # noqa: BLE001
         logger.exception("Preprocess failed")
         raise HTTPException(status_code=500, detail=f"Error en el preprocesamiento: {exc}")
+
+
+# ── Reverting the preprocessing ───────────────────────────────────────────── #
+
+def _revert(session_id: str) -> PreprocessResult:
+    """Drop the rewritten volume cache; the DICOM in the session rebuilds it.
+
+    Preprocessing overwrites the cached volume in place, which made a bad
+    isotropic resample permanent for the rest of the session. The original DICOM
+    never leaves the session directory, so deleting the two cache files and
+    letting `ensure_volume_cached` run again is a complete undo — no re-upload.
+    """
+    import gc
+    from services.mpr import _cache_paths, ensure_volume_cached
+
+    import os
+
+    npy_path, meta_path = _cache_paths(session_id)
+    if not npy_path.exists():
+        raise FileNotFoundError("No hay volumen cacheado en la sesión.")
+
+    before = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+
+    # Release the memmap first — Windows refuses to move a mapped file.
+    try:
+        from services.mpr import _load_memmap, _downsampled_volume
+        _load_memmap.cache_clear()
+        _downsampled_volume.cache_clear()
+    except Exception:  # noqa: BLE001
+        pass
+    gc.collect()
+
+    # Move the cache aside rather than deleting it. If the DICOM turns out to be
+    # unreadable, deleting first would leave the session with NO volume at all —
+    # strictly worse than the preprocessed one the user wanted to undo.
+    bak_npy = npy_path.with_name("_volume_prev.npy")
+    bak_meta = meta_path.with_name("_volume_meta_prev.json")
+    os.replace(npy_path, bak_npy)
+    if meta_path.exists():
+        os.replace(meta_path, bak_meta)
+
+    try:
+        after = ensure_volume_cached(session_id)   # re-derives from the original DICOM
+    except Exception as exc:  # noqa: BLE001
+        os.replace(bak_npy, npy_path)
+        if bak_meta.exists():
+            os.replace(bak_meta, meta_path)
+        raise RuntimeError(
+            "No se pudo reconstruir el volumen desde el DICOM de la sesión "
+            f"({exc}). Se conserva el volumen preprocesado."
+        ) from exc
+
+    bak_npy.unlink(missing_ok=True)
+    bak_meta.unlink(missing_ok=True)
+    write_state(session_id, _OPS_KEY, "")
+
+    return PreprocessResult(
+        shape_before=[int(x) for x in before.get("shape", after["shape"])],
+        shape_after=[int(x) for x in after["shape"]],
+        spacing_before=[round(float(s), 3) for s in before.get("spacing", after["spacing"])],
+        spacing_after=[round(float(s), 3) for s in after["spacing"]],
+        note="Volumen restaurado desde el DICOM original. Vuelve a segmentar.",
+    )
+
+
+@router.get(
+    "/preprocess/{session_id}",
+    response_model=PreprocessStatus,
+    summary="Whether this session's volume has been preprocessed",
+    description=(
+        "Lets the panel offer «Revertir» after a session is resumed, when the "
+        "browser has no memory of the operations that were applied."
+    ),
+)
+async def preprocess_status(session_id: str) -> PreprocessStatus:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    ops = read_state(session_id, _OPS_KEY, "") or ""
+    return PreprocessStatus(applied=bool(ops), ops=ops)
+
+
+@router.delete(
+    "/preprocess/{session_id}",
+    response_model=PreprocessResult,
+    summary="Revert the volume to the original DICOM",
+    description=(
+        "Discards the preprocessed volume and rebuilds it from the DICOM still "
+        "stored in the session — a complete undo of HU clipping, resampling and "
+        "smoothing, with no re-upload. The segmentation and everything downstream "
+        "must be re-run, since they were derived from the altered volume."
+    ),
+)
+async def revert_preprocess(session_id: str) -> PreprocessResult:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    try:
+        return await asyncio.to_thread(_revert, session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except RuntimeError as exc:
+        # The volume the user has is intact; say so instead of a bare 500.
+        raise HTTPException(status_code=409, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Preprocess revert failed")
+        raise HTTPException(status_code=500, detail=f"No se pudo restaurar el volumen: {exc}")

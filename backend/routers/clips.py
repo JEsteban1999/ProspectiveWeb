@@ -47,6 +47,27 @@ def _custom_registry(session_id: str) -> dict:
         return {}
 
 
+def _custom_index(clip_id: str) -> int | None:
+    """Numeric suffix of a `custom:N` clip id, or None when it is not one."""
+    if not clip_id.startswith("custom:"):
+        return None
+    try:
+        return int(clip_id.split(":", 1)[1])
+    except (ValueError, IndexError):
+        return None
+
+
+def _next_custom_index(registry: dict) -> int:
+    """One past the highest index ever used.
+
+    Deriving it from `len(registry)` was fine while entries could only be added;
+    now that one can be deleted, reusing an index would silently point a new
+    import at the surviving `.vtp` of a clip the user thought they removed.
+    """
+    used = [i for i in (_custom_index(k) for k in registry) if i is not None]
+    return max(used) + 1 if used else 0
+
+
 def _custom_clip_name(session_id: str, clip_id: str) -> str:
     return _custom_registry(session_id).get(clip_id, "Clip personalizado")
 
@@ -126,7 +147,7 @@ async def upload_custom_clip(
     custom_dir.mkdir(parents=True, exist_ok=True)
 
     registry = _custom_registry(session_id)
-    idx = len(registry)
+    idx = _next_custom_index(registry)
     clip_id = f"custom:{idx}"
 
     import tempfile
@@ -309,3 +330,63 @@ def _trajectory_mesh(entry, target):
     out = vtk.vtkPolyData()
     out.DeepCopy(tube.GetOutput())
     return out
+
+
+# ── Custom clip library: list / remove ────────────────────────────────────── #
+
+@router.get(
+    "/clips/custom/{session_id}",
+    response_model=list[CustomClipInfo],
+    summary="Custom clips imported in this session",
+    description=(
+        "The imported clips survive in the session directory, but the browser "
+        "forgets them on resume, so the dropdown lost geometry that was still on "
+        "disk. This restores the list."
+    ),
+)
+async def list_custom_clips(session_id: str) -> list[CustomClipInfo]:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    registry = _custom_registry(session_id)
+    return [
+        CustomClipInfo(clip_id=cid, name=name)
+        for cid, name in sorted(registry.items(), key=lambda kv: _custom_index(kv[0]) or 0)
+    ]
+
+
+@router.delete(
+    "/clips/custom/{session_id}/{clip_index}",
+    response_model=list[CustomClipInfo],
+    summary="Remove an imported custom clip",
+    description=(
+        "Deletes the imported geometry and its catalogue entry. Without it a "
+        "mis-imported file stayed in the dropdown for the rest of the session. "
+        "Returns the remaining custom clips.\n\n"
+        "Clips already placed in the plan are untouched — clear those from the "
+        "devices step."
+    ),
+)
+async def delete_custom_clip(session_id: str, clip_index: int) -> list[CustomClipInfo]:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    clip_id = f"custom:{clip_index}"
+    registry = _custom_registry(session_id)
+    if clip_id not in registry:
+        raise HTTPException(status_code=404, detail=f"No hay un clip personalizado '{clip_id}'.")
+
+    del registry[clip_id]
+    write_state(session_id, _CUSTOM_REGISTRY_KEY, json.dumps(registry))
+
+    path = session_subdir(session_id, "meshes") / f"custom_clip_{clip_index}.vtp"
+    if path.exists():
+        try:
+            path.unlink()
+        except OSError as exc:  # noqa: BLE001 — the catalogue entry is already gone
+            logger.warning("Could not delete %s for %s: %s", path.name, session_id, exc)
+
+    logger.info("Custom clip removed — session=%s id=%s", session_id, clip_id)
+    return [
+        CustomClipInfo(clip_id=cid, name=name)
+        for cid, name in sorted(registry.items(), key=lambda kv: _custom_index(kv[0]) or 0)
+    ]

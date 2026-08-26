@@ -7,6 +7,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client";
 import type {
   ClipPlanResult,
+  CustomClipInfo,
+  DeviceKind,
   ClipRecommendation,
   ClStentResult,
   CoilLibraryItem,
@@ -27,6 +29,49 @@ import { usePlanning } from "../../store/planning";
 
 const TABS = ["Clips", "Coils", "Stents", "Stent CL"] as const;
 const ORIGIN: Position3D = { x: 0, y: 0, z: 0 };
+
+/** Take a placed device family off the plan: its mesh AND the record the report
+    reads. Clearing only one of the two leaves a plan that contradicts itself —
+    a device drawn but not reported, or reported but not drawn. */
+function useClearDevice(kind: DeviceKind) {
+  const { sessionId, deviceMeshes, clearDeviceMeshes } = usePlanning();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const placed = !!deviceMeshes[kind];
+
+  const clear = async (after?: () => void) => {
+    if (!sessionId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.clearDevices(sessionId, kind);
+      clearDeviceMeshes(kind);
+      after?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo limpiar el dispositivo");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return { placed, busy, error, clear };
+}
+
+/** Uniform «Limpiar» control for the device tabs. */
+function ClearDeviceButton({
+  label, disabled, busy, onClick,
+}: { label: string; disabled: boolean; busy: boolean; onClick: () => void }) {
+  return (
+    <Button
+      variant="outline"
+      style={{ marginTop: 8, width: "100%" }}
+      disabled={disabled || busy}
+      onClick={onClick}
+      leadingIcon={<Icon name="CLEAR" size={14} />}
+    >
+      {busy ? "Limpiando…" : label}
+    </Button>
+  );
+}
 
 /** Where to place a clip/stent: the neck centre the backend measured, with the
     principal axis as the neck-plane normal.
@@ -79,8 +124,9 @@ function NumField({ label, value, onChange, step = 1 }: { label: string; value: 
 
 function ClipsTab() {
   const { sessionId, morphometry, setDeviceMesh } = usePlanning();
+  const clearer = useClearDevice("clips");
   const [recs, setRecs] = useState<ClipRecommendation[]>([]);
-  const [customs, setCustoms] = useState<{ clip_id: string; name: string }[]>([]);
+  const [customs, setCustoms] = useState<CustomClipInfo[]>([]);
   const [sel, setSel] = useState<string>("");
   const [placed, setPlaced] = useState<PlacedClip[]>([]);
   const [plan, setPlan] = useState<ClipPlanResult | null>(null);
@@ -95,8 +141,23 @@ function ClipsTab() {
     api.clipRecommendations(sessionId)
       .then((r) => { setRecs(r); if (r.length > 0 && !sel) setSel(r[0].clip_id); })
       .catch((e) => setError(e instanceof Error ? e.message : "Error cargando recomendaciones"));
+    // Imported clips live in the session directory, but the browser forgets them
+    // on resume — the dropdown lost geometry that was still on disk.
+    api.listCustomClips(sessionId).then(setCustoms).catch(() => { /* none imported */ });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
+
+  const removeCustom = async (clipId: string) => {
+    if (!sessionId) return;
+    setError(null);
+    try {
+      const rest = await api.deleteCustomClip(sessionId, clipId);
+      setCustoms(rest);
+      if (sel === clipId) setSel(recs[0]?.clip_id ?? rest[0]?.clip_id ?? "");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo quitar el clip importado");
+    }
+  };
 
   const options = useMemo(() => [
     ...recs.map((r) => ({ value: r.clip_id, label: `${r.clip_name} · ${(r.score * 100).toFixed(0)}` })),
@@ -145,7 +206,7 @@ function ClipsTab() {
         placements: placed.map((c) => ({ clip_id: c.clip_id, position: c.position, normal, rotation_deg: c.rotation_deg })),
       });
       setPlan(res);
-      setDeviceMesh(res.clips_mesh_url || null);
+      setDeviceMesh("clips", res.clips_mesh_url || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al colocar los clips");
     } finally {
@@ -172,10 +233,29 @@ function ClipsTab() {
       <input ref={fileRef} type="file" accept=".stl,.obj" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) void importClip(f); }} />
       <button
         onClick={() => fileRef.current?.click()} disabled={uploading}
-        style={{ width: "100%", padding: "7px 10px", fontSize: 12, fontWeight: 600, cursor: uploading ? "wait" : "pointer", borderRadius: "var(--radius-md)", border: "1px dashed var(--border)", background: "transparent", color: "var(--brand-deep)", marginBottom: 12 }}
+        style={{ width: "100%", padding: "7px 10px", fontSize: 12, fontWeight: 600, cursor: uploading ? "wait" : "pointer", borderRadius: "var(--radius-md)", border: "1px dashed var(--border)", background: "transparent", color: "var(--brand-deep)", marginBottom: customs.length ? 8 : 12 }}
       >
         {uploading ? "Importando…" : "＋ Importar clip personalizado (STL/OBJ)"}
       </button>
+      {/* Without a way out, importing the wrong file left it in the dropdown for
+          the rest of the session. */}
+      {customs.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
+          {customs.map((c) => (
+            <div key={c.clip_id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 10px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--card)" }}>
+              <Icon name="CLIPS" size={12} color="var(--muted-foreground)" />
+              <span className="truncate" style={{ flex: 1, fontSize: 12, color: "var(--foreground)" }}>{c.name}</span>
+              <button
+                onClick={() => void removeCustom(c.clip_id)}
+                title="Quitar del catálogo"
+                style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--muted-foreground)", fontSize: 13, lineHeight: 1, padding: 2 }}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {placed.length > 0 && (
         <>
@@ -211,6 +291,16 @@ function ClipsTab() {
       <Button style={{ marginTop: 14, width: "100%" }} onClick={() => void place()} disabled={busy || placed.length === 0} leadingIcon={<Icon name="CLIP_PLACE" />}>
         {busy ? "Verificando…" : `Colocar ${placed.length || ""} y verificar`}
       </Button>
+      {/* Removing a clip from the list above only changes what the NEXT «Colocar»
+          will send; the clips already placed stay in the scene and in the report
+          until they are cleared here. */}
+      <ClearDeviceButton
+        label="Limpiar clips colocados"
+        disabled={!clearer.placed && !plan}
+        busy={clearer.busy}
+        onClick={() => void clearer.clear(() => { setPlan(null); setPlaced([]); })}
+      />
+      <ErrorNote>{clearer.error}</ErrorNote>
     </div>
   );
 }
@@ -218,6 +308,7 @@ function ClipsTab() {
 /* ── Coils ─────────────────────────────────────────────────────────────── */
 function CoilsTab() {
   const { sessionId, morphometry, setDeviceMesh } = usePlanning();
+  const clearer = useClearDevice("coils");
   const [coils, setCoils] = useState<CoilLibraryItem[]>([]);
   const [sel, setSel] = useState("");
   const [count, setCount] = useState(3);
@@ -257,7 +348,7 @@ function CoilsTab() {
       }));
       const res = await api.planCoils(sessionId, placements);
       setPlan(res);
-      setDeviceMesh(res.coils_mesh_url || null);
+      setDeviceMesh("coils", res.coils_mesh_url || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error en el plan de coils");
     } finally {
@@ -290,6 +381,13 @@ function CoilsTab() {
       <Button style={{ marginTop: 14, width: "100%" }} onClick={() => void run()} disabled={busy || !sel} leadingIcon={<Icon name="COIL" />}>
         {busy ? "Calculando…" : "Calcular empaque"}
       </Button>
+      <ClearDeviceButton
+        label="Limpiar coils"
+        disabled={!clearer.placed && !plan}
+        busy={clearer.busy}
+        onClick={() => void clearer.clear(() => setPlan(null))}
+      />
+      <ErrorNote>{clearer.error}</ErrorNote>
     </div>
   );
 }
@@ -297,6 +395,7 @@ function CoilsTab() {
 /* ── Stents ────────────────────────────────────────────────────────────── */
 function StentsTab() {
   const { sessionId, morphometry, setDeviceMesh } = usePlanning();
+  const clearer = useClearDevice("stent");
   const [stents, setStents] = useState<StentLibraryItem[]>([]);
   const [sel, setSel] = useState("");
   const [diameter, setDiameter] = useState(4);
@@ -331,7 +430,7 @@ function StentsTab() {
         rotation_deg: 0,
       });
       setPlan(res);
-      setDeviceMesh(res.stent_mesh_url || null);
+      setDeviceMesh("stent", res.stent_mesh_url || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error en el despliegue del stent");
     } finally {
@@ -400,6 +499,14 @@ function StentsTab() {
       <Button style={{ marginTop: 14, width: "100%" }} onClick={() => void run()} disabled={busy || !current} leadingIcon={<Icon name="STENT" />}>
         {busy ? "Desplegando…" : "Desplegar y evaluar"}
       </Button>
+      {/* One stent record per session: this also clears a centreline-guided stent. */}
+      <ClearDeviceButton
+        label="Retirar stent"
+        disabled={!clearer.placed && !plan}
+        busy={clearer.busy}
+        onClick={() => void clearer.clear(() => setPlan(null))}
+      />
+      <ErrorNote>{clearer.error}</ErrorNote>
     </div>
   );
 }
@@ -407,6 +514,7 @@ function StentsTab() {
 /* ── Stent guiado por centerline ───────────────────────────────────────── */
 function ClStentTab() {
   const { sessionId, centerlineMesh, centerlineArcMm, setDeviceMesh } = usePlanning();
+  const clearer = useClearDevice("stent");
   const [diameter, setDiameter] = useState(4);
   const [startArc, setStartArc] = useState(0);
   const [endArc, setEndArc] = useState(0);
@@ -437,7 +545,7 @@ function ClStentTab() {
         braid_count: 6,
       });
       setPlan(res);
-      setDeviceMesh(res.stent_mesh_url || null);
+      setDeviceMesh("stent", res.stent_mesh_url || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error desplegando el stent");
     } finally {
@@ -491,6 +599,13 @@ function ClStentTab() {
       <Button style={{ marginTop: 14, width: "100%" }} onClick={() => void run()} disabled={busy} leadingIcon={<Icon name="STENT" />}>
         {busy ? "Desplegando…" : "Desplegar sobre la línea central"}
       </Button>
+      <ClearDeviceButton
+        label="Retirar stent"
+        disabled={!clearer.placed && !plan}
+        busy={clearer.busy}
+        onClick={() => void clearer.clear(() => setPlan(null))}
+      />
+      <ErrorNote>{clearer.error}</ErrorNote>
     </div>
   );
 }
@@ -584,6 +699,91 @@ function TrajectoryTool() {
   );
 }
 
+/* ── Dispositivos en el plan ───────────────────────────────────────────── */
+
+const KIND_LABEL: Record<DeviceKind, string> = {
+  clips: "Clips", coils: "Coils", stent: "Stent",
+};
+
+/** What the PDF report and the DICOM SR will actually list, above the tabs.
+ *
+ *  Each tab only knows about its own device, so a plan holding a clip AND a
+ *  stent looked like whichever tab was open. This is the one place that says
+ *  what the plan really contains — and lets it be emptied in one action. */
+function PlacedDevicesBar() {
+  const { sessionId, deviceMeshes, setDeviceMesh, clearDeviceMeshes } = usePlanning();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // A resumed session rebuilds the store from scratch, so ask the backend what
+  // it still has on record — otherwise the devices are in the report but not in
+  // the viewer, and there is nothing to clear.
+  useEffect(() => {
+    if (!sessionId) return;
+    let alive = true;
+    api.placedDevices(sessionId)
+      .then((r) => {
+        if (!alive) return;
+        for (const kind of r.remaining) {
+          const url = r.mesh_urls[kind];
+          if (url) setDeviceMesh(kind, url);
+        }
+      })
+      .catch(() => { /* nothing placed, or the session is gone */ });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  const placed = (Object.keys(KIND_LABEL) as DeviceKind[]).filter((k) => !!deviceMeshes[k]);
+
+  const clearAll = async () => {
+    if (!sessionId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.clearDevices(sessionId);
+      clearDeviceMeshes();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudieron limpiar los dispositivos");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (placed.length === 0) return null;
+
+  return (
+    <Card style={{ marginBottom: 14, padding: "12px 14px" }}>
+      <SectionLabel style={{ marginBottom: 8 }}>En el plan ({placed.length})</SectionLabel>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+        {placed.map((k) => (
+          <span
+            key={k}
+            style={{
+              fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
+              background: "var(--brand-subtle)", color: "var(--brand-subtle-foreground)",
+            }}
+          >
+            {KIND_LABEL[k]}
+          </span>
+        ))}
+      </div>
+      <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginBottom: 10, lineHeight: 1.5 }}>
+        Estos dispositivos se dibujan en el visor y aparecen en el informe. Límpialos
+        para probar otra estrategia sin que se acumulen.
+      </div>
+      <Button
+        variant="outline" size="sm" style={{ width: "100%" }}
+        disabled={busy} onClick={() => void clearAll()}
+        leadingIcon={<Icon name="CLEAR" size={14} />}
+      >
+        {busy ? "Limpiando…" : "Limpiar todos los dispositivos"}
+      </Button>
+      <ErrorNote>{error}</ErrorNote>
+    </Card>
+  );
+}
+
 /* ── Panel ─────────────────────────────────────────────────────────────── */
 export function DevicesPanel({ onNext }: { onNext: () => void }) {
   const [tab, setTab] = useState<string>("Clips");
@@ -591,6 +791,7 @@ export function DevicesPanel({ onNext }: { onNext: () => void }) {
     <div className="fade-rise">
       <PanelHead title="Planificación de dispositivos" desc="Elige clip, coils o stent del catálogo y verifica su colocación." />
       <TrajectoryTool />
+      <PlacedDevicesBar />
       <Tabs tabs={TABS} value={tab} onChange={setTab} />
       {tab === "Clips" && <ClipsTab />}
       {tab === "Coils" && <CoilsTab />}

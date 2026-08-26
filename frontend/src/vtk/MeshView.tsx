@@ -37,6 +37,22 @@ export interface MeshLine {
   color: Vector3;
 }
 
+/** Standard viewpoints, named for the MPR planes the rest of the app uses.
+ *  Mesh coordinates are voxel·spacing with axes (x = columnas, y = filas,
+ *  z = cortes), so +z is the superior–inferior axis — the same convention the
+ *  MPR strip flips for coronal and sagittal. */
+export type CameraView =
+  | "fit" | "axial" | "axial_inf" | "coronal" | "coronal_post" | "sagital" | "sagital_izq";
+
+const CAMERA_VIEWS: Record<Exclude<CameraView, "fit">, [[number, number, number], [number, number, number]]> = {
+  axial:        [[0, 0,  1], [0, -1, 0]],   // desde superior
+  axial_inf:    [[0, 0, -1], [0, -1, 0]],   // desde inferior
+  coronal:      [[0, -1, 0], [0, 0,  1]],   // desde anterior
+  coronal_post: [[0,  1, 0], [0, 0,  1]],   // desde posterior
+  sagital:      [[1,  0, 0], [0, 0,  1]],   // lateral
+  sagital_izq:  [[-1, 0, 0], [0, 0,  1]],   // lateral opuesto
+};
+
 export interface CropPreview {
   center: [number, number, number];
   radius: number;               // sphere radius / box half-side (mm)
@@ -63,6 +79,7 @@ export function MeshView({
   onPickMiss,
   focusUrl,
   registerCapture,
+  registerCamera,
   preserveCamera = false,
 }: {
   layers: MeshLayer[];
@@ -85,6 +102,9 @@ export function MeshView({
   /** Registers a function that captures the live viewport as a PNG data URL
    *  (used to embed the 3D scene in the PDF report). Called with null on unmount. */
   registerCapture?: (fn: (() => Promise<string | null>) | null) => void;
+  /** Registers a camera controller so the viewer can offer standard views and a
+   *  «fit to scene». Called with null on unmount. */
+  registerCamera?: (fn: ((view: CameraView) => void) | null) => void;
   /** Keep the camera across scene rebuilds — used by the live threshold preview so
    *  the view doesn't jump back to the default framing on every mesh update. */
   preserveCamera?: boolean;
@@ -97,6 +117,8 @@ export function MeshView({
   const cropActor = useRef<vtkActor | null>(null);
   const registerCaptureRef = useRef(registerCapture);
   registerCaptureRef.current = registerCapture;
+  const registerCameraRef = useRef(registerCamera);
+  registerCameraRef.current = registerCamera;
   // Camera params kept across scene rebuilds (for the live preview).
   const savedCamera = useRef<{ position: number[]; focalPoint: number[]; viewUp: number[]; parallelScale: number } | null>(null);
   const preserveCameraRef = useRef(preserveCamera);
@@ -260,10 +282,31 @@ export function MeshView({
     };
     registerCaptureRef.current?.(capture);
 
+    // Standard viewpoints. resetCamera() preserves the view direction and up
+    // vector, so pointing the camera and refitting is all it takes. Without this
+    // the only way back from a lost orientation was to change step and return.
+    const setView = (view: CameraView) => {
+      const h = handles.current;
+      if (!h) return;
+      const cam = h.renderer.getActiveCamera();
+      if (view !== "fit") {
+        const [dir, up] = CAMERA_VIEWS[view];
+        cam.setFocalPoint(0, 0, 0);
+        cam.setPosition(dir[0], dir[1], dir[2]);
+        cam.setViewUp(up[0], up[1], up[2]);
+      }
+      h.renderer.resetCamera();
+      h.renderer.resetCameraClippingRange();
+      h.renderer.updateLightsGeometryToFollowCamera();
+      h.renderWindow.render();
+    };
+    registerCameraRef.current?.(setView);
+
     return () => {
       cancelled = true;
       pickSub.unsubscribe();
       registerCaptureRef.current?.(null);
+      registerCameraRef.current?.(null);
       markerActors.current = [];
       const h = handles.current;
       if (h) {
