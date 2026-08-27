@@ -464,6 +464,8 @@ def _run_morphometry_sync(
     neck_source = "auto"
     plane_arg   = None
     neck_tilt_deg = 0.0
+    used_plane: tuple[tuple[float, float, float], tuple[float, float, float]] | None = None
+    sac_hit_crop = False
 
     if neck_plane is not None:
         # ── Semi-automatic closed-sac isolation ───────────────────────────── #
@@ -573,6 +575,21 @@ def _run_morphometry_sync(
         write_state(session_id, "morpho.plane_normal_x", str(normal[0]))
         write_state(session_id, "morpho.plane_normal_y", str(normal[1]))
         write_state(session_id, "morpho.plane_normal_z", str(normal[2]))
+        used_plane = (tuple(float(v) for v in origin), tuple(float(v) for v in normal))  # type: ignore[assignment]
+        # Did the sac stop because the anatomy ended, or because the crop sphere
+        # cut it off? One that reaches the bound was still growing when it was
+        # clipped: the neck plane let the parent artery into the "sac", so the
+        # max diameter, the volume and every index describe artery as much as
+        # aneurysm. Without this the failure surfaces only as a 14 mm "aneurysm"
+        # on a candidate detected at 4 mm — reported with a green OK badge.
+        try:
+            import numpy as _np
+            pts = _np.asarray([poly.GetPoint(i) for i in range(poly.GetNumberOfPoints())])
+            if pts.size:
+                reach = float(_np.max(_np.linalg.norm(pts - _np.asarray(seed, dtype=float), axis=1)))
+                sac_hit_crop = reach >= bound_r * 0.97
+        except Exception as exc:  # noqa: BLE001 — a diagnostic must never break the measurement
+            logger.warning("Sac crop-bound check skipped: %s", exc)
         write_state(session_id, "morpho.plane_seed_x",   str(seed[0]))
         write_state(session_id, "morpho.plane_seed_y",   str(seed[1]))
         write_state(session_id, "morpho.plane_seed_z",   str(seed[2]))
@@ -666,6 +683,32 @@ def _run_morphometry_sync(
         or not (0.0 <= mr.ellipticity_index <= 1.0)
         or not (0.0 <= mr.undulation_index <= 1.0)
     )
+    # ── Is the neck contour even possible? ────────────────────────────── #
+    # The mouth of a sac cannot be wider than the widest part of the sac. When
+    # it comes out that way the plane did not cut the neck: it cut across the
+    # parent artery, or missed the sac altogether. Cheap to check, impossible to
+    # argue with, and it fires on results that otherwise carry a green badge.
+    if mr.neck_diameter_mm > mr.max_diameter_mm * 1.02 > 0:
+        note = (
+            f"El cuello medido ({mr.neck_diameter_mm:.1f} mm) es mayor que el Ø máximo "
+            f"del saco ({mr.max_diameter_mm:.1f} mm), lo cual es imposible: el plano no "
+            f"cortó por el cuello. Vuelve a marcar el borde en la unión del saco con el vaso."
+        )
+        warning = f"{warning} {note}" if warning else note
+        logger.warning("Neck wider than the sac — session=%s neck=%.2f max=%.2f",
+                       session_id, mr.neck_diameter_mm, mr.max_diameter_mm)
+
+    # ── Did the isolation swallow the parent artery? ──────────────────── #
+    if sac_hit_crop:
+        note = (
+            "El saco aislado llega hasta el límite del recorte: el plano de cuello "
+            "dejó entrar vaso padre, así que Ø máximo, volumen y los índices "
+            "describen arteria además de aneurisma. Vuelve a marcar el borde del "
+            "cuello justo en la unión del saco con el vaso."
+        )
+        warning = f"{warning} {note}" if warning else note
+        logger.warning("Sac isolation reached the crop bound — session=%s", session_id)
+
     if indices_out_of_range:
         note = (
             "Índices de forma fuera de rango físico (malla de domo abierta) — "
@@ -704,5 +747,11 @@ def _run_morphometry_sync(
         principal_axis    = list(mr.principal_axis),
         neck_origin       = Position3D(
             x=neck_origin[0], y=neck_origin[1], z=neck_origin[2]
+        ),
+        plane_origin      = None if used_plane is None else Position3D(
+            x=used_plane[0][0], y=used_plane[0][1], z=used_plane[0][2]
+        ),
+        plane_normal      = None if used_plane is None else Position3D(
+            x=used_plane[1][0], y=used_plane[1][1], z=used_plane[1][2]
         ),
     )

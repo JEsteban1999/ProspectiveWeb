@@ -599,6 +599,12 @@ export interface MorphometryResult {
   centroid: Position3D | null;
   principal_axis: number[] | null;
   /** Centre of the neck — where a clip/stent goes. Do not re-derive it. */
+  /** Origin of the neck plane ACTUALLY used, when one was placed by hand. */
+  plane_origin: Position3D | null;
+  /** Its unit normal, pointing at the dome. The 3D ring used to be rebuilt from
+   *  the PCA axis instead, so on an oblique neck it drew a plane that was not
+   *  the one that measured the neck. */
+  plane_normal: Position3D | null;
   neck_origin: Position3D | null;
 }
 

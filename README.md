@@ -63,7 +63,7 @@ approval, and a tamper-evident audit chain.
 
 | | |
 |---|---|
-| Backend tests | **468 passing** (`pytest`, 35 files) |
+| Backend tests | **473 passing** (`pytest`, 36 files) |
 | Frontend tests | **68 passing** (`vitest`, 9 files) · `tsc -b` clean · production build clean |
 | REST endpoints | **94** operations across 78 paths (23 routers), all authenticated except login/signup/logout |
 | Feature parity with desktop | **Complete** |
@@ -589,11 +589,11 @@ patient imaging.
 
 ```bash
 cd backend
-.venv\Scripts\python -m pytest -q                        # all 468 tests
+.venv\Scripts\python -m pytest -q                        # all 473 tests
 .venv\Scripts\python -m pytest test_session_abc.py -v    # one suite
 ```
 
-Expected: **468 passed, 0 failed** (~3–4 min; VTK and SimpleITK do real work).
+Expected: **473 passed, 0 failed** (~3–4 min; VTK and SimpleITK do real work).
 
 Frontend checks:
 

@@ -46,7 +46,7 @@ function withMorphometry(m: MorphometryResult) {
   }
   return render(
     <PlanningProvider>
-      <Seed><MorphometryPanel /></Seed>
+      <Seed><MorphometryPanel onNext={() => {}} /></Seed>
     </PlanningProvider>,
   );
 }

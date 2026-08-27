@@ -150,12 +150,26 @@ export function Viewer({ step }: { step: string }) {
     const ax = morphometry.principal_axis;
     if (!c || !ax || ax.length !== 3) return null;
     const centroid: V3 = [c.x, c.y, c.z];
-    const axis = vnorm([ax[0], ax[1], ax[2]] as V3);
     const dome = morphometry.dome_height_mm || 0;
     const neckR = (morphometry.neck_mm || 0) / 2;
     const maxR = (morphometry.max_diameter_mm || 0) / 2;
-    const neckC = vsub(centroid, vscale(axis, dome / 2));
-    const apex = vadd(centroid, vscale(axis, dome / 2));
+
+    // Draw the plane that ACTUALLY measured the neck. This used to rebuild a
+    // ring from the PCA axis at centroid − axis·(dome/2), which coincides with
+    // the real plane only when the neck happens to be perpendicular to that
+    // axis — i.e. exactly the case the rim fit exists to handle differently.
+    // On an oblique neck the ring drawn was not the plane in use, so the user
+    // was aiming with a sight that was not attached to the barrel.
+    const po = morphometry.plane_origin;
+    const pn = morphometry.plane_normal;
+    const fitted = !!po && !!pn;
+    const axis = fitted
+      ? vnorm([pn!.x, pn!.y, pn!.z] as V3)
+      : vnorm([ax[0], ax[1], ax[2]] as V3);
+    const neckC: V3 = fitted
+      ? [po!.x, po!.y, po!.z]
+      : vsub(centroid, vscale(axis, dome / 2));
+    const apex = vadd(neckC, vscale(axis, dome));
     const [u, v] = perpBasis(axis);
 
     const markers: MeshMarker[] = [

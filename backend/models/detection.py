@@ -215,6 +215,23 @@ class MorphometryResult(BaseModel):
     principal_axis: list[float] | None = Field(
         None, description="Principal PCA axis as [x, y, z] unit vector"
     )
+    plane_origin: Position3D | None = Field(
+        None,
+        description=(
+            "Origin of the neck plane ACTUALLY used to isolate the sac, when one "
+            "was placed by hand. Null for the automatic path."
+        ),
+    )
+    plane_normal: Position3D | None = Field(
+        None,
+        description=(
+            "Unit normal of that same plane, pointing at the dome. Sent because "
+            "the 3D annotation used to rebuild a neck ring from the PCA axis "
+            "instead, so on an oblique neck — the case the rim fit exists for — "
+            "the ring drawn was NOT the plane that measured the neck, and the "
+            "user had no way to see where their plane had landed."
+        ),
+    )
     neck_origin: Position3D | None = Field(
         None,
         description=(
