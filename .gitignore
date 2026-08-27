@@ -99,3 +99,7 @@ backend/secrets/
 # Mesh-quality probe output (regenerate with the harness; not source)
 backend/*_report.json
 backend/mesh_quality_report*.json
+
+# Biblioteca global de clips: geometría propia de la institución y plantillas de
+# fabricación. Privada, fuera del montaje público data/ (ver clip_library.py).
+backend/clip_library/

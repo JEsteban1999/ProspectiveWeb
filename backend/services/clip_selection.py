@@ -651,10 +651,12 @@ def select_clips(
     Never returns an empty answer: when nothing in stock fits, the outcome is a
     manufacturing specification instead of silence.
     """
-    from services.clips import CLIP_CATALOGUE
-
     if catalogue is None:
-        catalogue = CLIP_CATALOGUE
+        # The built-in catalogue plus whatever clips this institution actually
+        # owns. Scoring against a shelf the hospital does not have is how you
+        # recommend a clip nobody can pick up.
+        from services.clip_library import catalogue_with_library
+        catalogue = catalogue_with_library()
 
     if case.neck_mm <= 0 or not case.neck_reliable:
         return ClipSelection(
