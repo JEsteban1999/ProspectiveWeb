@@ -19,6 +19,7 @@
 - [Data Model](#data-model)
 - [Session Lifecycle](#session-lifecycle)
 - [Undoing Work](#undoing-work)
+- [Choosing a Clip](#choosing-a-clip)
 - [Navigation & Unsaved Work](#navigation--unsaved-work)
 - [API Reference](#api-reference)
 - [Running Tests](#running-tests)
@@ -357,6 +358,99 @@ devices (`GET /api/devices/{sid}`) and the imported clips
 
 ---
 
+## Choosing a Clip
+
+The devices step answers a specific question: **does anything we own fit this
+aneurysm, and if not, what has to be made?**
+
+### Two stages
+
+1. **Analytic** — every clip in the catalogue is judged against the case,
+   criterion by criterion. Each verdict carries the measurement that produced it,
+   because "score 92.6" is not something a surgeon can check.
+
+   | Criterion | What it compares |
+   |---|---|
+   | Cobertura | Blade length against the neck, with a safety margin |
+   | Fenestración | Window calibre against the measured parent artery |
+   | Alcance | Shape against dome depth (AR) |
+   | Forma / localización | Shape against the anatomical region on the case |
+   | Fuerza de cierre | Spring force against neck width |
+
+2. **Geometric** — the best candidates are built at their real dimensions,
+   posed on the measured neck plane and checked against the patient's own mesh.
+
+   Two details make this mean anything. A clip across the neck necessarily
+   intersects the vessel — *the neck is vessel* — so the sac and neck region are
+   cut away first and the collision test runs against what remains; a hit then
+   means the blade reaches a **neighbouring** structure. And several approach
+   angles are tried: reporting only the best pose made a clip that clears its
+   neighbours at every angle look identical to one that clears them at exactly
+   one. Both numbers are reported (`clean_rolls` of `n_rolls`).
+
+### Four outcomes, never an empty list
+
+| Outcome | Meaning |
+|---|---|
+| `stock` | At least one clip meets every criterion |
+| `marginal` | Usable clips exist, but all carry a caveat — the custom alternative is offered too |
+| `manufacture` | Nothing fits; the answer is a specification to have one made |
+| `unmeasured` | No reliable neck, so no selection is possible — mark the neck plane first |
+
+The old recommender returned an empty list for a 1 mm neck and for a 20 mm neck
+alike. An empty list *is* the answer "nothing made fits this patient"; it just
+has to be delivered as a specification rather than as silence.
+
+### The manufacturing specification
+
+Blade length, width, height, spring, shape, angle, target closing force, and the
+window diameter taken from the measured parent artery. Width, height and spring
+are derived from the median proportions of the real catalogue rather than
+invented. `POST /api/clips/manufacture/{sid}` writes the STL.
+
+The spec always lists what a machinist still has to confirm — a specification
+that hides its assumptions is worse than one that states them. In particular,
+**no parent-artery measurement means no window diameter**: the spec says so
+instead of quietly falling back to a plain clip.
+
+### The clip library
+
+`clip_library/` is a global, persistent store outside `data/`, holding two kinds
+of entry: `stock` clips the institution actually owns (these join the built-in
+catalogue when a case is scored) and `template` manufacturing designs (which
+never compete as stock — a design nobody has made is not something to reach for
+in theatre).
+
+From an uploaded mesh the store measures the **oriented** bounding box and the
+volume. Everything else is declared on import, and the reason is worth knowing
+because it looks automatable:
+
+- **Closing force** is a property of the spring and the alloy. No geometry
+  carries it, so a `stock` clip without one is refused rather than stored with a
+  zero that would silently sink it in every ranking.
+- **Shape and fenestration** could in principle be inferred, but a CAD export is
+  rarely a clean closed manifold and the inference fails quietly on exactly the
+  irregular meshes where it would matter. `POST /api/clip-library/measure`
+  offers a hint to pre-fill the form; it is labelled a suggestion.
+- **Blade width and height** cannot be separated from the jaw opening by a
+  bounding box — across that axis the envelope is two blades plus the gap — so
+  the stored figures are named `envelope_*`.
+
+### What this is not
+
+The geometric criteria are arithmetic on measured quantities. The clinical
+preferences (shape per region, closing-force windows) are heuristics from Lawton
+2011, Molyneux and Pierot & Wakhloo, **not validated against annotated cases** —
+there is no ground truth in this project to validate a ranking against. The panel
+is assistive and always shows its reasons; it does not choose a clip.
+
+Whether a branch actually runs through the neck is not visible in the isolated
+sac mesh, so "consider a fenestrated clip" is raised once as a case-level
+caveat, never as a defect on each non-fenestrated clip. A warning that fires on
+almost the whole catalogue stops carrying information.
+
+---
+
 ## Navigation & Unsaved Work
 
 The frontend uses a **data router** (`createBrowserRouter`), and the URL is the
@@ -384,7 +478,7 @@ so a panel added later cannot forget to do it.
 
 ## API Reference
 
-87 operations under `/api`. Full spec in `openapi.json` or at `/docs`.
+94 operations under `/api`. Full spec in `openapi.json` or at `/docs`.
 
 **Everything except `POST /api/auth/login`, `/signup` and `/logout` requires a
 token.** It travels as `Authorization: Bearer …` or as the `prospective_token`
@@ -463,7 +557,12 @@ patient imaging.
 | `POST` | `/api/phases` | PHASES 5-year rupture risk |
 | `GET` `DELETE` | `/api/devices/{sid}` | What the plan has placed · remove one family (`kind=clips\|coils\|stent`) |
 | `GET` | `/api/clips` · `/api/coils` · `/api/stents` | Device catalogues |
-| `GET` | `/api/clips/recommendations/{sid}` | Ranked clip recommendations |
+| `GET` | `/api/clips/recommendations/{sid}` | Ranked clip recommendations (legacy score) |
+| `GET` | `/api/clips/selection/{sid}` | Criteria-based selection + manufacturing spec |
+| `POST` | `/api/clips/manufacture/{sid}` | STL of the clip this case would need |
+| `GET` `POST` | `/api/clip-library` | Institutional clip store · import (admin) |
+| `POST` | `/api/clip-library/measure` | Measure a mesh to pre-fill the import form (admin) |
+| `GET` `DELETE` | `/api/clip-library/{id}/mesh` · `/api/clip-library/{id}` | Geometry · remove (admin) |
 | `POST` | `/api/clips/plan` | Placement + real VTK collision |
 | `GET` `POST` `DELETE` | `/api/clips/custom/{sid}` | Imported clip library: list · upload · remove one |
 | `POST` | `/api/coils/plan` · `/api/plan` | Coil packing · stent deployment |
@@ -486,17 +585,17 @@ patient imaging.
 
 ```bash
 cd backend
-.venv\Scripts\python -m pytest -q                        # all 423 tests
+.venv\Scripts\python -m pytest -q                        # all 468 tests
 .venv\Scripts\python -m pytest test_session_abc.py -v    # one suite
 ```
 
-Expected: **423 passed, 0 failed** (~3–4 min; VTK and SimpleITK do real work).
+Expected: **468 passed, 0 failed** (~3–4 min; VTK and SimpleITK do real work).
 
 Frontend checks:
 
 ```bash
 cd frontend
-npx vitest run          # 41 unit tests (vitest + Testing Library, jsdom)
+npx vitest run          # 51 unit tests (vitest + Testing Library, jsdom)
 npx tsc -b --noEmit     # type check
 npm run build           # production build
 ```
@@ -546,6 +645,9 @@ counterpart under `backend/services`, and every desktop panel has a web panel.
 | Live HU threshold preview | no | tinted MPR overlay while dragging sliders |
 | Series selector | no | picks among all series in a study |
 | Standard 3D viewpoints | no | axial/coronal/sagittal ± opposite, plus refit |
+| Clip recommendation | score from neck + AR | per-criterion, verified against the patient's mesh |
+| No clip fits the case | empty list | specification to manufacture, with STL |
+| Institutional clip inventory | no | global library, scored alongside the built-in catalogue |
 | Multiple devices on screen | last one placed | every placed device at once, colour-coded with a legend |
 | Public landing page | no | yes |
 | Access | local machine | browser / any HTTP client |
@@ -613,7 +715,8 @@ This software handles identifiable patient data.
 - **Change the seeded `admin` password** from the user menu ("Cambiar contraseña").
 - Serve over HTTPS and set `COOKIE_SECURE=1` so the auth cookie is marked secure.
 - Private material belongs in `study_files/` (archived DICOM), `user_files/`
-  (signup photos and CVs) and `secrets/` — all outside `data/` and gitignored.
+  (signup photos and CVs), `clip_library/` (institutional clip geometry) and
+  `secrets/` — all outside `data/` and gitignored.
 - **Never run `git add -A` in this repository.** Real DICOM files have no extension
   (`IM_0001`, bare UIDs); the ignore rules cover the known folders, but stage
   explicit paths and check `git diff --cached --name-only` first.

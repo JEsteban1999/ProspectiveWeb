@@ -2463,6 +2463,150 @@
         }
       }
     },
+    "/api/clips/selection/{session_id}": {
+      "get": {
+        "tags": [
+          "clips"
+        ],
+        "summary": "Which clip fits this aneurysm, and why — or what to have made",
+        "description": "Judges every clip in the catalogue against this session's morphometry and the clinical case, criterion by criterion (blade vs neck, closing force, shape vs location, fenestration calibre), then poses the best candidates on the measured neck plane and checks them against the patient's own mesh.\n\nNever returns an empty list: when nothing in the inventory fits, `outcome` is `manufacture` and `manufacture` carries the specification to send out — dimensions, shape, closing force and window calibre.\n\nGeometric verification needs a hand-marked neck plane and a segmented mesh; without them the analytic criteria still apply and `fit` stays null.",
+        "operationId": "clip_selection_api_clips_selection__session_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "case_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Clinical case, when the session is not yet saved",
+              "title": "Case Id"
+            },
+            "description": "Clinical case, when the session is not yet saved"
+          },
+          {
+            "name": "verify",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Run the geometric check on the top candidates",
+              "default": true,
+              "title": "Verify"
+            },
+            "description": "Run the geometric check on the top candidates"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClipSelectionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/clips/manufacture/{session_id}": {
+      "post": {
+        "tags": [
+          "clips"
+        ],
+        "summary": "Generate the STL of the clip this case would need",
+        "description": "Builds the specified clip as a solid and writes it to the session's exports as a binary STL, ready to send to a workshop or a printer.\n\nThe geometry is an approximation of a machined clip: correct blade length, width, height, shape class and window calibre, but no fillets and no real spring. It is a specification to manufacture FROM, not a finished part.",
+        "operationId": "clip_manufacture_spec_api_clips_manufacture__session_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "case_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Clinical case, when the session is not yet saved",
+              "title": "Case Id"
+            },
+            "description": "Clinical case, when the session is not yet saved"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManufactureSpecOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/coils": {
       "get": {
         "tags": [
@@ -4295,6 +4439,252 @@
         }
       }
     },
+    "/api/clip-library": {
+      "get": {
+        "tags": [
+          "clip-library"
+        ],
+        "summary": "Every clip and template the institution holds",
+        "description": "`kind=stock` are clips actually in inventory — these join the built-in catalogue when a case is scored. `kind=template` are parametric manufacturing designs and never compete as stock: a design that has not been made is not something anyone can pick up in theatre.",
+        "operationId": "list_library_api_clip_library_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LibraryClipOut"
+                  },
+                  "title": "Response List Library Api Clip Library Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "clip-library"
+        ],
+        "summary": "Add a clip or a manufacturing template to the library (admin)",
+        "description": "Upload an STL, OBJ or VTP together with the specification the geometry cannot supply.\n\n**Closing force is required for `stock` clips** — it is a property of the spring and the alloy, so no mesh carries it, and without it the selector cannot judge whether the clip holds the neck. Shape and fenestration diameter are declared for the same reason: inferring them from an arbitrary CAD export fails quietly on exactly the irregular meshes where it would matter.\n\nBlade length is measured from the mesh's oriented bounding box. The width and height stored are ENVELOPE dimensions — across the jaw axis that is two blades plus the opening, not one blade.",
+        "operationId": "add_library_clip_api_clip_library_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_add_library_clip_api_clip_library_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryClipOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/clip-library/measure": {
+      "post": {
+        "tags": [
+          "clip-library"
+        ],
+        "summary": "Measure a mesh before importing it, to pre-fill the form (admin)",
+        "description": "Measures the oriented bounding box and volume and offers a shape guess. The guess only separates flat from bent envelopes — anything finer would be guesswork presented as measurement, so the operator still states the shape.",
+        "operationId": "measure_before_import_api_clip_library_measure_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_measure_before_import_api_clip_library_measure_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShapeSuggestion"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/clip-library/{clip_id}/mesh": {
+      "get": {
+        "tags": [
+          "clip-library"
+        ],
+        "summary": "Download one library clip's geometry",
+        "description": "Served through the API, not the public static mount: the library is private.",
+        "operationId": "library_clip_mesh_api_clip_library__clip_id__mesh_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "clip_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Clip Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/clip-library/{clip_id}": {
+      "delete": {
+        "tags": [
+          "clip-library"
+        ],
+        "summary": "Remove a clip from the library (admin)",
+        "operationId": "delete_library_clip_api_clip_library__clip_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "clip_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Clip Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Library Clip Api Clip Library  Clip Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -4565,6 +4955,55 @@
         "title": "AutoThresholdResult",
         "description": "Auto-computed thresholds suggested to the user before segmentation."
       },
+      "Body_add_library_clip_api_clip_library_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "default": "stock"
+          },
+          "shape": {
+            "type": "string",
+            "title": "Shape",
+            "default": "STRAIGHT"
+          },
+          "closing_force_g": {
+            "type": "number",
+            "title": "Closing Force G",
+            "default": 0.0
+          },
+          "fenestration_mm": {
+            "type": "number",
+            "title": "Fenestration Mm",
+            "default": 0.0
+          },
+          "manufacturer": {
+            "type": "string",
+            "title": "Manufacturer",
+            "default": ""
+          },
+          "notes": {
+            "type": "string",
+            "title": "Notes",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_add_library_clip_api_clip_library_post"
+      },
       "Body_create_user_api_auth_users_post": {
         "properties": {
           "username": {
@@ -4651,6 +5090,20 @@
           "full_name"
         ],
         "title": "Body_create_user_api_auth_users_post"
+      },
+      "Body_measure_before_import_api_clip_library_measure_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_measure_before_import_api_clip_library_measure_post"
       },
       "Body_signup_api_auth_signup_post": {
         "properties": {
@@ -5192,6 +5645,248 @@
         "title": "ClStentResult",
         "description": "Deployed centreline-guided stent mesh + fit metrics."
       },
+      "ClipCandidateOut": {
+        "properties": {
+          "clip_id": {
+            "type": "string",
+            "title": "Clip Id"
+          },
+          "clip_name": {
+            "type": "string",
+            "title": "Clip Name"
+          },
+          "manufacturer": {
+            "type": "string",
+            "title": "Manufacturer",
+            "default": ""
+          },
+          "shape": {
+            "type": "string",
+            "title": "Shape",
+            "description": "Recto | Curvo | Angulado 90° | Angulado 45° | Bayoneta | Fenestrado",
+            "default": ""
+          },
+          "blade_length_mm": {
+            "type": "number",
+            "title": "Blade Length Mm",
+            "default": 0.0
+          },
+          "closing_force_g": {
+            "type": "number",
+            "title": "Closing Force G",
+            "default": 0.0
+          },
+          "score": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Score",
+            "description": "0 when any criterion failed",
+            "default": 0.0
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "warn",
+              "fail"
+            ],
+            "title": "Verdict",
+            "default": "ok"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline",
+            "description": "The single sentence to show under the clip name",
+            "default": ""
+          },
+          "coverage_ratio": {
+            "type": "number",
+            "title": "Coverage Ratio",
+            "default": 0.0
+          },
+          "safety_margin_mm": {
+            "type": "number",
+            "title": "Safety Margin Mm",
+            "default": 0.0
+          },
+          "criteria": {
+            "items": {
+              "$ref": "#/components/schemas/ClipCriterion"
+            },
+            "type": "array",
+            "title": "Criteria"
+          },
+          "fit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClipFitCheck"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only for the candidates verified against the mesh"
+          }
+        },
+        "type": "object",
+        "required": [
+          "clip_id",
+          "clip_name"
+        ],
+        "title": "ClipCandidateOut",
+        "description": "A clip judged against this case."
+      },
+      "ClipCaseOut": {
+        "properties": {
+          "neck_mm": {
+            "type": "number",
+            "title": "Neck Mm",
+            "default": 0.0
+          },
+          "dome_height_mm": {
+            "type": "number",
+            "title": "Dome Height Mm",
+            "default": 0.0
+          },
+          "max_diameter_mm": {
+            "type": "number",
+            "title": "Max Diameter Mm",
+            "default": 0.0
+          },
+          "ar": {
+            "type": "number",
+            "title": "Ar",
+            "default": 0.0
+          },
+          "dnr": {
+            "type": "number",
+            "title": "Dnr",
+            "default": 0.0
+          },
+          "parent_artery_mm": {
+            "type": "number",
+            "title": "Parent Artery Mm",
+            "default": 0.0
+          },
+          "neck_source": {
+            "type": "string",
+            "title": "Neck Source",
+            "default": "auto"
+          },
+          "neck_tilt_deg": {
+            "type": "number",
+            "title": "Neck Tilt Deg",
+            "default": 0.0
+          },
+          "region": {
+            "type": "string",
+            "title": "Region",
+            "default": ""
+          },
+          "laterality": {
+            "type": "string",
+            "title": "Laterality",
+            "default": ""
+          },
+          "aneurysm_type": {
+            "type": "string",
+            "title": "Aneurysm Type",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ClipCaseOut",
+        "description": "The measurements the selection was made from, echoed back for the panel."
+      },
+      "ClipCriterion": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key",
+            "description": "coverage | fenestration | reach | shape | force | geometry"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "description": "Human label shown in the criteria matrix"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "warn",
+              "fail"
+            ],
+            "title": "Verdict"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "description": "The reason, including the number it came from"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "verdict",
+          "detail"
+        ],
+        "title": "ClipCriterion",
+        "description": "One judged aspect of a clip, with the measurement behind the verdict."
+      },
+      "ClipFitCheck": {
+        "properties": {
+          "collision": {
+            "type": "boolean",
+            "title": "Collision",
+            "description": "True when the best pose still touches a neighbouring structure"
+          },
+          "n_contacts": {
+            "type": "integer",
+            "title": "N Contacts",
+            "description": "Intersecting triangles in the best pose",
+            "default": 0
+          },
+          "span_mm": {
+            "type": "number",
+            "title": "Span Mm",
+            "description": "Width of the clip across the neck plane (mm)",
+            "default": 0.0
+          },
+          "neck_coverage_pct": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Neck Coverage Pct",
+            "default": 0.0
+          },
+          "clean_rolls": {
+            "type": "integer",
+            "title": "Clean Rolls",
+            "description": "Approach angles, of those tried, that clear neighbouring vessels",
+            "default": 0
+          },
+          "n_rolls": {
+            "type": "integer",
+            "title": "N Rolls",
+            "description": "Approach angles tried",
+            "default": 0
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "collision"
+        ],
+        "title": "ClipFitCheck",
+        "description": "Result of posing the clip on the patient's measured neck plane."
+      },
       "ClipLibraryItem": {
         "properties": {
           "id": {
@@ -5423,6 +6118,69 @@
         ],
         "title": "ClipRecommendation",
         "description": "Clip recommendation from the Clip Recommender assistant."
+      },
+      "ClipSelectionResult": {
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "stock",
+              "marginal",
+              "manufacture",
+              "unmeasured"
+            ],
+            "title": "Outcome",
+            "description": "'stock' = at least one clip meets every criterion; 'marginal' = usable clips exist but all carry a caveat, so a custom alternative is offered too; 'manufacture' = nothing in the inventory fits; 'unmeasured' = no reliable neck, so no selection is possible"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "case": {
+            "$ref": "#/components/schemas/ClipCaseOut"
+          },
+          "recommended": {
+            "items": {
+              "$ref": "#/components/schemas/ClipCandidateOut"
+            },
+            "type": "array",
+            "title": "Recommended"
+          },
+          "rejected": {
+            "items": {
+              "$ref": "#/components/schemas/ClipCandidateOut"
+            },
+            "type": "array",
+            "title": "Rejected",
+            "description": "Near misses, each carrying the one criterion that disqualified it"
+          },
+          "manufacture": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ManufactureSpecOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "caveats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Caveats",
+            "description": "What limits how much weight this selection can bear"
+          }
+        },
+        "type": "object",
+        "required": [
+          "outcome",
+          "summary",
+          "case"
+        ],
+        "title": "ClipSelectionResult",
+        "description": "The complete answer for one case.\n\n`outcome` is never \"nothing found\": when the inventory cannot serve, the\nanswer is a manufacturing specification."
       },
       "CoilLibraryItem": {
         "properties": {
@@ -5997,6 +6755,96 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "LibraryClipOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "'stock' = held in inventory · 'template' = manufacturing design"
+          },
+          "manufacturer": {
+            "type": "string",
+            "title": "Manufacturer",
+            "default": ""
+          },
+          "shape": {
+            "type": "string",
+            "title": "Shape",
+            "description": "STRAIGHT | CURVED | ANGLED | ANGLED_45 | BAYONET | FENESTRATED"
+          },
+          "closing_force_g": {
+            "type": "number",
+            "title": "Closing Force G",
+            "description": "Declared — no geometry carries this",
+            "default": 0.0
+          },
+          "fenestration_mm": {
+            "type": "number",
+            "title": "Fenestration Mm",
+            "description": "Declared inner window diameter (mm)",
+            "default": 0.0
+          },
+          "notes": {
+            "type": "string",
+            "title": "Notes",
+            "default": ""
+          },
+          "blade_length_mm": {
+            "type": "number",
+            "title": "Blade Length Mm",
+            "description": "Longest oriented-bounding-box axis, measured",
+            "default": 0.0
+          },
+          "envelope_width_mm": {
+            "type": "number",
+            "title": "Envelope Width Mm",
+            "description": "Envelope across the jaw: two blades plus the gap, NOT one blade",
+            "default": 0.0
+          },
+          "envelope_height_mm": {
+            "type": "number",
+            "title": "Envelope Height Mm",
+            "default": 0.0
+          },
+          "volume_mm3": {
+            "type": "number",
+            "title": "Volume Mm3",
+            "default": 0.0
+          },
+          "source_filename": {
+            "type": "string",
+            "title": "Source Filename",
+            "default": ""
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At",
+            "default": 0.0
+          },
+          "mesh_url": {
+            "type": "string",
+            "title": "Mesh Url",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "shape"
+        ],
+        "title": "LibraryClipOut",
+        "description": "One clip in the institutional library, as the UI lists it."
+      },
       "LoginRequest": {
         "properties": {
           "username": {
@@ -6253,6 +7101,95 @@
         ],
         "title": "LongitudinalResult",
         "description": "Longitudinal comparison between the current session and historical ones."
+      },
+      "ManufactureSpecOut": {
+        "properties": {
+          "blade_length_mm": {
+            "type": "number",
+            "title": "Blade Length Mm"
+          },
+          "blade_width_mm": {
+            "type": "number",
+            "title": "Blade Width Mm"
+          },
+          "blade_height_mm": {
+            "type": "number",
+            "title": "Blade Height Mm"
+          },
+          "spring_length_mm": {
+            "type": "number",
+            "title": "Spring Length Mm"
+          },
+          "shape": {
+            "type": "string",
+            "title": "Shape"
+          },
+          "angle_deg": {
+            "type": "number",
+            "title": "Angle Deg"
+          },
+          "closing_force_g": {
+            "type": "number",
+            "title": "Closing Force G"
+          },
+          "fenestration_mm": {
+            "type": "number",
+            "title": "Fenestration Mm",
+            "description": "Inner window diameter (mm); 0 when a plain clip is specified",
+            "default": 0.0
+          },
+          "neck_mm": {
+            "type": "number",
+            "title": "Neck Mm"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "description": "One-line summary of the part to order"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons",
+            "description": "Why no stock clip served"
+          },
+          "confidence_notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Confidence Notes",
+            "description": "Assumptions a machinist still has to confirm"
+          },
+          "stl_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stl Url",
+            "description": "Downloadable STL of the specified clip, once generated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "blade_length_mm",
+          "blade_width_mm",
+          "blade_height_mm",
+          "spring_length_mm",
+          "shape",
+          "angle_deg",
+          "closing_force_g",
+          "neck_mm",
+          "label"
+        ],
+        "title": "ManufactureSpecOut",
+        "description": "The clip to have made, when the inventory cannot serve the case."
       },
       "MeshCropRequest": {
         "properties": {
@@ -8398,6 +9335,45 @@
         ],
         "title": "SessionSaveResult",
         "description": "Confirmation of a successful session save."
+      },
+      "ShapeSuggestion": {
+        "properties": {
+          "shape": {
+            "type": "string",
+            "title": "Shape"
+          },
+          "why": {
+            "type": "string",
+            "title": "Why"
+          },
+          "blade_length_mm": {
+            "type": "number",
+            "title": "Blade Length Mm"
+          },
+          "envelope_width_mm": {
+            "type": "number",
+            "title": "Envelope Width Mm"
+          },
+          "envelope_height_mm": {
+            "type": "number",
+            "title": "Envelope Height Mm"
+          },
+          "volume_mm3": {
+            "type": "number",
+            "title": "Volume Mm3"
+          }
+        },
+        "type": "object",
+        "required": [
+          "shape",
+          "why",
+          "blade_length_mm",
+          "envelope_width_mm",
+          "envelope_height_mm",
+          "volume_mm3"
+        ],
+        "title": "ShapeSuggestion",
+        "description": "Geometry's opinion on the shape — a form pre-fill, never a fact."
       },
       "SignupResponse": {
         "properties": {

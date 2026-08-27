@@ -697,6 +697,118 @@ export interface ClipRecommendation {
   suggested_placement: ClipPlacement | null;
 }
 
+/* ── Criteria-based clip selection ──────────────────────────────────────── */
+
+export type ClipVerdict = "ok" | "warn" | "fail";
+
+export interface ClipCriterion {
+  key: string;
+  label: string;
+  verdict: ClipVerdict;
+  detail: string;
+}
+
+/** Result of posing the clip on the patient's measured neck plane. */
+export interface ClipFitCheck {
+  collision: boolean;
+  n_contacts: number;
+  span_mm: number;
+  neck_coverage_pct: number;
+  /** Approach angles, of those tried, that clear neighbouring vessels. */
+  clean_rolls: number;
+  n_rolls: number;
+  note: string;
+}
+
+export interface ClipCandidateOut {
+  clip_id: string;
+  clip_name: string;
+  manufacturer: string;
+  shape: string;
+  blade_length_mm: number;
+  closing_force_g: number;
+  score: number;
+  verdict: ClipVerdict;
+  headline: string;
+  coverage_ratio: number;
+  safety_margin_mm: number;
+  criteria: ClipCriterion[];
+  /** Only present for the candidates checked against the mesh. */
+  fit: ClipFitCheck | null;
+}
+
+export interface ManufactureSpecOut {
+  blade_length_mm: number;
+  blade_width_mm: number;
+  blade_height_mm: number;
+  spring_length_mm: number;
+  shape: string;
+  angle_deg: number;
+  closing_force_g: number;
+  fenestration_mm: number;
+  neck_mm: number;
+  label: string;
+  reasons: string[];
+  confidence_notes: string[];
+  stl_url: string | null;
+}
+
+export interface ClipCaseOut {
+  neck_mm: number;
+  dome_height_mm: number;
+  max_diameter_mm: number;
+  ar: number;
+  dnr: number;
+  parent_artery_mm: number;
+  neck_source: string;
+  neck_tilt_deg: number;
+  region: string;
+  laterality: string;
+  aneurysm_type: string;
+}
+
+export type ClipOutcome = "stock" | "marginal" | "manufacture" | "unmeasured";
+
+export interface ClipSelectionResult {
+  outcome: ClipOutcome;
+  summary: string;
+  case: ClipCaseOut;
+  recommended: ClipCandidateOut[];
+  rejected: ClipCandidateOut[];
+  manufacture: ManufactureSpecOut | null;
+  caveats: string[];
+}
+
+/* ── Global clip library ────────────────────────────────────────────────── */
+
+export interface LibraryClip {
+  id: string;
+  name: string;
+  kind: "stock" | "template";
+  manufacturer: string;
+  shape: string;
+  closing_force_g: number;
+  fenestration_mm: number;
+  notes: string;
+  blade_length_mm: number;
+  /** Two blades plus the jaw gap — NOT one blade's width. */
+  envelope_width_mm: number;
+  envelope_height_mm: number;
+  volume_mm3: number;
+  source_filename: string;
+  created_at: number;
+  mesh_url: string;
+}
+
+export interface ClipShapeSuggestion {
+  shape: string;
+  why: string;
+  blade_length_mm: number;
+  envelope_width_mm: number;
+  envelope_height_mm: number;
+  volume_mm3: number;
+}
+
 export interface CustomClipInfo {
   clip_id: string;
   name: string;

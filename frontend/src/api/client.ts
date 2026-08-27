@@ -5,28 +5,33 @@ import type {
   AneurysmDetectionResult,
   AuditBlock,
   AuditVerifyResult,
+  CaseCreate,
   CenterlineClearResult,
   CenterlineRequest,
   CenterlineResult,
-  CrossSectionRequest,
-  CrossSectionResult,
-  ClStentRequest,
-  ClStentResult,
   ClipLibraryItem,
   ClipPlanRequest,
   ClipPlanResult,
   ClipRecommendation,
-  CustomClipInfo,
+  ClipSelectionResult,
+  ClipShapeSuggestion,
+  ClStentRequest,
+  ClStentResult,
   CoilLibraryItem,
   CoilPlacement,
   CoilPlanResult,
+  CrossSectionRequest,
+  CrossSectionResult,
+  CustomClipInfo,
   DeviceClearResult,
   DeviceKind,
   ExportRequest,
   GrowRequest,
   GrowResult,
+  LibraryClip,
   LoginResponse,
   LongitudinalResult,
+  ManufactureSpecOut,
   MeshCropRequest,
   MeshCropResult,
   MeshHistoryResult,
@@ -34,46 +39,44 @@ import type {
   MeshRestoreScope,
   MorphometryResult,
   NeckPlaneRequest,
+  PatientCreate,
+  PatientDetail,
+  PatientSessionInfo,
+  PatientSummary,
   PendingUser,
+  PerforatorsResult,
   PhasesRequest,
   PhasesResult,
   PreprocessRequest,
   PreprocessResult,
   PreprocessStatus,
+  PreviewRequest,
+  PreviewResult,
   PrintBed,
   PrintPrepRequest,
   PrintPrepResult,
-  SignupRequest,
-  SignupResponse,
-  CaseCreate,
-  PatientCreate,
-  PatientDetail,
-  PatientSessionInfo,
-  PatientSummary,
-  StudyCreate,
-  StudySummary,
-  PerforatorsResult,
   ReportRequest,
   ReportResult,
   SegmentRequest,
   SegmentResult,
-  SuggestedBand,
-  PreviewRequest,
-  PreviewResult,
+  SeriesInfo,
+  SessionRestoreResult,
   SessionSaveRequest,
   SessionSaveResult,
-  SessionRestoreResult,
+  SignupRequest,
+  SignupResponse,
   StentLibraryItem,
   StentParams,
   StentPlanResult,
+  StudyCard,
+  StudyCreate,
+  StudySummary,
+  SuggestedBand,
   TrajectoryRequest,
   TrajectoryResult,
   TreatmentDecisionRequest,
   TreatmentDecisionResult,
   UploadResult,
-  SeriesInfo,
-  StudyCard,
-
   UserAdminInfo,
   UserInfo,
   UserUpdate,
@@ -334,6 +337,38 @@ export const api = {
     fd.append("file", file, file.name);
     return post<CustomClipInfo>(`/api/clips/custom/${sessionId}`, fd);
   },
+  /** Criteria-based selection: what fits this case, or what to have made. */
+  clipSelection: (sessionId: string, caseId?: number | null, verify = true) =>
+    get<ClipSelectionResult>(
+      `/api/clips/selection/${sessionId}?verify=${verify ? "true" : "false"}`
+      + (caseId ? `&case_id=${caseId}` : ""),
+    ),
+  /** Generate the STL of the clip this case would need. */
+  clipManufacture: (sessionId: string, caseId?: number | null) =>
+    post<ManufactureSpecOut>(
+      `/api/clips/manufacture/${sessionId}` + (caseId ? `?case_id=${caseId}` : ""),
+      {},
+    ),
+  listClipLibrary: (kind?: "stock" | "template") =>
+    get<LibraryClip[]>("/api/clip-library" + (kind ? `?kind=${kind}` : "")),
+  /** Measure a mesh before importing, to pre-fill the form. */
+  measureClipMesh: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file, file.name);
+    return post<ClipShapeSuggestion>("/api/clip-library/measure", fd);
+  },
+  addClipToLibrary: (file: File, spec: {
+    name: string; kind: "stock" | "template"; shape: string;
+    closing_force_g: number; fenestration_mm: number;
+    manufacturer: string; notes: string;
+  }) => {
+    const fd = new FormData();
+    fd.append("file", file, file.name);
+    Object.entries(spec).forEach(([k, v]) => fd.append(k, String(v)));
+    return post<LibraryClip>("/api/clip-library", fd);
+  },
+  deleteClipFromLibrary: (clipId: string) =>
+    request<{ deleted: string }>(`/api/clip-library/${clipId}`, { method: "DELETE" }),
   listCoils: () => get<CoilLibraryItem[]>("/api/coils"),
   planCoils: (sessionId: string, placements: CoilPlacement[]) =>
     post<CoilPlanResult>("/api/coils/plan", { session_id: sessionId, placements }),

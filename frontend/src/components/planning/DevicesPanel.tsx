@@ -19,6 +19,7 @@ import type {
   StentPlanResult,
 } from "../../api/types";
 import { Button } from "../Button";
+import { ClipSelectionPanel } from "./ClipSelection";
 import { Icon } from "../Icon";
 import { Metric } from "../Metric";
 import { PanelHead, SectionLabel, ErrorNote, Card } from "../PanelHead";
@@ -123,7 +124,7 @@ function NumField({ label, value, onChange, step = 1 }: { label: string; value: 
 }
 
 function ClipsTab() {
-  const { sessionId, morphometry, setDeviceMesh } = usePlanning();
+  const { sessionId, caseId, morphometry, setDeviceMesh } = usePlanning();
   const clearer = useClearDevice("clips");
   const [recs, setRecs] = useState<ClipRecommendation[]>([]);
   const [customs, setCustoms] = useState<CustomClipInfo[]>([]);
@@ -216,6 +217,20 @@ function ClipsTab() {
 
   return (
     <div style={{ marginTop: 12 }}>
+      {/* Qué sirve para ESTE caso y por qué. Va antes del selector: elegir un
+          clip de una lista sin haber leído el razonamiento es exactamente lo
+          que hacía el panel anterior. */}
+      {sessionId && (
+        <div style={{ marginBottom: 14 }}>
+          <ClipSelectionPanel
+            sessionId={sessionId}
+            caseId={caseId}
+            selectedClipId={sel}
+            onPick={(clipId) => setSel(clipId)}
+          />
+        </div>
+      )}
+
       <SectionLabel>Modelo de clip</SectionLabel>
       {recs.length === 0 && customs.length === 0 && (
         <div style={{ fontSize: 12, color: "var(--muted-foreground)", padding: "8px 0" }}>
