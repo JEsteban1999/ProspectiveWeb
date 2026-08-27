@@ -8109,6 +8109,14 @@
             "type": "number",
             "title": "Search Radius Mm",
             "description": "Radius around the neck used to search for perforators (mm)"
+          },
+          "zone_radii_mm": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Zone Radii Mm",
+            "description": "Outer radius of each risk zone: [high, medium, low] in mm. Sent so the viewer legend states the bands actually used instead of hard-coding its own."
           }
         },
         "type": "object",

@@ -125,7 +125,7 @@ def _run_perforators_sync(
         logger.warning("Vessel mesh is empty for session %s — no perforators found", session_id)
         return PerforatorsResult(
             candidates=[], high_count=0, medium_count=0, low_count=0,
-            search_radius_mm=_ZONE_RADII[2],
+            search_radius_mm=_ZONE_RADII[2], zone_radii_mm=list(_ZONE_RADII),
         )
 
     risk_result = compute_perforator_risk(
@@ -181,4 +181,5 @@ def _run_perforators_sync(
         medium_count   = medium,
         low_count      = low,
         search_radius_mm = float(risk_result.zone_radii_mm[2]),
+        zone_radii_mm  = [float(r) for r in risk_result.zone_radii_mm],
     )

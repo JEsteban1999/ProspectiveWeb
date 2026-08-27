@@ -20,7 +20,10 @@ RISK_COLORS: dict[int, str] = {1: "#ef4444", 2: "#eab308", 3: "#22c55e"}
 # Clinically realistic ranges for perforators:
 #   Lenticulostriate arteries:  diameter 0.3–1.5 mm
 #   Distance threshold (high):  < 3 mm from neck
-#   Distance threshold (medium): 3–6 mm from neck
+#   Distance threshold (medium): 3–5 mm from neck
+# The authoritative radii live in routers/perforators.py (_ZONE_RADII) and now
+# travel on the result, so the UI cannot drift from them the way this comment
+# and the viewer legend both had (they said 3–6 mm while 3–5 was computed).
 
 
 class PerforatorCandidate(BaseModel):
@@ -62,4 +65,12 @@ class PerforatorsResult(BaseModel):
     search_radius_mm: float = Field(
         ...,
         description="Radius around the neck used to search for perforators (mm)",
+    )
+    zone_radii_mm: list[float] = Field(
+        default_factory=lambda: [3.0, 5.0, 8.0],
+        description=(
+            "Outer radius of each risk zone: [high, medium, low] in mm. Sent so "
+            "the viewer legend states the bands actually used instead of "
+            "hard-coding its own."
+        ),
     )

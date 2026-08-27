@@ -1,13 +1,14 @@
 /* PlanningContext — state shared across the 7-step workspace:
    session id, DICOM series, thresholds, segmentation, detection, morphometry… */
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useState } from "react";
 import type { ReactNode } from "react";
 import type {
   AneurysmCandidate,
   DeviceKind,
   MorphometryResult,
   PatientSummary,
+  PerforatorCandidate,
   SegmentResult,
   SeriesInfo,
   TreatmentDecisionResult,
@@ -65,6 +66,15 @@ interface PlanningState {
   /** Points marked around the neck rim. With three or more the neck plane is
    *  fitted to them instead of assuming it is perpendicular to the dome axis. */
   neckRim: Vec3[];
+  /** Perforator candidates from GET /perforators, kept in the store so the 3D
+   *  viewer can mark where each one is — the panel used to list distances with
+   *  no way to see which vessel any row referred to. */
+  perforators: PerforatorCandidate[];
+  /** Id of the perforator the user selected in the list, highlighted in 3D. */
+  selectedPerforator: string | null;
+  /** Outer radius of each risk zone [high, medium, low] in mm, as reported by
+   *  the backend, so the viewer legend states the bands really used. */
+  perforatorZones: [number, number, number] | null;
   /** When true, clicking an MPR slice adds a grow-from-seeds seed (place seeds on
    *  a vessel where it's clearly separable from bone — the clean path for CTA). */
   mprSeedMode: boolean;
@@ -115,6 +125,8 @@ interface PlanningState {
   setMeasurePending: (p: Vec3 | null) => void;
   setGrowSeeds: (s: Vec3[]) => void;
   setNeckRim: (s: Vec3[]) => void;
+  setPerforators: (p: PerforatorCandidate[], zones?: [number, number, number] | null) => void;
+  setSelectedPerforator: (id: string | null) => void;
   setMprSeedMode: (v: boolean) => void;
   setCropCenter: (p: Vec3 | null) => void;
   setCropRadius: (r: number) => void;
@@ -178,6 +190,16 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   const [measurePending, setMeasurePending] = useState<Vec3 | null>(null);
   const [growSeeds, setGrowSeeds] = useState<Vec3[]>([]);
   const [neckRim, setNeckRim] = useState<Vec3[]>([]);
+  const [perforators, _setPerforators] = useState<PerforatorCandidate[]>([]);
+  const [perforatorZones, setPerforatorZones] = useState<[number, number, number] | null>(null);
+  const setPerforators = useCallback(
+    (p: PerforatorCandidate[], zones?: [number, number, number] | null) => {
+      _setPerforators(p);
+      if (zones !== undefined) setPerforatorZones(zones);
+    },
+    [],
+  );
+  const [selectedPerforator, setSelectedPerforator] = useState<string | null>(null);
   const [mprSeedMode, setMprSeedMode] = useState(false);
   const [cropCenter, setCropCenter] = useState<Vec3 | null>(null);
   const [cropRadius, setCropRadius] = useState(10);
@@ -228,6 +250,9 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
     setNeckOrigin(null);
     setNeckDome(null);
     setNeckRim([]);
+    _setPerforators([]);
+    setPerforatorZones(null);
+    setSelectedPerforator(null);
     _setMeasurements([]);
     setMeasurePending(null);
     setGrowSeeds([]);
@@ -253,11 +278,11 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
         patient, caseId, caseLabel, imagingStudyId, sessionId, series, previewBand, previewMeshUrl, segmentation, candidates,
         selectedCandidate, morphometry, treatment, deviceMeshes,
         centerlineMesh, centerlineArcMm, mprWl, mprVoxel, pickMode, clSource, clTarget, neckOrigin, neckDome,
-        measurements, measurePending, growSeeds, neckRim, mprSeedMode, cropCenter, cropRadius, cropShape, cropInvert, trajEntry, trajTarget, morphoOverlay, captureViewport, dirty,
+        measurements, measurePending, growSeeds, neckRim, perforators, selectedPerforator, perforatorZones, mprSeedMode, cropCenter, cropRadius, cropShape, cropInvert, trajEntry, trajTarget, morphoOverlay, captureViewport, dirty,
         setPatient, setCase, setImagingStudyId, setSession, setSeries, setPreviewBand, setPreviewMeshUrl, setSegmentation,
         setCandidates, setSelectedCandidate, setMorphometry, setTreatment,
         setDeviceMesh, clearDeviceMeshes, setCenterlineMesh, setCenterlineArcMm, setMprWl, setMprVoxel,
-        setPickMode, setClSource, setClTarget, setNeckRim,
+        setPickMode, setClSource, setClTarget, setNeckRim, setPerforators, setSelectedPerforator,
         setNeckOrigin, setNeckDome,
         setMeasurements, setMeasurePending, setGrowSeeds, setMprSeedMode, setCropCenter, setCropRadius, setCropShape, setCropInvert, setTrajEntry, setTrajTarget, setMorphoOverlay,
         setCaptureViewport, markSaved,

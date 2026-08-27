@@ -626,6 +626,10 @@ export interface PerforatorsResult {
   medium_count: number;
   low_count: number;
   search_radius_mm: number;
+  /** Outer radius of each risk zone [high, medium, low] in mm. Reported so the
+   *  legend states the bands actually used — it used to hard-code its own and
+   *  had drifted (it said 3–6 mm for a computation that uses 3–5). */
+  zone_radii_mm: number[];
 }
 
 /* ── treatment decision ────────────────────────────────────────────────── */

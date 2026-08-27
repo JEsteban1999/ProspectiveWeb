@@ -29,6 +29,9 @@ export interface MeshLayer {
 export interface MeshMarker {
   pos: [number, number, number];
   color: Vector3;
+  /** Multiplier on the shared marker radius. Lets one marker in a set stand out
+   *  (a selected perforator) without breaking the scale everything else uses. */
+  scale?: number;
 }
 
 export interface MeshLine {
@@ -140,7 +143,7 @@ export function MeshView({
   // just dims it.
   const key = layers.map((l) => l.url).join(";") + `#${focusUrl ?? ""}`;
   const appearanceKey = layers.map((l) => `${l.url}|${l.color.join(",")}|${l.opacity ?? 1}`).join(";");
-  const markerKey = markers.map((m) => `${m.pos.join(",")}|${m.color.join(",")}`).join(";");
+  const markerKey = markers.map((m) => `${m.pos.join(",")}|${m.color.join(",")}|${m.scale ?? 1}`).join(";");
   const lineKey = lines.map((l) => `${l.a.join(",")}-${l.b.join(",")}|${l.color.join(",")}`).join(";");
   const cropKey = cropPreview
     ? `${cropPreview.center.join(",")}|${cropPreview.radius}|${cropPreview.shape}|${cropPreview.invert}`
@@ -368,7 +371,7 @@ export function MeshView({
     const rMarker = markerRadiusMm(referenceDiameterMm, sceneDiagonal);
 
     for (const m of markers) {
-      const sphere = vtkSphereSource.newInstance({ radius: rMarker, thetaResolution: 16, phiResolution: 16 });
+      const sphere = vtkSphereSource.newInstance({ radius: rMarker * (m.scale ?? 1), thetaResolution: 16, phiResolution: 16 });
       sphere.setCenter(m.pos[0], m.pos[1], m.pos[2]);
       const mapper = vtkMapper.newInstance();
       mapper.setInputConnection(sphere.getOutputPort());

@@ -64,6 +64,18 @@ const MO_NECK_COLOR: Vector3 = [0.20, 0.75, 1.00];     // sky blue — neck ring
 const MO_DOME_COLOR: Vector3 = [1.00, 0.55, 0.10];     // orange — dome-height line/apex
 const MO_MAXD_COLOR: Vector3 = [0.85, 0.20, 0.20];     // red — max-diameter span
 
+/** Backend risk colours (#ef4444 / #eab308 / #22c55e) as vtk.js 0–1 triples, so
+ *  a marker in the scene is the same colour as its row in the list. */
+const PERFORATOR_COLOR: Record<number, Vector3> = {
+  1: [0.937, 0.267, 0.267],   // alto
+  2: [0.918, 0.702, 0.031],   // medio
+  3: [0.133, 0.773, 0.369],   // bajo
+};
+/** The selected perforator is drawn larger so it is findable among the others
+ *  without changing its colour — the colour carries the severity. */
+const PERFORATOR_SELECTED_SCALE = 2.1;
+const PERFORATOR_SCALE = 1.15;
+
 /* Small 3-vector helpers for the morphometric overlay geometry. */
 type V3 = [number, number, number];
 const vadd = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -127,7 +139,7 @@ export function Viewer({ step }: { step: string }) {
     growSeeds, setGrowSeeds, cropCenter, setCropCenter,
     cropRadius, cropShape, cropInvert,
     trajEntry, trajTarget, setTrajEntry, setTrajTarget,
-    morphometry, morphoOverlay, setCaptureViewport,
+    morphometry, morphoOverlay, setCaptureViewport, perforators, selectedPerforator, perforatorZones,
     mprWl, mprVoxel, setMprWl, setMprVoxel, mprSeedMode,
   } = usePlanning();
 
@@ -261,8 +273,29 @@ export function Viewer({ step }: { step: string }) {
     if (trajEntry) out.push({ pos: trajEntry, color: TRAJ_ENTRY_COLOR });
     if (trajTarget) out.push({ pos: trajTarget, color: TRAJ_TARGET_COLOR });
     if (overlay) out.push(...overlay.markers);
+    // Where each perforator actually is. The panel listed distances with nothing
+    // to say WHICH vessel a row meant; the marker answers that, and the selected
+    // one grows so it can be picked out of a cluster.
+    for (const p of perforators) {
+      out.push({
+        pos: [p.position_mm.x, p.position_mm.y, p.position_mm.z],
+        color: PERFORATOR_COLOR[p.risk_level] ?? PERFORATOR_COLOR[3],
+        scale: p.id === selectedPerforator ? PERFORATOR_SELECTED_SCALE : PERFORATOR_SCALE,
+      });
+    }
     return out;
-  }, [clSource, clTarget, measurePending, neckOrigin, neckDome, neckRim, growSeeds, cropCenter, trajEntry, trajTarget, overlay]);
+  }, [clSource, clTarget, measurePending, neckOrigin, neckDome, neckRim, growSeeds, cropCenter, trajEntry, trajTarget, overlay, perforators, selectedPerforator]);
+
+  // Legend bands built from the radii actually used, so they cannot drift from
+  // the computation the way the hard-coded ones had.
+  const perforatorBands = useMemo(() => {
+    const [hi, mid, lo] = perforatorZones ?? [3, 5, 8];
+    return [
+      { color: "#ef4444", label: `perforante <${hi} mm` },
+      { color: "#eab308", label: `${hi}–${mid} mm` },
+      { color: "#22c55e", label: `${mid}–${lo} mm` },
+    ];
+  }, [perforatorZones]);
 
   const lines = useMemo<MeshLine[]>(() => {
     const out: MeshLine[] = measurements
@@ -497,12 +530,18 @@ export function Viewer({ step }: { step: string }) {
       )}
 
       {/* Perforator legend — only over the mesh scene (the oblique view has its
-          own control bar down there, and the volume view has no perforators). */}
-      {viewMode === "default" && meshUrl && (step === "morpho" || step === "treatment" || step === "devices") && (
+          own control bar down there, and the volume view has no perforators).
+          The bands come from the result, not from constants here: this legend
+          read «3–6mm / >6mm» for a computation that uses 3/5/8 mm. */}
+      {viewMode === "default" && meshUrl && perforators.length > 0
+        && (step === "morpho" || step === "treatment" || step === "devices") && (
         <div style={{ position: "absolute", bottom: 14, right: 16, display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: "4px 12px", maxWidth: "60%", fontSize: 10, color: "rgba(235,235,235,0.7)", pointerEvents: "none" }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: "#ef4444" }} />perforante &lt;3mm</span>
-          <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: "#eab308" }} />3–6mm</span>
-          <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: "#22c55e" }} />&gt;6mm</span>
+          {perforatorBands.map((b) => (
+            <span key={b.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ width: 9, height: 9, borderRadius: "50%", background: b.color }} />
+              {b.label}
+            </span>
+          ))}
         </div>
       )}
 

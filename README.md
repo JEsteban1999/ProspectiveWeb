@@ -63,9 +63,9 @@ approval, and a tamper-evident audit chain.
 
 | | |
 |---|---|
-| Backend tests | **423 passing** (`pytest`, 33 files) |
-| Frontend tests | **41 passing** (`vitest`, 6 files) · `tsc -b` clean · production build clean |
-| REST endpoints | **87** operations across 72 paths (22 routers), all authenticated except login/signup/logout |
+| Backend tests | **468 passing** (`pytest`, 35 files) |
+| Frontend tests | **60 passing** (`vitest`, 8 files) · `tsc -b` clean · production build clean |
+| REST endpoints | **94** operations across 78 paths (23 routers), all authenticated except login/signup/logout |
 | Feature parity with desktop | **Complete** |
 
 ---
@@ -100,10 +100,11 @@ ProspectiveWeb/
 │   ├── main.py             # FastAPI app: lifespan, CORS, static mounts, guarded routers
 │   ├── requirements.txt
 │   ├── models/    (20)     # Pydantic request/response schemas
-│   ├── routers/   (22)     # Route handlers, one file per domain
-│   ├── services/  (33)     # Qt-free business logic, shared with the desktop app
-│   ├── test_*.py  (33)     # pytest suites
+│   ├── routers/   (23)     # Route handlers, one file per domain
+│   ├── services/  (35)     # Qt-free business logic, shared with the desktop app
+│   ├── test_*.py  (35)     # pytest suites
 │   ├── data/               # PUBLIC static mount — sessions, meshes, reports
+│   ├── clip_library/       # PRIVATE: institutional clips + templates (gitignored)
 │   ├── study_files/        # PRIVATE archive: DICOM of archived studies (gitignored)
 │   ├── user_files/         # PRIVATE: signup photos and CVs (gitignored)
 │   └── secrets/            # PRIVATE: JWT signing key (gitignored)
@@ -115,7 +116,7 @@ ProspectiveWeb/
     │   ├── components/     # Design-system primitives + one panel per pipeline step
     │   ├── vtk/            # MeshView · VolumeView · MprView · ObliqueMprView · Viewer
     │   ├── store/          # planning · auth · nav · theme contexts
-    │   ├── *.test.*  (6)   # vitest + Testing Library suites
+    │   ├── *.test.*  (8)   # vitest + Testing Library suites
     │   └── styles/tokens/  # Design tokens (light/dark via [data-theme])
     └── public/media/       # Intro / loading / landing videos
 ```
@@ -137,6 +138,9 @@ Key backend services (all ported from the desktop `prospective/processing`):
 | `perforator_risk.py` | Vertex-valence anomaly → perforator candidates |
 | `treatment.py` | 8-factor CLIP vs ENDOVASCULAR scoring with literature citations |
 | `clips.py` / `coils.py` / `devices.py` | Device catalogues, recommendations, real VTK collision |
+| `clip_selection.py` | Criteria-based clip choice per case + manufacturing spec |
+| `clip_fit.py` | Poses candidates on the measured neck and checks them against the mesh |
+| `clip_library.py` | Global store of the institution's clips and manufacturing templates |
 | `stent_deployment.py` | Centerline-guided braided stent along real vessel curvature |
 | `phases.py` | PHASES 5-year rupture risk (Greving 2014) |
 | `mesh_prep.py` | 3D-print preparation + printer-bed presets |
@@ -543,7 +547,7 @@ patient imaging.
 | `POST` `DELETE` | `/api/detect/{sid}` | Candidate detection · clear candidates, morphometry and everything derived |
 | `GET` | `/api/morphometry/{sid}` | Morphometric indices with reliability flags |
 | `POST` | `/api/morphometry/{sid}/neck-plane` | Neck plane from two clicks, or fitted to points marked around the rim |
-| `GET` | `/api/perforators/{sid}` | Perforator risk candidates |
+| `GET` | `/api/perforators/{sid}` | Perforator risk candidates, with the risk-zone radii used |
 | `POST` `DELETE` | `/api/centerline/{sid}` | Medial axis · discard it and any stent deployed along it |
 | `POST` | `/api/cross-section/{sid}` | Diameter profile · stenosis |
 | `GET` | `/api/longitudinal/{sid}` | Growth history + alert if Δ > 1 mm/year |
@@ -595,7 +599,7 @@ Frontend checks:
 
 ```bash
 cd frontend
-npx vitest run          # 51 unit tests (vitest + Testing Library, jsdom)
+npx vitest run          # 60 unit tests (vitest + Testing Library, jsdom)
 npx tsc -b --noEmit     # type check
 npm run build           # production build
 ```
