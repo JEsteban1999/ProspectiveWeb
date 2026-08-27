@@ -1,6 +1,9 @@
 /* The list used to give a distance and a severity with nothing saying WHICH
-   vessel a row meant. Selecting a row has to publish that perforator so the 3D
-   scene can mark it — that hand-off is what these pin down. */
+   vessel a row meant. Clicking a row has to publish that perforator so the 3D
+   scene can mark it — that hand-off is what these pin down.
+
+   Nothing is marked until asked for: a dozen markers appearing unbidden around
+   the neck cover the geometry they sit on. */
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect, type ReactNode } from "react";
@@ -29,12 +32,12 @@ const result: PerforatorsResult = {
 };
 
 /** Renders the panel with a live session, exposing the store to assertions. */
-function withSession(seen: { perforators?: unknown[]; selected?: string | null; zones?: unknown }) {
+function withSession(seen: { perforators?: unknown[]; visible?: string[]; zones?: unknown }) {
   function Probe({ children }: { children: ReactNode }) {
-    const { sessionId, setSession, perforators: p, selectedPerforator, perforatorZones } = usePlanning();
+    const { sessionId, setSession, perforators: p, visiblePerforators, perforatorZones } = usePlanning();
     useEffect(() => { if (!sessionId) setSession("s1"); }, [sessionId, setSession]);
     seen.perforators = p;
-    seen.selected = selectedPerforator;
+    seen.visible = visiblePerforators;
     seen.zones = perforatorZones;
     return <>{children}</>;
   }
@@ -71,33 +74,61 @@ describe("handing the perforators to the 3D scene", () => {
   });
 });
 
-describe("selecting one", () => {
-  it("marks the clicked perforator", async () => {
-    const seen: { selected?: string | null } = {};
+describe("showing and hiding", () => {
+  it("shows none until the user asks", async () => {
+    // The whole point of the default: the markers sit on the neck, so putting
+    // them all on screen unbidden hides what the user came to look at.
+    const seen: { perforators?: unknown[]; visible?: string[] } = {};
     withSession(seen);
-    fireEvent.click(await screen.findByRole("button", { name: /prf-002/ }));
-    await waitFor(() => expect(seen.selected).toBe("prf-002"));
+    await waitFor(() => expect(seen.perforators).toHaveLength(2));
+    expect(seen.visible).toEqual([]);
   });
 
-  it("clicking the selected one again clears the marker", async () => {
-    const seen: { selected?: string | null } = {};
+  it("clicking a row shows that perforator", async () => {
+    const seen: { visible?: string[] } = {};
+    withSession(seen);
+    fireEvent.click(await screen.findByRole("button", { name: /prf-002/ }));
+    await waitFor(() => expect(seen.visible).toEqual(["prf-002"]));
+  });
+
+  it("clicking it again hides it", async () => {
+    const seen: { visible?: string[] } = {};
     withSession(seen);
     const row = await screen.findByRole("button", { name: /prf-001/ });
     fireEvent.click(row);
-    await waitFor(() => expect(seen.selected).toBe("prf-001"));
+    await waitFor(() => expect(seen.visible).toEqual(["prf-001"]));
     fireEvent.click(row);
-    await waitFor(() => expect(seen.selected).toBeNull());
+    await waitFor(() => expect(seen.visible).toEqual([]));
   });
 
-  it("only one perforator is selected at a time", async () => {
-    const seen: { selected?: string | null } = {};
+  it("several can be shown at once, to compare them", async () => {
+    const seen: { visible?: string[] } = {};
     withSession(seen);
     fireEvent.click(await screen.findByRole("button", { name: /prf-001/ }));
     fireEvent.click(await screen.findByRole("button", { name: /prf-002/ }));
-    await waitFor(() => expect(seen.selected).toBe("prf-002"));
+    await waitFor(() => expect(seen.visible).toEqual(["prf-001", "prf-002"]));
   });
 
-  it("exposes the selection state to assistive technology", async () => {
+  it("hiding one leaves the others on screen", async () => {
+    const seen: { visible?: string[] } = {};
+    withSession(seen);
+    fireEvent.click(await screen.findByRole("button", { name: /prf-001/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /prf-002/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /prf-001/ }));
+    await waitFor(() => expect(seen.visible).toEqual(["prf-002"]));
+  });
+
+  it("«Mostrar todas» switches every marker on, and off again", async () => {
+    const seen: { visible?: string[] } = {};
+    withSession(seen);
+    const toggle = await screen.findByRole("button", { name: /Mostrar todas/ });
+    fireEvent.click(toggle);
+    await waitFor(() => expect(seen.visible).toEqual(["prf-001", "prf-002"]));
+    fireEvent.click(await screen.findByRole("button", { name: /Ocultar todas/ }));
+    await waitFor(() => expect(seen.visible).toEqual([]));
+  });
+
+  it("exposes the shown/hidden state to assistive technology", async () => {
     withSession({});
     const row = await screen.findByRole("button", { name: /prf-001/ });
     expect(row).toHaveAttribute("aria-pressed", "false");

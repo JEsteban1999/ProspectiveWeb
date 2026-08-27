@@ -71,10 +71,10 @@ const PERFORATOR_COLOR: Record<number, Vector3> = {
   2: [0.918, 0.702, 0.031],   // medio
   3: [0.133, 0.773, 0.369],   // bajo
 };
-/** The selected perforator is drawn larger so it is findable among the others
- *  without changing its colour — the colour carries the severity. */
-const PERFORATOR_SELECTED_SCALE = 2.1;
-const PERFORATOR_SCALE = 1.15;
+/** Perforator markers are drawn only when asked for, so they can be a size that
+ *  is actually findable: nothing is competing for attention that the user did
+ *  not switch on. The colour carries the severity, never the size. */
+const PERFORATOR_SCALE = 1.8;
 
 /* Small 3-vector helpers for the morphometric overlay geometry. */
 type V3 = [number, number, number];
@@ -139,7 +139,7 @@ export function Viewer({ step }: { step: string }) {
     growSeeds, setGrowSeeds, cropCenter, setCropCenter,
     cropRadius, cropShape, cropInvert,
     trajEntry, trajTarget, setTrajEntry, setTrajTarget,
-    morphometry, morphoOverlay, setCaptureViewport, perforators, selectedPerforator, perforatorZones,
+    morphometry, morphoOverlay, setCaptureViewport, perforators, visiblePerforators, perforatorZones,
     mprWl, mprVoxel, setMprWl, setMprVoxel, mprSeedMode,
   } = usePlanning();
 
@@ -273,18 +273,19 @@ export function Viewer({ step }: { step: string }) {
     if (trajEntry) out.push({ pos: trajEntry, color: TRAJ_ENTRY_COLOR });
     if (trajTarget) out.push({ pos: trajTarget, color: TRAJ_TARGET_COLOR });
     if (overlay) out.push(...overlay.markers);
-    // Where each perforator actually is. The panel listed distances with nothing
-    // to say WHICH vessel a row meant; the marker answers that, and the selected
-    // one grows so it can be picked out of a cluster.
+    // Where each perforator actually is — but only the ones switched on in the
+    // list. The panel gave distances with nothing to say WHICH vessel a row
+    // meant; the marker answers that, one at a time, on request.
     for (const p of perforators) {
+      if (!visiblePerforators.includes(p.id)) continue;
       out.push({
         pos: [p.position_mm.x, p.position_mm.y, p.position_mm.z],
         color: PERFORATOR_COLOR[p.risk_level] ?? PERFORATOR_COLOR[3],
-        scale: p.id === selectedPerforator ? PERFORATOR_SELECTED_SCALE : PERFORATOR_SCALE,
+        scale: PERFORATOR_SCALE,
       });
     }
     return out;
-  }, [clSource, clTarget, measurePending, neckOrigin, neckDome, neckRim, growSeeds, cropCenter, trajEntry, trajTarget, overlay, perforators, selectedPerforator]);
+  }, [clSource, clTarget, measurePending, neckOrigin, neckDome, neckRim, growSeeds, cropCenter, trajEntry, trajTarget, overlay, perforators, visiblePerforators]);
 
   // Legend bands built from the radii actually used, so they cannot drift from
   // the computation the way the hard-coded ones had.
@@ -533,7 +534,7 @@ export function Viewer({ step }: { step: string }) {
           own control bar down there, and the volume view has no perforators).
           The bands come from the result, not from constants here: this legend
           read «3–6mm / >6mm» for a computation that uses 3/5/8 mm. */}
-      {viewMode === "default" && meshUrl && perforators.length > 0
+      {viewMode === "default" && meshUrl && visiblePerforators.length > 0
         && (step === "morpho" || step === "treatment" || step === "devices") && (
         <div style={{ position: "absolute", bottom: 14, right: 16, display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: "4px 12px", maxWidth: "60%", fontSize: 10, color: "rgba(235,235,235,0.7)", pointerEvents: "none" }}>
           {perforatorBands.map((b) => (
