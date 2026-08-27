@@ -5,6 +5,8 @@ Step 5 — Planificación › Planificación clips.
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from .detection import Position3D
@@ -91,4 +93,121 @@ class ClipRecommendation(BaseModel):
     reason: str = Field(..., description="One-line clinical rationale for this clip")
     suggested_placement: ClipPlacement | None = Field(
         None, description="Pre-computed suggested placement, if available"
+    )
+
+
+# ── Clip selection (criteria-based recommender) ───────────────────────────── #
+# `ClipRecommendation` above is the original one-score-plus-one-sentence answer
+# and stays for the existing endpoint. The models below carry the reasoning:
+# what was judged, what the measurement was, and what to build when nothing in
+# the inventory fits.
+
+
+class ClipCriterion(BaseModel):
+    """One judged aspect of a clip, with the measurement behind the verdict."""
+
+    key: str = Field(..., description="coverage | fenestration | reach | shape | force | geometry")
+    label: str = Field(..., description="Human label shown in the criteria matrix")
+    verdict: Literal["ok", "warn", "fail"]
+    detail: str = Field(..., description="The reason, including the number it came from")
+
+
+class ClipFitCheck(BaseModel):
+    """Result of posing the clip on the patient's measured neck plane."""
+
+    collision: bool = Field(..., description="True when the best pose still touches a neighbouring structure")
+    n_contacts: int = Field(0, description="Intersecting triangles in the best pose")
+    span_mm: float = Field(0.0, description="Width of the clip across the neck plane (mm)")
+    neck_coverage_pct: float = Field(0.0, ge=0.0, le=100.0)
+    clean_rolls: int = Field(0, description="Approach angles, of those tried, that clear neighbouring vessels")
+    n_rolls: int = Field(0, description="Approach angles tried")
+    note: str = ""
+
+
+class ClipCandidateOut(BaseModel):
+    """A clip judged against this case."""
+
+    clip_id: str
+    clip_name: str
+    manufacturer: str = ""
+    shape: str = Field("", description="Recto | Curvo | Angulado 90° | Angulado 45° | Bayoneta | Fenestrado")
+    blade_length_mm: float = 0.0
+    closing_force_g: float = 0.0
+    score: float = Field(0.0, ge=0.0, le=100.0, description="0 when any criterion failed")
+    verdict: Literal["ok", "warn", "fail"] = "ok"
+    headline: str = Field("", description="The single sentence to show under the clip name")
+    coverage_ratio: float = 0.0
+    safety_margin_mm: float = 0.0
+    criteria: list[ClipCriterion] = Field(default_factory=list)
+    fit: ClipFitCheck | None = Field(
+        None, description="Present only for the candidates verified against the mesh"
+    )
+
+
+class ManufactureSpecOut(BaseModel):
+    """The clip to have made, when the inventory cannot serve the case."""
+
+    blade_length_mm: float
+    blade_width_mm: float
+    blade_height_mm: float
+    spring_length_mm: float
+    shape: str
+    angle_deg: float
+    closing_force_g: float
+    fenestration_mm: float = Field(
+        0.0, description="Inner window diameter (mm); 0 when a plain clip is specified"
+    )
+    neck_mm: float
+    label: str = Field(..., description="One-line summary of the part to order")
+    reasons: list[str] = Field(default_factory=list, description="Why no stock clip served")
+    confidence_notes: list[str] = Field(
+        default_factory=list, description="Assumptions a machinist still has to confirm"
+    )
+    stl_url: str | None = Field(
+        None, description="Downloadable STL of the specified clip, once generated"
+    )
+
+
+class ClipCaseOut(BaseModel):
+    """The measurements the selection was made from, echoed back for the panel."""
+
+    neck_mm: float = 0.0
+    dome_height_mm: float = 0.0
+    max_diameter_mm: float = 0.0
+    ar: float = 0.0
+    dnr: float = 0.0
+    parent_artery_mm: float = 0.0
+    neck_source: str = "auto"
+    neck_tilt_deg: float = 0.0
+    region: str = ""
+    laterality: str = ""
+    aneurysm_type: str = ""
+
+
+class ClipSelectionResult(BaseModel):
+    """The complete answer for one case.
+
+    `outcome` is never "nothing found": when the inventory cannot serve, the
+    answer is a manufacturing specification.
+    """
+
+    outcome: Literal["stock", "marginal", "manufacture", "unmeasured"] = Field(
+        ...,
+        description=(
+            "'stock' = at least one clip meets every criterion; "
+            "'marginal' = usable clips exist but all carry a caveat, so a custom "
+            "alternative is offered too; 'manufacture' = nothing in the inventory "
+            "fits; 'unmeasured' = no reliable neck, so no selection is possible"
+        ),
+    )
+    summary: str
+    case: ClipCaseOut
+    recommended: list[ClipCandidateOut] = Field(default_factory=list)
+    rejected: list[ClipCandidateOut] = Field(
+        default_factory=list,
+        description="Near misses, each carrying the one criterion that disqualified it",
+    )
+    manufacture: ManufactureSpecOut | None = None
+    caveats: list[str] = Field(
+        default_factory=list, description="What limits how much weight this selection can bear"
     )

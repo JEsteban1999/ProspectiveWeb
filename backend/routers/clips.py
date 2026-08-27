@@ -3,13 +3,32 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 from models import ClipLibraryItem, ClipPlanRequest, ClipPlanResult, ClipRecommendation
-from services.clips   import catalogue_to_api, recommend_clips, recommendations_to_api
-from services.sessions import read_state, session_exists, session_subdir, mesh_url, write_state
+from models.clips import (
+    ClipCandidateOut,
+    ClipCaseOut,
+    ClipCriterion,
+    ClipFitCheck,
+    ClipSelectionResult,
+    ManufactureSpecOut,
+)
+from services.clips   import catalogue_to_api, clip_slug, recommend_clips, recommendations_to_api
+from services.clip_selection import (
+    ClipCandidate,
+    ClipCase,
+    ClipSelection,
+    ManufactureSpec,
+    derive_manufacture_spec,
+    select_clips,
+)
+from services.sessions import (
+    export_url, mesh_url, read_state, session_exists, session_subdir, write_state,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["clips"])
@@ -390,3 +409,250 @@ async def delete_custom_clip(session_id: str, clip_index: int) -> list[CustomCli
         CustomClipInfo(clip_id=cid, name=name)
         for cid, name in sorted(registry.items(), key=lambda kv: _custom_index(kv[0]) or 0)
     ]
+
+
+# ── Criteria-based clip selection ─────────────────────────────────────────── #
+# The endpoint above answers "rank the catalogue". This one answers the question
+# a surgeon actually has: does anything I own fit this aneurysm, and if not,
+# what do I have to have made?
+
+
+def _case_record(session_id: str, case_id: int | None) -> tuple[str, str, str]:
+    """Region, laterality and aneurysm type for this session's clinical case.
+
+    A live session that has never been saved has no DB row, so the case is
+    looked up by the id the workspace already holds. Failing to find it is not
+    an error: the selection then judges on geometry alone and says so in its
+    caveats, which beats guessing a location.
+    """
+    from services.database import SessionLocal
+    from services.db_models import PlanningSession, Study
+
+    db = SessionLocal()
+    try:
+        study = None
+        if case_id:
+            study = db.get(Study, int(case_id))
+        if study is None:
+            ps = (db.query(PlanningSession)
+                    .filter(PlanningSession.session_id == session_id)
+                    .order_by(PlanningSession.id.desc())
+                    .first())
+            if ps is not None and ps.study_id:
+                study = db.get(Study, ps.study_id)
+        if study is None:
+            return "", "", ""
+        return (study.region_anatomica or "", study.lateralidad or "",
+                study.tipo_aneurisma or "")
+    except Exception as exc:  # noqa: BLE001 — the selection must survive a DB hiccup
+        logger.warning("Case lookup failed for session %s: %s", session_id, exc)
+        return "", "", ""
+    finally:
+        db.close()
+
+
+def _build_case(session_id: str, case_id: int | None) -> ClipCase:
+    """Assemble everything that changes which clip fits, from what was measured."""
+    region, laterality, aneurysm_type = _case_record(session_id, case_id)
+    neck_source = read_state(session_id, "morpho.neck_source", "auto") or "auto"
+    return ClipCase(
+        neck_mm          = _load_float(session_id, "morpho.neck_mm", 0.0),
+        dome_height_mm   = _load_float(session_id, "morpho.dome_height_mm", 0.0),
+        max_diameter_mm  = _load_float(session_id, "morpho.max_diameter_mm", 0.0),
+        ar               = _load_float(session_id, "morpho.ar", 0.0),
+        dnr              = _load_float(session_id, "morpho.dnr", 0.0),
+        bf               = _load_float(session_id, "morpho.bf", 0.0),
+        parent_artery_mm = _load_float(session_id, "morpho.parent_artery_mm", 0.0),
+        neck_source      = neck_source,
+        neck_tilt_deg    = _load_float(session_id, "morpho.neck_tilt_deg", 0.0),
+        # An automatic neck on a detector cap is exactly the case where the
+        # numbers look fine and mean nothing, so trust only a marked plane.
+        neck_reliable    = True,
+        region           = region,
+        laterality       = laterality,
+        aneurysm_type    = aneurysm_type,
+    )
+
+
+def _neck_plane(session_id: str) -> tuple[tuple[float, float, float], tuple[float, float, float]] | None:
+    """The marked neck plane, or None when the neck was never placed by hand."""
+    keys = ("morpho.plane_origin_x", "morpho.plane_origin_y", "morpho.plane_origin_z",
+            "morpho.plane_normal_x", "morpho.plane_normal_y", "morpho.plane_normal_z")
+    vals = [read_state(session_id, k, "") for k in keys]
+    if not all(vals):
+        return None
+    try:
+        o = tuple(float(v) for v in vals[:3])
+        n = tuple(float(v) for v in vals[3:])
+    except ValueError:
+        return None
+    if not any(abs(c) > 1e-9 for c in n):
+        return None
+    return o, n  # type: ignore[return-value]
+
+
+def _criteria_out(cand: ClipCandidate) -> list[ClipCriterion]:
+    return [ClipCriterion(key=c.key, label=c.label, verdict=c.verdict, detail=c.detail)
+            for c in cand.criteria]
+
+
+def _candidate_out(cand: ClipCandidate) -> ClipCandidateOut:
+    v = cand.verified
+    return ClipCandidateOut(
+        clip_id          = clip_slug(cand.clip.name),
+        clip_name        = cand.clip.name,
+        manufacturer     = cand.clip.manufacturer,
+        shape            = cand.clip.shape.value,
+        blade_length_mm  = cand.clip.blade_length_mm,
+        closing_force_g  = cand.clip.closing_force_g,
+        score            = cand.score,
+        verdict          = cand.verdict,
+        headline         = cand.headline,
+        coverage_ratio   = cand.coverage_ratio,
+        safety_margin_mm = cand.safety_margin_mm,
+        criteria         = _criteria_out(cand),
+        fit              = None if v is None else ClipFitCheck(
+            collision=v.collision, n_contacts=v.n_contacts, span_mm=v.span_mm,
+            neck_coverage_pct=v.neck_coverage_pct, clean_rolls=v.clean_rolls,
+            n_rolls=v.n_rolls, note=v.note,
+        ),
+    )
+
+
+def _spec_out(spec: ManufactureSpec, stl_url: str | None = None) -> ManufactureSpecOut:
+    return ManufactureSpecOut(
+        blade_length_mm  = spec.blade_length_mm,
+        blade_width_mm   = spec.blade_width_mm,
+        blade_height_mm  = spec.blade_height_mm,
+        spring_length_mm = spec.spring_length_mm,
+        shape            = spec.shape.value,
+        angle_deg        = spec.angle_deg,
+        closing_force_g  = spec.closing_force_g,
+        fenestration_mm  = spec.fenestration_mm,
+        neck_mm          = spec.neck_mm,
+        label            = spec.label,
+        reasons          = spec.reasons,
+        confidence_notes = spec.confidence_notes,
+        stl_url          = stl_url,
+    )
+
+
+def _run_selection(session_id: str, case_id: int | None, verify: bool) -> ClipSelection:
+    """Analytic pass over the catalogue, then geometry on the survivors."""
+    case = _build_case(session_id, case_id)
+    selection = select_clips(case)
+    if not verify or not selection.recommended:
+        return selection
+
+    plane = _neck_plane(session_id)
+    if plane is None:
+        return selection
+    mesh_path = session_subdir(session_id, "meshes") / "vessel_tree.vtp"
+    if not mesh_path.exists():
+        return selection
+    try:
+        from services.clip_fit import verify_all
+        from services.segmentation import read_vtp
+        vessel = read_vtp(mesh_path)
+        verify_all(selection.recommended, case, vessel, plane[0], plane[1])
+        # Geometry can demote a candidate, so the order has to be re-established.
+        selection.recommended.sort(key=lambda c: -c.score)
+    except Exception as exc:  # noqa: BLE001 — verification is a bonus, not a gate
+        logger.warning("Clip geometry verification failed — session=%s: %s", session_id, exc)
+    return selection
+
+
+@router.get(
+    "/clips/selection/{session_id}",
+    response_model=ClipSelectionResult,
+    summary="Which clip fits this aneurysm, and why — or what to have made",
+    description=(
+        "Judges every clip in the catalogue against this session's morphometry and "
+        "the clinical case, criterion by criterion (blade vs neck, closing force, "
+        "shape vs location, fenestration calibre), then poses the best candidates on "
+        "the measured neck plane and checks them against the patient's own mesh.\n\n"
+        "Never returns an empty list: when nothing in the inventory fits, `outcome` "
+        "is `manufacture` and `manufacture` carries the specification to send out — "
+        "dimensions, shape, closing force and window calibre.\n\n"
+        "Geometric verification needs a hand-marked neck plane and a segmented mesh; "
+        "without them the analytic criteria still apply and `fit` stays null."
+    ),
+)
+async def clip_selection(
+    session_id: str,
+    case_id: int | None = Query(None, description="Clinical case, when the session is not yet saved"),
+    verify: bool = Query(True, description="Run the geometric check on the top candidates"),
+) -> ClipSelectionResult:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    selection = _run_selection(session_id, case_id, verify)
+    c = selection.case
+    return ClipSelectionResult(
+        outcome     = selection.outcome,
+        summary     = selection.summary,
+        case        = ClipCaseOut(
+            neck_mm=c.neck_mm, dome_height_mm=c.dome_height_mm,
+            max_diameter_mm=c.max_diameter_mm, ar=c.ar, dnr=c.dnr,
+            parent_artery_mm=c.parent_artery_mm, neck_source=c.neck_source,
+            neck_tilt_deg=c.neck_tilt_deg, region=c.region,
+            laterality=c.laterality, aneurysm_type=c.aneurysm_type,
+        ),
+        recommended = [_candidate_out(x) for x in selection.recommended],
+        rejected    = [_candidate_out(x) for x in selection.rejected],
+        manufacture = None if selection.manufacture is None else _spec_out(selection.manufacture),
+        caveats     = selection.caveats,
+    )
+
+
+@router.post(
+    "/clips/manufacture/{session_id}",
+    response_model=ManufactureSpecOut,
+    summary="Generate the STL of the clip this case would need",
+    description=(
+        "Builds the specified clip as a solid and writes it to the session's exports "
+        "as a binary STL, ready to send to a workshop or a printer.\n\n"
+        "The geometry is an approximation of a machined clip: correct blade length, "
+        "width, height, shape class and window calibre, but no fillets and no real "
+        "spring. It is a specification to manufacture FROM, not a finished part."
+    ),
+)
+async def clip_manufacture_spec(
+    session_id: str,
+    case_id: int | None = Query(None, description="Clinical case, when the session is not yet saved"),
+) -> ManufactureSpecOut:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    case = _build_case(session_id, case_id)
+    if case.neck_mm <= 0:
+        raise HTTPException(
+            status_code=409,
+            detail="No hay un cuello medido: marca el plano del cuello en Morfometría "
+                   "antes de especificar un clip a medida.",
+        )
+    selection = select_clips(case)
+    spec = selection.manufacture or derive_manufacture_spec(case, [])
+
+    try:
+        from services.devices import make_clip_shaped, write_stl
+        poly = make_clip_shaped(
+            blade_length_mm = spec.blade_length_mm,
+            blade_width_mm  = spec.blade_width_mm,
+            blade_height_mm = spec.blade_height_mm,
+            shape           = spec.shape.name,
+            angle_deg       = spec.angle_deg,
+            fenestration_mm = spec.fenestration_mm,
+        )
+        exports = session_subdir(session_id, "exports")
+        name = "clip_a_medida.stl"
+        write_stl(poly, exports / name)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Custom clip STL generation failed")
+        raise HTTPException(status_code=500, detail=f"No se pudo generar el STL del clip: {exc}")
+
+    # Cache-busted: the filename is fixed per session, so a second spec would
+    # otherwise be served from the browser's copy of the first.
+    stamp = int(time.time() * 1000)
+    logger.info("Custom clip spec generated — session=%s %s", session_id, spec.label)
+    return _spec_out(spec, stl_url=f"{export_url(session_id, name)}?v={stamp}")

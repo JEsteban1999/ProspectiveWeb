@@ -51,6 +51,12 @@ class ClipSpec:
     spring_length_mm: float
     closing_force_g:  float
     manufacturer:     str
+    # Inner diameter of the window on a fenestrated clip, in mm. 0.0 means "not
+    # declared" and is NOT the same as "no window": the catalogue below was
+    # transcribed without these figures, and inventing them would let the
+    # selector approve a clip that strangles the branch it was chosen to spare.
+    # `clip_selection` treats 0.0 on a fenestrated clip as "verify by hand".
+    fenestration_mm:  float = 0.0
 
     @property
     def display_label(self) -> str:
@@ -313,6 +319,10 @@ def _slug(name: str) -> str:
     s = re.sub(r"\s+", "-", s.strip())
     s = re.sub(r"-+", "-", s)
     return s
+
+
+#: Public alias — `clip_selection` and the routers need to slug clip names too.
+clip_slug = _slug
 
 
 def spec_to_api(c: ClipSpec) -> dict:

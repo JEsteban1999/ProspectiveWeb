@@ -218,3 +218,166 @@ def perpendicular(axis: Vec3) -> Vec3:
     p = np.cross(a, ref)
     p /= (np.linalg.norm(p) or 1.0)
     return (float(p[0]), float(p[1]), float(p[2]))
+
+
+# ── Shape-aware clip geometry ─────────────────────────────────────────────── #
+# `make_clip` above is a fixed-proportion proxy: every clip comes out 0.5 mm wide
+# with a straight blade, whatever the catalogue says. That is fine for showing
+# "a clip is here", but it cannot answer "does THIS clip fit" — a bayonet and a
+# straight clip of the same blade length occupy completely different space, and
+# the collision test is only meaningful on the geometry that will actually be
+# implanted. The builder below takes the real specification.
+#
+# Local frame matches `make_clip` and `pose_transform`: blade length along +X,
+# jaw opening along +Y, blade depth along +Z (so +Z is the blade normal).
+
+def _blade_path(shape: str, length: float, angle_deg: float, n: int = 14) -> list[tuple[float, float]]:
+    """Centreline of one blade in the XZ plane, as (x, z) samples.
+
+    Every shape is expressed as a path rather than as a special case, so the
+    sweep below does not care which clip it is building.
+    """
+    x0, x1 = -length / 2.0, length / 2.0
+    pts: list[tuple[float, float]] = []
+
+    if shape == "CURVED":
+        # A shallow arc bowing out of the jaw plane; the bow depth is a fraction
+        # of the blade so long clips curve more than short ones, as real ones do.
+        bow = length * 0.18
+        for i in range(n + 1):
+            t = i / n
+            x = x0 + t * length
+            pts.append((x, bow * math.sin(math.pi * t)))
+        return pts
+
+    if shape in ("ANGLED", "ANGLED_45"):
+        # Straight proximal half, then a bend of `angle_deg` away from the axis.
+        bend_at = 0.45
+        ang = math.radians(angle_deg or (90.0 if shape == "ANGLED" else 45.0))
+        knee_x = x0 + bend_at * length
+        seg = length * (1.0 - bend_at)
+        half = max(2, n // 2)
+        for i in range(half + 1):
+            pts.append((x0 + (knee_x - x0) * i / half, 0.0))
+        for i in range(1, half + 1):
+            d = seg * i / half
+            pts.append((knee_x + d * math.cos(ang), d * math.sin(ang)))
+        return pts
+
+    if shape == "BAYONET":
+        # Two opposite jogs: the distal blade runs parallel to the proximal one
+        # but offset, which is what keeps the shaft out of the line of sight.
+        jog = length * 0.22
+        keys = [(x0, 0.0), (x0 + 0.32 * length, 0.0),
+                (x0 + 0.50 * length, jog), (x0 + 0.68 * length, jog), (x1, jog)]
+        for i in range(len(keys) - 1):
+            (ax, az), (bx, bz) = keys[i], keys[i + 1]
+            steps = max(2, n // (len(keys) - 1))
+            for k in range(steps):
+                t = k / steps
+                pts.append((ax + (bx - ax) * t, az + (bz - az) * t))
+        pts.append(keys[-1])
+        return pts
+
+    # STRAIGHT and FENESTRATED share a straight blade; the window is added
+    # separately at the hinge end.
+    for i in range(n + 1):
+        pts.append((x0 + length * i / n, 0.0))
+    return pts
+
+
+def _sweep_blade(path: list[tuple[float, float]], width: float, height: float,
+                 y_offset: float) -> list[vtk.vtkPolyData]:
+    """Sweep a rectangular section along `path`, offset to one side of the jaw."""
+    out: list[vtk.vtkPolyData] = []
+    for i in range(len(path) - 1):
+        (ax, az), (bx, bz) = path[i], path[i + 1]
+        dx, dz = bx - ax, bz - az
+        seg = math.hypot(dx, dz)
+        if seg <= 1e-6:
+            continue
+        cube = vtk.vtkCubeSource()
+        # Slight overlap keeps consecutive segments watertight enough for the
+        # collision filter, which counts intersecting triangles.
+        cube.SetXLength(seg * 1.15)
+        cube.SetYLength(width)
+        cube.SetZLength(height)
+        cube.SetCenter(0.0, 0.0, 0.0)
+        cube.Update()
+        t = vtk.vtkTransform()
+        t.Translate((ax + bx) / 2.0, y_offset, (az + bz) / 2.0)
+        t.RotateY(-math.degrees(math.atan2(dz, dx)))
+        out.append(apply_transform(cube.GetOutput(), t))
+    return out
+
+
+def make_clip_shaped(
+    blade_length_mm: float,
+    blade_width_mm: float = 0.5,
+    blade_height_mm: float = 1.4,
+    shape: str = "STRAIGHT",
+    angle_deg: float = 0.0,
+    fenestration_mm: float = 0.0,
+    jaw_mm: float = 1.2,
+) -> vtk.vtkPolyData:
+    """Build a clip from its real specification.
+
+    `shape` is a `ClipShape` member NAME (STRAIGHT, CURVED, ANGLED, ANGLED_45,
+    BAYONET, FENESTRATED) so this module keeps no dependency on the catalogue.
+
+    The result is an approximation — a machined clip has fillets and a real
+    spring — but it is the right size, the right shape class and the right
+    window calibre, which is what the collision and span tests read.
+    """
+    length = max(1.0, float(blade_length_mm))
+    width = max(0.15, float(blade_width_mm))
+    height = max(0.3, float(blade_height_mm))
+    jaw = max(0.2, float(jaw_mm))
+
+    path = _blade_path(shape, length, angle_deg)
+    parts: list[vtk.vtkPolyData] = []
+    for sign in (+1.0, -1.0):
+        parts.extend(_sweep_blade(path, width, height, sign * (jaw / 2.0 + width / 2.0)))
+
+    # Hinge bar closing the proximal end.
+    hinge = vtk.vtkCubeSource()
+    hinge.SetXLength(width)
+    hinge.SetYLength(jaw + width * 2.0)
+    hinge.SetZLength(height)
+    hinge.SetCenter(-length / 2.0, 0.0, 0.0)
+    hinge.Update()
+    parts.append(hinge.GetOutput())
+
+    # The window of a fenestrated clip: a ring just distal to the hinge, lying in
+    # the plane of the jaw, sized to the vessel it has to spare.
+    if fenestration_mm > 0.0:
+        r = float(fenestration_mm) / 2.0
+        circle = vtk.vtkRegularPolygonSource()
+        circle.SetNumberOfSides(24)
+        circle.SetRadius(r)
+        circle.SetCenter(0.0, 0.0, 0.0)
+        circle.SetNormal(0.0, 0.0, 1.0)
+        circle.GeneratePolygonOff()          # outline only — the tube gives it body
+        circle.Update()
+        tube = vtk.vtkTubeFilter()
+        tube.SetInputData(circle.GetOutput())
+        tube.SetRadius(max(0.12, width * 0.6))
+        tube.SetNumberOfSides(10)
+        tube.CappingOn()
+        tube.Update()
+        t = vtk.vtkTransform()
+        t.Translate(-length / 2.0 + r + width, 0.0, 0.0)
+        t.RotateX(90.0)                       # ring opening along the jaw axis
+        parts.append(apply_transform(tube.GetOutput(), t))
+
+    return combine(parts)
+
+
+def write_stl(poly: vtk.vtkPolyData, path) -> None:
+    """Write a polydata to a binary STL (for sending a clip out to manufacture)."""
+    tri = _triangulate(poly)
+    w = vtk.vtkSTLWriter()
+    w.SetFileName(str(path))
+    w.SetFileTypeToBinary()
+    w.SetInputData(tri)
+    w.Write()
