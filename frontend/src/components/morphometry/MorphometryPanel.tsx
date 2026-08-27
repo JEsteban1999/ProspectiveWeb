@@ -83,6 +83,12 @@ export function MorphometryPanel({ onNext }: { onNext: () => void }) {
   }, [tab, sessionId, longi]);
 
   const m = morphometry;
+  // The two measurement groups fail independently on the backend, so they are
+  // reported independently here. `volume_valid` is new; sessions measured before
+  // it existed only carry `reliable`, so fall back to that rather than showing
+  // nulled zeros as if they were measurements.
+  const volOk = m ? (m.volume_valid ?? m.reliable) : false;
+  const neckOk = m ? (m.neck_valid ?? m.reliable) : false;
 
   return (
     <div className="fade-rise">
@@ -203,40 +209,49 @@ export function MorphometryPanel({ onNext }: { onNext: () => void }) {
           <div style={{ marginTop: 12 }}>
             {tab === "Métricas" && (
               <div>
+                {/* Dos grupos, dos banderas. El backend anula el grupo de volumen y
+                    el de cuello por separado, así que la tabla tiene que hacer lo
+                    mismo: con una sola bandera combinada, un cuello perfectamente
+                    medido se ocultaba en cuanto fallaba el volumen — mientras el
+                    visor, que no consulta la bandera, seguía anotándolo en 3D. */}
                 <Metric label="Ø máximo" value={m.max_diameter_mm.toFixed(1)} unit=" mm" />
-                <Metric label="Cuello" value={m.reliable ? m.neck_mm.toFixed(1) : "—"} unit={m.reliable ? " mm" : ""} />
-                <Metric label="Altura de domo" value={m.reliable ? m.dome_height_mm.toFixed(1) : "—"} unit={m.reliable ? " mm" : ""} />
-                <Metric label="Volumen" value={m.reliable ? m.volume_mm3.toFixed(1) : "—"} unit={m.reliable ? " mm³" : ""} />
+                <Metric label="Cuello" value={neckOk ? m.neck_mm.toFixed(1) : "—"} unit={neckOk ? " mm" : ""} />
+                <Metric label="Altura de domo" value={neckOk ? m.dome_height_mm.toFixed(1) : "—"} unit={neckOk ? " mm" : ""} />
+                <Metric label="Volumen" value={volOk ? m.volume_mm3.toFixed(1) : "—"} unit={volOk ? " mm³" : ""} />
                 <Metric label="Área superficie" value={m.surface_area_mm2.toFixed(1)} unit=" mm²" />
                 <Metric
                   label="DNR"
-                  value={m.reliable ? m.dnr.toFixed(2) : "—"}
-                  badge={!m.reliable ? ["sin medir", "outline"] : m.dnr > 2.0 ? ["Alto", "destructive"] : m.dnr > 1.5 ? ["Mod", "warning"] : ["OK", "success"]}
+                  value={neckOk ? m.dnr.toFixed(2) : "—"}
+                  badge={!neckOk ? ["sin medir", "outline"] : m.dnr > 2.0 ? ["Alto", "destructive"] : m.dnr > 1.5 ? ["Mod", "warning"] : ["OK", "success"]}
                 />
                 <Metric
                   label="AR"
-                  value={m.reliable ? m.ar.toFixed(2) : "—"}
-                  badge={!m.reliable ? ["sin medir", "outline"] : m.ar > 1.6 ? ["Alto", "destructive"] : m.ar > 1.2 ? ["Mod", "warning"] : ["OK", "success"]}
+                  value={neckOk ? m.ar.toFixed(2) : "—"}
+                  badge={!neckOk ? ["sin medir", "outline"] : m.ar > 1.6 ? ["Alto", "destructive"] : m.ar > 1.2 ? ["Mod", "warning"] : ["OK", "success"]}
                 />
                 <Metric
                   label="BF"
-                  value={m.reliable ? m.bf.toFixed(2) : "—"}
-                  badge={!m.reliable ? ["sin medir", "outline"] : m.bf > 1.5 ? ["Cuello ancho", "warning"] : ["OK", "success"]}
+                  value={neckOk ? m.bf.toFixed(2) : "—"}
+                  badge={!neckOk ? ["sin medir", "outline"] : m.bf > 1.5 ? ["Cuello ancho", "warning"] : ["OK", "success"]}
                 />
               </div>
             )}
             {tab === "Índices" && (
               <div>
-                <Metric label="UI · Undulación" value={m.reliable ? m.ui.toFixed(2) : "—"} badge={!m.reliable ? ["sin medir", "outline"] : m.ui > 0.15 ? ["Irregular", "warning"] : ["Bajo", "success"]} />
-                <Metric label="EI · Elipticidad" value={m.reliable ? m.ei.toFixed(2) : "—"} badge={!m.reliable ? ["sin medir", "outline"] : m.ei > 0.35 ? ["Alto", "warning"] : ["Bajo", "success"]} />
-                <Metric label="NSI · No-esfericidad" value={m.reliable ? m.nsi.toFixed(2) : "—"} />
+                {/* Todo este grupo se calcula sobre el volumen encerrado, así que
+                    cuelga de volume_valid. Compacidad y Ø equivalente NO estaban
+                    filtrados y mostraban el 0,00 con el que se anulan como si
+                    fuera una medida. */}
+                <Metric label="UI · Undulación" value={volOk ? m.ui.toFixed(2) : "—"} badge={!volOk ? ["sin medir", "outline"] : m.ui > 0.15 ? ["Irregular", "warning"] : ["Bajo", "success"]} />
+                <Metric label="EI · Elipticidad" value={volOk ? m.ei.toFixed(2) : "—"} badge={!volOk ? ["sin medir", "outline"] : m.ei > 0.35 ? ["Alto", "warning"] : ["Bajo", "success"]} />
+                <Metric label="NSI · No-esfericidad" value={volOk ? m.nsi.toFixed(2) : "—"} badge={!volOk ? ["sin medir", "outline"] : undefined} />
                 <Metric
                   label="SR · Size Ratio"
                   value={m.sr > 0 ? m.sr.toFixed(2) : "—"}
                   badge={m.sr > 3.0 ? ["Alto", "destructive"] : undefined}
                 />
-                <Metric label="Compacidad (Wadell)" value={m.compactness.toFixed(2)} />
-                <Metric label="Ø esfera equivalente" value={m.eq_sphere_diam_mm.toFixed(1)} unit=" mm" />
+                <Metric label="Compacidad (Wadell)" value={volOk ? m.compactness.toFixed(2) : "—"} badge={!volOk ? ["sin medir", "outline"] : undefined} />
+                <Metric label="Ø esfera equivalente" value={volOk ? m.eq_sphere_diam_mm.toFixed(1) : "—"} unit={volOk ? " mm" : ""} />
               </div>
             )}
             {tab === "PHASES" && (

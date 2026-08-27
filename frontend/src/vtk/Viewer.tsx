@@ -510,10 +510,20 @@ export function Viewer({ step }: { step: string }) {
       {/* Morphometric overlay legend — values annotated in the 3D scene. */}
       {viewMode === "default" && meshVisible && overlay && morphometry && (
         <div style={{ position: "absolute", bottom: 40, left: 16, display: "flex", flexDirection: "column", gap: 3, background: "rgba(20,24,28,0.72)", border: "1px solid rgba(120,140,160,0.4)", borderRadius: 8, padding: "8px 11px", pointerEvents: "none", fontSize: 11, fontFamily: "var(--font-mono)", color: "#DCE6EE" }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: "rgb(51,191,255)" }} />Ø cuello {morphometry.neck_mm.toFixed(1)} mm</span>
-          <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: "rgb(255,140,26)" }} />H domo {morphometry.dome_height_mm.toFixed(1)} mm</span>
+          {/* El cuello y lo que cuelga de él se anulan cuando no se pudo medir.
+              Esta leyenda los imprimía igualmente, así que anotaba «Ø cuello
+              0.0 mm» sobre la escena — o, peor, mostraba un cuello válido que la
+              tabla daba por no medido. Ahora ambas leen la misma bandera. */}
+          {morphometry.neck_valid !== false && (
+            <>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: "rgb(51,191,255)" }} />Ø cuello {morphometry.neck_mm.toFixed(1)} mm</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: "rgb(255,140,26)" }} />H domo {morphometry.dome_height_mm.toFixed(1)} mm</span>
+            </>
+          )}
           <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: "rgb(217,51,51)" }} />Ø máx {morphometry.max_diameter_mm.toFixed(1)} mm</span>
-          <span style={{ color: "rgba(200,210,220,0.75)" }}>AR {morphometry.ar.toFixed(2)} · DNR {morphometry.dnr.toFixed(2)}</span>
+          {morphometry.neck_valid !== false && (
+            <span style={{ color: "rgba(200,210,220,0.75)" }}>AR {morphometry.ar.toFixed(2)} · DNR {morphometry.dnr.toFixed(2)}</span>
+          )}
         </div>
       )}
 

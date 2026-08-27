@@ -7538,6 +7538,12 @@
             "description": "Angle between the neck plane and the neck→dome axis, in degrees. Only meaningful with neck_source='rim'. Near 0° the single-point method would have produced the same plane; large values are the oblique necks it gets wrong.",
             "default": 0.0
           },
+          "volume_valid": {
+            "type": "boolean",
+            "title": "Volume Valid",
+            "description": "False when the sac mesh was open or its volume implausible, in which case volume, equivalent sphere, compactness, UI, EI and NSI were nulled. Independent of `neck_valid`: an open cap can still give a perfectly good neck, and the UI must not hide one because the other failed.",
+            "default": true
+          },
           "neck_valid": {
             "type": "boolean",
             "title": "Neck Valid",

@@ -64,7 +64,7 @@ approval, and a tamper-evident audit chain.
 | | |
 |---|---|
 | Backend tests | **468 passing** (`pytest`, 35 files) |
-| Frontend tests | **63 passing** (`vitest`, 8 files) · `tsc -b` clean · production build clean |
+| Frontend tests | **68 passing** (`vitest`, 9 files) · `tsc -b` clean · production build clean |
 | REST endpoints | **94** operations across 78 paths (23 routers), all authenticated except login/signup/logout |
 | Feature parity with desktop | **Complete** |
 
@@ -599,7 +599,7 @@ Frontend checks:
 
 ```bash
 cd frontend
-npx vitest run          # 63 unit tests (vitest + Testing Library, jsdom)
+npx vitest run          # 68 unit tests (vitest + Testing Library, jsdom)
 npx tsc -b --noEmit     # type check
 npm run build           # production build
 ```

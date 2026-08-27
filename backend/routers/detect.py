@@ -641,7 +641,13 @@ def _run_morphometry_sync(
     if not mr.reliable and mr.reliability_note:
         warning = mr.reliability_note
 
-    # ── Neck validity check ───────────────────────────────────────────── #
+    # ── Per-group validity ────────────────────────────────────────────── #
+    # analyze() nulls the volume group and the neck group INDEPENDENTLY, so both
+    # have to travel independently too. Sending only the combined `reliable`
+    # made the panel hide a perfectly good neck measurement whenever the volume
+    # group had failed — while the 3D legend, which does not consult the flag,
+    # went on annotating that same neck in the scene.
+    volume_valid = mr.volume_mm3 > 0.0
     neck_valid = mr.neck_diameter_mm >= 1.0
     if not neck_valid and warning is None:
         warning = (
@@ -689,6 +695,7 @@ def _run_morphometry_sync(
         reliable          = mr.reliable,
         neck_source       = neck_source,
         neck_tilt_deg     = round(neck_tilt_deg, 2),
+        volume_valid      = volume_valid,
         neck_valid        = neck_valid,
         warning           = warning,
         centroid          = Position3D(

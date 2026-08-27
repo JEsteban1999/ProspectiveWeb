@@ -590,6 +590,10 @@ export interface MorphometryResult {
    *  meaningful for neck_source "rim": near 0° the two-click method would have
    *  landed in the same place. */
   neck_tilt_deg: number;
+  /** False when the sac mesh was open or its volume implausible: volume,
+   *  equivalent sphere, compactness, UI, EI and NSI were nulled. Independent
+   *  of `neck_valid` — an open cap can still yield a good neck. */
+  volume_valid: boolean;
   neck_valid: boolean;
   warning: string | null;
   centroid: Position3D | null;

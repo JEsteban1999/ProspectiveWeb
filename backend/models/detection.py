@@ -182,6 +182,16 @@ class MorphometryResult(BaseModel):
             "oblique necks it gets wrong."
         ),
     )
+    volume_valid: bool = Field(
+        True,
+        description=(
+            "False when the sac mesh was open or its volume implausible, in which "
+            "case volume, equivalent sphere, compactness, UI, EI and NSI were "
+            "nulled. Independent of `neck_valid`: an open cap can still give a "
+            "perfectly good neck, and the UI must not hide one because the other "
+            "failed."
+        ),
+    )
     neck_valid: bool = Field(
         ...,
         description=(
