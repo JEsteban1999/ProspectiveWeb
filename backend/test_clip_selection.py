@@ -21,6 +21,11 @@ _tmp = tempfile.mkdtemp(prefix="prospective_clipsel_")
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{_tmp}/test.db")
 os.environ.setdefault("JWT_SECRET", "test-secret-key-do-not-use-in-production")
 
+# The NAVARRO™ family joins the catalogue straight off disk, so what this suite
+# sees would otherwise depend on what happens to be installed on the machine.
+# Point it at an empty directory: these tests are about the built-in behaviour.
+os.environ["NAVARRO_ROOT"] = os.path.join(_tmp, "no-navarro")
+
 import vtk
 from fastapi.testclient import TestClient
 

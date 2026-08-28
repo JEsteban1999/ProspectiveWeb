@@ -746,6 +746,15 @@ export interface ClipCandidateOut {
   headline: string;
   coverage_ratio: number;
   safety_margin_mm: number;
+  /** 'made_to_order' is a real design manufactured for the case — it competes
+   *  like stock, but is not on a shelf today. */
+  availability: "stock" | "made_to_order" | "template";
+  /** True bend angle; `shape` is only a coarse class. */
+  bend_angle_deg: number;
+  closing_force_min_g: number;
+  closing_force_max_g: number;
+  /** True when the force is a design band, not a characterised figure. */
+  force_provisional: boolean;
   criteria: ClipCriterion[];
   /** Only present for the candidates checked against the mesh. */
   fit: ClipFitCheck | null;
@@ -781,6 +790,18 @@ export interface ClipCaseOut {
   aneurysm_type: string;
 }
 
+/** A made-to-order clip sized exactly to this case. */
+export interface CustomJawOut {
+  series: string;
+  angle_deg: number;
+  jaw_mm: number;
+  nearest_drawn_mm: number;
+  label: string;
+  reason: string;
+  mesh_url: string | null;
+  stl_url: string | null;
+}
+
 export type ClipOutcome = "stock" | "marginal" | "manufacture" | "unmeasured";
 
 export interface ClipSelectionResult {
@@ -790,6 +811,7 @@ export interface ClipSelectionResult {
   recommended: ClipCandidateOut[];
   rejected: ClipCandidateOut[];
   manufacture: ManufactureSpecOut | null;
+  custom_jaw: CustomJawOut | null;
   caveats: string[];
 }
 

@@ -138,6 +138,27 @@ class ClipCandidateOut(BaseModel):
     headline: str = Field("", description="The single sentence to show under the clip name")
     coverage_ratio: float = 0.0
     safety_margin_mm: float = 0.0
+    availability: Literal["stock", "made_to_order", "template"] = Field(
+        "stock",
+        description=(
+            "'made_to_order' is a real design manufactured for the case — it "
+            "competes like stock, but is not on a shelf today."
+        ),
+    )
+    bend_angle_deg: float = Field(
+        0.0,
+        description=(
+            "True bend angle. `shape` is a coarse class, so a family that bends "
+            "in 15° steps would otherwise lose the angle that gets machined."
+        ),
+    )
+    closing_force_min_g: float = 0.0
+    closing_force_max_g: float = Field(
+        0.0, description="Equal to the minimum when the force is a single value"
+    )
+    force_provisional: bool = Field(
+        False, description="True when the force is a design band, not a characterised figure"
+    )
     criteria: list[ClipCriterion] = Field(default_factory=list)
     fit: ClipFitCheck | None = Field(
         None, description="Present only for the candidates verified against the mesh"
@@ -184,6 +205,21 @@ class ClipCaseOut(BaseModel):
     aneurysm_type: str = ""
 
 
+class CustomJawOut(BaseModel):
+    """A made-to-order clip sized exactly to this case."""
+
+    series: str
+    angle_deg: float
+    jaw_mm: float = Field(..., description="The jaw this neck wants (mm of useful grip)")
+    nearest_drawn_mm: float = Field(
+        ..., description="Closest jaw length that exists as drawn CAD"
+    )
+    label: str
+    reason: str
+    mesh_url: str | None = Field(None, description="Preview mesh (.vtp), once generated")
+    stl_url: str | None = Field(None, description="STL to send out, once generated")
+
+
 class ClipSelectionResult(BaseModel):
     """The complete answer for one case.
 
@@ -208,6 +244,13 @@ class ClipSelectionResult(BaseModel):
         description="Near misses, each carrying the one criterion that disqualified it",
     )
     manufacture: ManufactureSpecOut | None = None
+    custom_jaw: CustomJawOut | None = Field(
+        None,
+        description=(
+            "Offered when the drawn jaw sizes only bracket what the case needs and "
+            "the family is manufactured per case, so an exact jaw is a real option."
+        ),
+    )
     caveats: list[str] = Field(
         default_factory=list, description="What limits how much weight this selection can bear"
     )

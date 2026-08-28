@@ -23,6 +23,7 @@ import type {
   CrossSectionRequest,
   CrossSectionResult,
   CustomClipInfo,
+  CustomJawOut,
   DeviceClearResult,
   DeviceKind,
   ExportRequest,
@@ -349,8 +350,13 @@ export const api = {
       `/api/clips/manufacture/${sessionId}` + (caseId ? `?case_id=${caseId}` : ""),
       {},
     ),
-  listClipLibrary: (kind?: "stock" | "template") =>
+  listClipLibrary: (kind?: "stock" | "made_to_order" | "template") =>
     get<LibraryClip[]>("/api/clip-library" + (kind ? `?kind=${kind}` : "")),
+  /** Build a NAVARRO™ clip at any jaw length — drawn size or stretched. */
+  buildNavarroClip: (sessionId: string, jawMm: number, angleDeg = 0) =>
+    post<CustomJawOut>(
+      `/api/clips/navarro/${sessionId}?jaw_mm=${jawMm}&angle_deg=${angleDeg}`, {},
+    ),
   /** Measure a mesh before importing, to pre-fill the form. */
   measureClipMesh: (file: File) => {
     const fd = new FormData();

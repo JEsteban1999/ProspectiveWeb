@@ -57,6 +57,27 @@ class ClipSpec:
     # selector approve a clip that strangles the branch it was chosen to spare.
     # `clip_selection` treats 0.0 on a fenestrated clip as "verify by hand".
     fenestration_mm:  float = 0.0
+    # Upper end of the closing-force band, when the part has a band rather than a
+    # figure. 0.0 means `closing_force_g` is a single characterised value.
+    closing_force_max_g: float = 0.0
+    # True when the force is a design target the manufacturer has not yet
+    # characterised. The selector must not report a precision the part lacks.
+    force_provisional: bool = False
+    # "stock"         — held in inventory, can be picked up today
+    # "made_to_order" — a real design, manufactured for the case
+    # "template"      — a design not yet manufacturable
+    availability: str = "stock"
+    # True bend angle in degrees. `shape` is the selector's coarse class; a
+    # family that bends in 15° steps would otherwise lose that detail, and it is
+    # the real angle that gets machined.
+    bend_angle_deg: float = 0.0
+
+    @property
+    def force_band(self) -> tuple[float, float]:
+        """(min, max) closing force in grams. Equal when it is a single value."""
+        if self.closing_force_max_g > self.closing_force_g:
+            return (self.closing_force_g, self.closing_force_max_g)
+        return (self.closing_force_g, self.closing_force_g)
 
     @property
     def display_label(self) -> str:

@@ -16,6 +16,7 @@ import type {
   ClipCriterion,
   ClipSelectionResult,
   ClipVerdict,
+  CustomJawOut,
   ManufactureSpecOut,
 } from "../../api/types";
 import { Badge } from "../Badge";
@@ -81,13 +82,28 @@ function CandidateCard({
         <div style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)", flex: 1, minWidth: 0 }}>
           {cand.clip_name}
         </div>
+        {/* Que un clip se fabrique para el caso no lo hace peor, pero sí cambia
+            la planificación: hay que contar con el plazo. Va junto al nombre,
+            no escondido en los criterios. */}
+        {cand.availability === "made_to_order" && (
+          <Badge variant="subtle">bajo pedido</Badge>
+        )}
         <Badge variant={cand.verdict === "ok" ? "success" : cand.verdict === "warn" ? "warning" : "destructive"}>
           {cand.verdict === "ok" ? "Cumple" : cand.verdict === "warn" ? "Con reservas" : "Descartado"}
         </Badge>
       </div>
 
       <div style={{ fontSize: 11, color: "var(--muted-foreground)", fontFamily: "var(--font-mono)", marginTop: 2 }}>
-        {cand.shape} · hoja {cand.blade_length_mm.toFixed(0)} mm · {cand.closing_force_g.toFixed(0)} g
+        {cand.shape}
+        {cand.bend_angle_deg > 0 && cand.bend_angle_deg !== 45 && cand.bend_angle_deg !== 90
+          ? ` ${cand.bend_angle_deg.toFixed(0)}°` : ""}
+        {" · mordaza "}{cand.blade_length_mm.toFixed(1)} mm ·{" "}
+        {/* Una banda es una banda: quedarse con el punto medio inventaría una
+            precisión que la pieza todavía no tiene. */}
+        {cand.closing_force_max_g > cand.closing_force_min_g
+          ? `${cand.closing_force_min_g.toFixed(0)}–${cand.closing_force_max_g.toFixed(0)} g`
+          : `${cand.closing_force_g.toFixed(0)} g`}
+        {cand.force_provisional ? " (sin caracterizar)" : ""}
         {cand.manufacturer ? ` · ${cand.manufacturer}` : ""}
       </div>
 
@@ -224,6 +240,87 @@ function ManufactureSheet({
   );
 }
 
+/** A made-to-order clip sized to this case, with a slider to override the jaw.
+
+    These designs are manufactured per case, so the jaw is not restricted to the
+    six drawn sizes: an exact one is a real order, not a wish. The system offers
+    the size the neck asks for; the surgeon can still dial it by hand, which is
+    why the slider exists next to the suggestion rather than instead of it. */
+function CustomJawSheet({
+  suggestion, sessionId,
+}: {
+  suggestion: CustomJawOut;
+  sessionId: string;
+}) {
+  const [jaw, setJaw] = useState(suggestion.jaw_mm);
+  const [built, setBuilt] = useState<CustomJawOut | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const build = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setBuilt(await api.buildNavarroClip(sessionId, jaw, suggestion.angle_deg));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo generar el clip");
+    } finally {
+      setBusy(false);
+    }
+  }, [sessionId, jaw, suggestion.angle_deg]);
+
+  return (
+    <div style={{
+      border: "1px solid var(--border)", borderRadius: "var(--radius-md)",
+      padding: "12px 14px", background: "var(--card)",
+    }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--foreground)", flex: 1 }}>
+          {suggestion.label}
+        </div>
+        <Badge variant="subtle">bajo pedido</Badge>
+      </div>
+      <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 4, lineHeight: 1.5 }}>
+        {suggestion.reason}
+      </div>
+
+      <label style={{ display: "block", marginTop: 10 }}>
+        <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginBottom: 4 }}>
+          Mordaza (longitud útil de agarre):{" "}
+          <b style={{ color: "var(--foreground)", fontFamily: "var(--font-mono)" }}>
+            {jaw.toFixed(1)} mm
+          </b>
+          {" · talla dibujada más cercana: "}{suggestion.nearest_drawn_mm.toFixed(0)} mm
+        </div>
+        <input
+          type="range" min={2} max={30} step={0.5} value={jaw}
+          onChange={(e) => { setJaw(Number(e.target.value)); setBuilt(null); }}
+          style={{ width: "100%" }}
+        />
+      </label>
+
+      <ErrorNote>{error}</ErrorNote>
+
+      {built && (
+        <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 8, lineHeight: 1.5 }}>
+          {built.reason}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+        <Button size="sm" onClick={() => void build()} disabled={busy}>
+          {busy ? "Generando…" : built ? "Regenerar" : "Generar clip"}
+        </Button>
+        {built?.stl_url && (
+          <Button size="sm" variant="ghost" onClick={() => window.open(built.stl_url!, "_blank")}>
+            Descargar STL
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const OUTCOME_STYLE: Record<string, { variant: "success" | "warning" | "destructive" | "subtle"; label: string }> = {
   stock:       { variant: "success",     label: "Hay clip en inventario" },
   marginal:    { variant: "warning",     label: "Utilizable con reservas" },
@@ -305,6 +402,17 @@ export function ClipSelectionPanel({
                 onSelect={onPick ? () => onPick(c.clip_id, c.clip_name) : undefined}
               />
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* La opción a medida va ANTES de la ficha genérica de fabricación: es un
+          diseño real de la casa, no una especificación desde cero. */}
+      {sel.custom_jaw && (
+        <div>
+          <SectionLabel>Clip a medida sobre un diseño propio</SectionLabel>
+          <div style={{ marginTop: 6 }}>
+            <CustomJawSheet suggestion={sel.custom_jaw} sessionId={sessionId} />
           </div>
         </div>
       )}

@@ -6,13 +6,16 @@ nothing the selector can reason about. A hospital's clip inventory is not a
 property of one planning session, so this store is global and outside `data/`,
 alongside `study_files/` and `user_files/`.
 
-Two kinds of entry
-------------------
-- `stock`     — a clip the institution actually holds. It joins the built-in
-                catalogue when the selector scores a case, so «what fits this
-                aneurysm» is answered against what is really on the shelf.
-- `template`  — a parametric manufacturing design. It never competes as stock;
-                it is the starting geometry for the "have one made" path.
+Three kinds of entry
+--------------------
+- `stock`         — a clip the institution actually holds. It joins the built-in
+                    catalogue when the selector scores a case, so «what fits this
+                    aneurysm» is answered against what is really on the shelf.
+- `made_to_order` — a real design manufactured for the case (the NAVARRO™ family).
+                    It competes exactly like stock, because it is going to be
+                    made; it is labelled so nobody expects it on a shelf today.
+- `template`      — a design not yet manufacturable. Never competes; it is the
+                    starting geometry for the "have one made" path.
 
 What is derived and what must be declared
 -----------------------------------------
@@ -54,7 +57,10 @@ _MANIFEST = "manifest.json"
 MAX_CLIP_BYTES = 16 * 1024 * 1024
 SUPPORTED_EXT = ("stl", "obj", "vtp")
 
-VALID_KINDS = ("stock", "template")
+#: "made_to_order" is a real design manufactured per case — it competes in the
+#: recommendation like stock does, but is labelled so nobody reaches for a
+#: part that is not on a shelf yet.
+VALID_KINDS = ("stock", "made_to_order", "template")
 VALID_SHAPES = ("STRAIGHT", "CURVED", "ANGLED", "ANGLED_45", "BAYONET", "FENESTRATED")
 
 
@@ -63,7 +69,7 @@ class LibraryClip:
     """One clip in the institutional library."""
     id: str
     name: str
-    kind: str                      # stock | template
+    kind: str                      # stock | made_to_order | template
     manufacturer: str = ""
     shape: str = "STRAIGHT"        # declared, one of VALID_SHAPES
     closing_force_g: float = 0.0   # declared — geometry cannot carry it
@@ -207,8 +213,16 @@ def add_clip(
     manufacturer: str = "",
     fenestration_mm: float = 0.0,
     notes: str = "",
+    blade_length_mm: float | None = None,
 ) -> LibraryClip:
-    """Store one clip mesh and its declared specification."""
+    """Store one clip mesh and its declared specification.
+
+    `blade_length_mm` overrides the measured envelope, and on many real clips it
+    must: the envelope is the whole part, while the blade is only the jaw that
+    has to span the neck. A NAVARRO™ clip with a 7 mm jaw measures 21.30 mm
+    overall — recording that as the blade makes the selector reject, as
+    "oversized ×5.3", the very clip that fits.
+    """
     if kind not in VALID_KINDS:
         raise ValueError(f"Tipo de clip no válido: {kind!r}. Usa 'stock' o 'template'.")
     if shape not in VALID_SHAPES:
@@ -220,7 +234,7 @@ def add_clip(
         raise ValueError(f"Formato no soportado ({ext or 'sin extensión'}). Usa STL, OBJ o VTP.")
     # A stock clip that cannot state its closing force cannot be scored against a
     # neck, and a clip in the list that never gets recommended is just confusing.
-    if kind == "stock" and closing_force_g <= 0:
+    if kind in ("stock", "made_to_order") and closing_force_g <= 0:
         raise ValueError(
             "Un clip de inventario necesita su fuerza de cierre en gramos: es lo que "
             "decide si aguanta el cuello, y no se puede deducir de la geometría."
@@ -237,6 +251,9 @@ def add_clip(
     except Exception:
         target.unlink(missing_ok=True)
         raise
+
+    if blade_length_mm is not None and blade_length_mm > 0:
+        long_mm = float(blade_length_mm)
 
     clip = LibraryClip(
         id=clip_id,
@@ -311,12 +328,24 @@ def to_spec(clip: LibraryClip):
 
 
 def catalogue_with_library() -> list:
-    """The built-in catalogue plus every `stock` clip the institution owns.
+    """Everything the selector may recommend, from every source.
 
-    Templates are excluded on purpose: a design that has not been manufactured
-    is not something a surgeon can pick up in theatre.
+    Three sources, in order: the built-in catalogue, the institution's own
+    uploads (`stock` and `made_to_order`), and the NAVARRO™ family read straight
+    off disk. NAVARRO™ needs no import step on purpose — dropping the curved and
+    fenestrated series into the folder is enough to make them selectable, which
+    is how the family is going to grow.
+
+    `template` is excluded: a design that cannot yet be manufactured is not
+    something to plan an operation around.
     """
     from services.clips import CLIP_CATALOGUE
 
-    extra = [to_spec(c) for c in list_clips(kind="stock")]
-    return list(CLIP_CATALOGUE) + extra
+    extra = [to_spec(c) for c in list_clips() if c.kind in ("stock", "made_to_order")]
+    navarro: list = []
+    try:
+        from services.navarro import family_specs
+        navarro = family_specs()
+    except Exception as exc:  # noqa: BLE001 — a missing library must not break selection
+        logger.warning("NAVARRO family unavailable: %s", exc)
+    return list(CLIP_CATALOGUE) + extra + navarro

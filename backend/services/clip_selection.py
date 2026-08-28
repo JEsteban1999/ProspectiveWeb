@@ -385,27 +385,64 @@ def _shape_criterion(clip: ClipSpec, case: ClipCase) -> Criterion | None:
 
 
 def _force_criterion(clip: ClipSpec, case: ClipCase) -> Criterion:
+    """Judge the spring against the neck, honouring a band when that is all there is.
+
+    A part whose force is still a design target has a BAND, not a figure. Taking
+    its midpoint would report a precision the part does not have, and taking its
+    best end would flatter it. So a band is judged on its worst credible end —
+    a clip is only safe if it is safe across everything it might turn out to be —
+    and the verdict is capped at `warn` while it stays provisional, because
+    "meets the criterion" is a claim nobody can make yet.
+    """
     acc_lo, opt_lo, opt_hi, acc_hi = force_window(case.neck_mm)
-    f = clip.closing_force_g
-    if f < acc_lo:
+    lo, hi = clip.force_band
+    banded = hi > lo
+    shown = f"{lo:.0f}–{hi:.0f} g" if banded else f"{lo:.0f} g"
+    tail = " (banda de diseño, sin caracterizar)" if clip.force_provisional else ""
+
+    # Nothing the band could turn out to be would hold this neck.
+    if hi < acc_lo:
         return Criterion(
             "force", "Fuerza de cierre", "fail",
-            f"{f:.0f} g insuficiente para un cuello de {case.neck_mm:.1f} mm "
-            f"(mínimo {acc_lo:.0f} g): riesgo de deslizamiento",
+            f"{shown} insuficiente para un cuello de {case.neck_mm:.1f} mm "
+            f"(mínimo {acc_lo:.0f} g): riesgo de deslizamiento{tail}",
             0.0,
         )
-    if f > acc_hi:
+    # Nothing it could turn out to be would be gentle enough.
+    if lo > acc_hi:
         return Criterion(
             "force", "Fuerza de cierre", "warn",
-            f"{f:.0f} g por encima de lo necesario (máx. {acc_hi:.0f} g): "
-            f"riesgo de lesión de la pared",
+            f"{shown} por encima de lo necesario (máx. {acc_hi:.0f} g): "
+            f"riesgo de lesión de la pared{tail}",
             0.30,
         )
-    if opt_lo <= f <= opt_hi:
+
+    inside_opt = lo >= opt_lo and hi <= opt_hi
+    if inside_opt and not clip.force_provisional:
         return Criterion("force", "Fuerza de cierre", "ok",
-                         f"{f:.0f} g dentro de la ventana {opt_lo:.0f}–{opt_hi:.0f} g", 1.0)
-    return Criterion("force", "Fuerza de cierre", "warn",
-                     f"{f:.0f} g aceptable pero fuera del óptimo {opt_lo:.0f}–{opt_hi:.0f} g", 0.60)
+                         f"{shown} dentro de la ventana {opt_lo:.0f}–{opt_hi:.0f} g", 1.0)
+    if inside_opt:
+        return Criterion(
+            "force", "Fuerza de cierre", "warn",
+            f"{shown} cae entera en la ventana {opt_lo:.0f}–{opt_hi:.0f} g, pero la "
+            f"fuerza real está sin caracterizar: confirmar antes de fabricar",
+            0.80,
+        )
+    # Part of the band is usable. Say which part, so the figure to ask the
+    # manufacturer for is on screen instead of left to be worked out.
+    ov_lo, ov_hi = max(lo, opt_lo), min(hi, opt_hi)
+    if ov_lo <= ov_hi:
+        return Criterion(
+            "force", "Fuerza de cierre", "warn",
+            f"{shown} solo es óptima entre {ov_lo:.0f} y {ov_hi:.0f} g para este "
+            f"cuello ({opt_lo:.0f}–{opt_hi:.0f} g){tail}",
+            0.60,
+        )
+    return Criterion(
+        "force", "Fuerza de cierre", "warn",
+        f"{shown} aceptable pero fuera del óptimo {opt_lo:.0f}–{opt_hi:.0f} g{tail}",
+        0.55,
+    )
 
 
 def recompute_score(cand: ClipCandidate) -> None:
@@ -588,6 +625,79 @@ def derive_manufacture_spec(case: ClipCase, rejected: list[ClipCandidate]) -> Ma
     )
 
 
+# ── Made-to-order sizing ──────────────────────────────────────────────────── #
+
+@dataclass
+class CustomJaw:
+    """A made-to-order clip sized to this case, from a family that varies its jaw.
+
+    The NAVARRO™ designs come in 3 mm jaw steps. A neck rarely lands on one, so
+    the nearest drawn size is either a little short or a little long — and since
+    these are manufactured per case rather than taken off a shelf, the exact jaw
+    is a real option rather than a wish. This is what the panel offers next to
+    the drawn sizes.
+    """
+    series: str
+    angle_deg: float
+    jaw_mm: float
+    nearest_drawn_mm: float
+    reason: str
+
+    @property
+    def label(self) -> str:
+        shape = "Recto" if self.angle_deg == 0 else f"Angulado {self.angle_deg:.0f}°"
+        return f"NAVARRO™ {self.series} {shape}, mordaza {self.jaw_mm:.1f} mm"
+
+
+def ideal_jaw_mm(case: ClipCase) -> float:
+    """The jaw this neck actually wants, before any catalogue is consulted."""
+    return max(case.neck_mm * COVERAGE_IDEAL, case.neck_mm + BLADE_MIN_OVER_MM)
+
+
+def suggest_custom_jaw(case: ClipCase, best: ClipCandidate | None) -> CustomJaw | None:
+    """Offer an exact jaw when the drawn sizes only bracket what the case needs.
+
+    Returns None when a drawn size already lands close enough that machining a
+    special would buy nothing — the family exists to be manufactured, not to be
+    re-specified for every fraction of a millimetre.
+    """
+    try:
+        from services.navarro import STOCK_JAW_MM, list_variants, nearest_variant
+    except Exception:  # noqa: BLE001 — no family installed, nothing to offer
+        return None
+    if not list_variants():
+        return None
+    if case.neck_mm <= 0:
+        return None
+
+    want = round(ideal_jaw_mm(case), 1)
+    # Keep the bend the winning candidate already argued for; fall back to the
+    # shape the region prefers when nothing was recommended.
+    angle = 0.0
+    if best is not None and getattr(best.clip, "bend_angle_deg", 0.0):
+        angle = float(best.clip.bend_angle_deg)
+    elif best is None:
+        pref = _preferred_shape(case)
+        angle = {ClipShape.ANGLED: 90.0, ClipShape.ANGLED_45: 45.0}.get(pref, 0.0)
+
+    src = nearest_variant(angle, want)
+    if src is None:
+        return None
+    gap = abs(src.jaw_mm - want)
+    # Half a step: closer than this and the drawn size is the better answer,
+    # because it is already validated CAD.
+    if gap < 1.5:
+        return None
+    if want < min(STOCK_JAW_MM) or want > max(STOCK_JAW_MM):
+        reason = (f"Un cuello de {case.neck_mm:.1f} mm pide {want:.1f} mm de mordaza, "
+                  f"fuera de las tallas dibujadas ({min(STOCK_JAW_MM)}–{max(STOCK_JAW_MM)} mm).")
+    else:
+        reason = (f"Un cuello de {case.neck_mm:.1f} mm pide {want:.1f} mm de mordaza; "
+                  f"la talla dibujada más cercana es {src.jaw_mm} mm ({gap:.1f} mm de diferencia).")
+    return CustomJaw(series=src.series, angle_deg=src.angle_deg, jaw_mm=want,
+                     nearest_drawn_mm=float(src.jaw_mm), reason=reason)
+
+
 # ── Selection ─────────────────────────────────────────────────────────────── #
 
 Outcome = Literal["stock", "marginal", "manufacture", "unmeasured"]
@@ -603,6 +713,7 @@ class ClipSelection:
     rejected: list[ClipCandidate]
     manufacture: ManufactureSpec | None
     caveats: list[str]
+    custom_jaw: CustomJaw | None = None
 
 
 def _caveats(case: ClipCase) -> list[str]:
@@ -638,6 +749,24 @@ def _caveats(case: ClipCase) -> list[str]:
         "Las preferencias clínicas (forma por localización, ventanas de fuerza) son "
         "heurísticas de la literatura, no validadas contra casos anotados."
     )
+    return out
+
+
+def _availability_caveats(cands: list[ClipCandidate]) -> list[str]:
+    """Warn about what a recommendation assumes you can actually obtain."""
+    out: list[str] = []
+    if any(getattr(c.clip, "availability", "stock") == "made_to_order" for c in cands):
+        out.append(
+            "Hay clips «bajo pedido» en la lista: son diseños reales que se fabrican "
+            "para el caso, no piezas disponibles en estantería. Cuenta con el plazo "
+            "de fabricación al planificar."
+        )
+    if any(getattr(c.clip, "force_provisional", False) for c in cands):
+        out.append(
+            "La fuerza de cierre de los clips NAVARRO™ es una banda de diseño "
+            "(120–200 g) todavía sin caracterizar: ningún criterio de fuerza sobre "
+            "ellos puede darse por cumplido hasta que el fabricante dé el valor."
+        )
     return out
 
 
@@ -688,6 +817,7 @@ def select_clips(
             ),
             case=case, recommended=[], rejected=rejected, manufacture=spec,
             caveats=_caveats(case),
+            custom_jaw=suggest_custom_jaw(case, None),
         )
 
     clean = [c for c in recommended if c.verdict == "ok"]
@@ -701,7 +831,8 @@ def select_clips(
                 f"cuello de {case.neck_mm:.1f} mm."
             ),
             case=case, recommended=recommended, rejected=rejected, manufacture=None,
-            caveats=_caveats(case),
+            caveats=_caveats(case) + _availability_caveats(recommended),
+            custom_jaw=suggest_custom_jaw(case, recommended[0] if recommended else None),
         )
 
     # Usable but every one carries a caveat: offer the alternative rather than
@@ -716,5 +847,6 @@ def select_clips(
             f"ninguno sin reservas. La alternativa a medida sería: {spec.label}."
         ),
         case=case, recommended=recommended, rejected=rejected, manufacture=spec,
-        caveats=_caveats(case),
+        caveats=_caveats(case) + _availability_caveats(recommended),
+        custom_jaw=suggest_custom_jaw(case, recommended[0] if recommended else None),
     )

@@ -63,9 +63,9 @@ approval, and a tamper-evident audit chain.
 
 | | |
 |---|---|
-| Backend tests | **473 passing** (`pytest`, 36 files) |
-| Frontend tests | **68 passing** (`vitest`, 9 files) · `tsc -b` clean · production build clean |
-| REST endpoints | **94** operations across 78 paths (23 routers), all authenticated except login/signup/logout |
+| Backend tests | **499 passing** (`pytest`, 37 files) |
+| Frontend tests | **74 passing** (`vitest`, 9 files) · `tsc -b` clean · production build clean |
+| REST endpoints | **96** operations across 79 paths (23 routers), all authenticated except login/signup/logout |
 | Feature parity with desktop | **Complete** |
 
 ---
@@ -101,8 +101,8 @@ ProspectiveWeb/
 │   ├── requirements.txt
 │   ├── models/    (20)     # Pydantic request/response schemas
 │   ├── routers/   (23)     # Route handlers, one file per domain
-│   ├── services/  (35)     # Qt-free business logic, shared with the desktop app
-│   ├── test_*.py  (35)     # pytest suites
+│   ├── services/  (37)     # Qt-free business logic, shared with the desktop app
+│   ├── test_*.py  (37)     # pytest suites
 │   ├── data/               # PUBLIC static mount — sessions, meshes, reports
 │   ├── clip_library/       # PRIVATE: institutional clips + templates (gitignored)
 │   ├── study_files/        # PRIVATE archive: DICOM of archived studies (gitignored)
@@ -141,6 +141,7 @@ Key backend services (all ported from the desktop `prospective/processing`):
 | `clip_selection.py` | Criteria-based clip choice per case + manufacturing spec |
 | `clip_fit.py` | Poses candidates on the measured neck and checks them against the mesh |
 | `clip_library.py` | Global store of the institution's clips and manufacturing templates |
+| `navarro.py` | The NAVARRO™ made-to-order family: jaw sizing, jaw-only resizing |
 | `stent_deployment.py` | Centerline-guided braided stent along real vessel curvature |
 | `phases.py` | PHASES 5-year rupture risk (Greving 2014) |
 | `mesh_prep.py` | 3D-print preparation + printer-bed presets |
@@ -417,6 +418,43 @@ that hides its assumptions is worse than one that states them. In particular,
 **no parent-artery measurement means no window diameter**: the spec says so
 instead of quietly falling back to a plain clip.
 
+### The NAVARRO™ family (made to order)
+
+`NAVARRO™ - Variantes/` holds the institution's own designs — 42 of them: T1
+straight and T3 angled at 15/30/45/60/75/90°, each in 7/10/13/16/19/22 mm. They
+are read straight off disk with no import step, so dropping the curved and
+fenestrated series into the folder is all it takes to make them selectable.
+
+Three things about them are easy to get wrong, and each is enforced in code:
+
+- **Use the STL, never the OBJ.** The `.obj` exports are in CENTIMETRES (measured
+  ratio 9.996–10.008 against the STL across all 41 pairs) *and* unwelded — the
+  7 mm clip reads as 14 334 loose triangles with 43 002 boundary edges, a
+  triangle soup that cannot be collision-tested. The `.stl` are already in
+  millimetres and watertight. Nothing is rescaled.
+- **The name states the JAW, not the clip.** A "7mm" NAVARRO grips 7 mm on a part
+  21.30 mm long (`total = jaw + 14.30 mm`, constant across the family). Measuring
+  the envelope and recording it as the blade makes the selector reject, as
+  "oversized ×5.3", the very clip that fits a 4 mm neck. `add_clip` therefore
+  accepts a declared `blade_length_mm` that overrides the measurement.
+- **The closing force is a band, not a figure.** 120–200 g by design, not yet
+  characterised. It travels as a band and the force criterion is capped at
+  `warn` for these clips however well the band sits — "meets the criterion" is a
+  claim nobody can make yet.
+
+**Resizing.** These are manufactured per case, so the jaw is not restricted to
+the six drawn sizes: `POST /api/clips/navarro/{sid}` builds any jaw length, and
+the panel both suggests the one the neck asks for and lets it be set by hand.
+The stretch applies to the **jaw only, along its own axis** — the body and spring
+are left exactly as drawn, because a uniform scale would resize the spring too
+and its closing force would no longer be the family's. That is legitimate rather
+than invented: sampling the jaw taper at ten stations and normalising by length,
+the profiles agree to within ~0.05 mm across the drawn sizes, so the designs are
+one shape stretched. Where the jaw *starts* is read off each mesh rather than
+assumed — it is 2.50 mm at 0° and 90° but 3.95 mm at 15°, because the knee takes
+up room. A stretched mesh is a faithful preview for display and collision
+testing, **not** the manufacturing master.
+
 ### The clip library
 
 `clip_library/` is a global, persistent store outside `data/`, holding two kinds
@@ -564,6 +602,7 @@ patient imaging.
 | `GET` | `/api/clips/recommendations/{sid}` | Ranked clip recommendations (legacy score) |
 | `GET` | `/api/clips/selection/{sid}` | Criteria-based selection + manufacturing spec |
 | `POST` | `/api/clips/manufacture/{sid}` | STL of the clip this case would need |
+| `POST` | `/api/clips/navarro/{sid}` | Build a NAVARRO™ clip at any jaw length (drawn or stretched) |
 | `GET` `POST` | `/api/clip-library` | Institutional clip store · import (admin) |
 | `POST` | `/api/clip-library/measure` | Measure a mesh to pre-fill the import form (admin) |
 | `GET` `DELETE` | `/api/clip-library/{id}/mesh` · `/api/clip-library/{id}` | Geometry · remove (admin) |
@@ -589,17 +628,17 @@ patient imaging.
 
 ```bash
 cd backend
-.venv\Scripts\python -m pytest -q                        # all 473 tests
+.venv\Scripts\python -m pytest -q                        # all 499 tests
 .venv\Scripts\python -m pytest test_session_abc.py -v    # one suite
 ```
 
-Expected: **473 passed, 0 failed** (~3–4 min; VTK and SimpleITK do real work).
+Expected: **499 passed, 0 failed** (~3–4 min; VTK and SimpleITK do real work).
 
 Frontend checks:
 
 ```bash
 cd frontend
-npx vitest run          # 68 unit tests (vitest + Testing Library, jsdom)
+npx vitest run          # 74 unit tests (vitest + Testing Library, jsdom)
 npx tsc -b --noEmit     # type check
 npm run build           # production build
 ```

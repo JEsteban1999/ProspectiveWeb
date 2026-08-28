@@ -15,6 +15,7 @@ from models.clips import (
     ClipCriterion,
     ClipFitCheck,
     ClipSelectionResult,
+    CustomJawOut,
     ManufactureSpecOut,
 )
 from services.clips   import catalogue_to_api, clip_slug, recommend_clips, recommendations_to_api
@@ -498,6 +499,7 @@ def _criteria_out(cand: ClipCandidate) -> list[ClipCriterion]:
 
 def _candidate_out(cand: ClipCandidate) -> ClipCandidateOut:
     v = cand.verified
+    f_lo, f_hi = cand.clip.force_band
     return ClipCandidateOut(
         clip_id          = clip_slug(cand.clip.name),
         clip_name        = cand.clip.name,
@@ -510,6 +512,11 @@ def _candidate_out(cand: ClipCandidate) -> ClipCandidateOut:
         headline         = cand.headline,
         coverage_ratio   = cand.coverage_ratio,
         safety_margin_mm = cand.safety_margin_mm,
+        availability     = getattr(cand.clip, "availability", "stock"),
+        bend_angle_deg   = getattr(cand.clip, "bend_angle_deg", 0.0),
+        closing_force_min_g = f_lo,
+        closing_force_max_g = f_hi,
+        force_provisional   = getattr(cand.clip, "force_provisional", False),
         criteria         = _criteria_out(cand),
         fit              = None if v is None else ClipFitCheck(
             collision=v.collision, n_contacts=v.n_contacts, span_mm=v.span_mm,
@@ -601,6 +608,14 @@ async def clip_selection(
         recommended = [_candidate_out(x) for x in selection.recommended],
         rejected    = [_candidate_out(x) for x in selection.rejected],
         manufacture = None if selection.manufacture is None else _spec_out(selection.manufacture),
+        custom_jaw  = None if selection.custom_jaw is None else CustomJawOut(
+            series=selection.custom_jaw.series,
+            angle_deg=selection.custom_jaw.angle_deg,
+            jaw_mm=selection.custom_jaw.jaw_mm,
+            nearest_drawn_mm=selection.custom_jaw.nearest_drawn_mm,
+            label=selection.custom_jaw.label,
+            reason=selection.custom_jaw.reason,
+        ),
         caveats     = selection.caveats,
     )
 
@@ -656,3 +671,75 @@ async def clip_manufacture_spec(
     stamp = int(time.time() * 1000)
     logger.info("Custom clip spec generated — session=%s %s", session_id, spec.label)
     return _spec_out(spec, stl_url=f"{export_url(session_id, name)}?v={stamp}")
+
+
+# ── NAVARRO™: build a clip at any jaw length ──────────────────────────────── #
+
+@router.post(
+    "/clips/navarro/{session_id}",
+    response_model=CustomJawOut,
+    summary="Build a NAVARRO™ clip at a given bend angle and jaw length",
+    description=(
+        "The NAVARRO clips are manufactured per case, so the jaw is not restricted "
+        "to the six drawn sizes. This builds the geometry for any jaw length: a "
+        "drawn size is returned as designed, anything else is produced by "
+        "stretching the jaw of the nearest design ALONG ITS OWN AXIS. "
+        "Only the jaw moves. The body and spring are left exactly as drawn, "
+        "because a uniform scale would resize the spring too and its closing force "
+        "would no longer be the family's. The taper profile is the same shape "
+        "across every drawn size (measured to ~0.05 mm), so stretching the jaw "
+        "reproduces the family's own design language rather than inventing one. "
+        "The result is a faithful preview for display and collision testing - NOT "
+        "the manufacturing master, which comes from the parametric CAD."
+    ),
+)
+async def build_navarro_clip(
+    session_id: str,
+    jaw_mm: float = Query(..., gt=0.5, le=40.0, description="Useful grip length (mm)"),
+    angle_deg: float = Query(0.0, ge=0.0, le=90.0, description="Bend angle (0 = straight)"),
+) -> CustomJawOut:
+    if not session_exists(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    try:
+        from services.navarro import build_jaw
+        from services.devices import write_stl
+        from services.segmentation import write_vtp
+        mesh, src, exact = build_jaw(angle_deg, jaw_mm)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("NAVARRO build failed")
+        raise HTTPException(status_code=422, detail=f"No se pudo generar el clip: {exc}")
+
+    meshes  = session_subdir(session_id, "meshes")
+    exports = session_subdir(session_id, "exports")
+    stem = f"navarro_{src.series.lower()}_{angle_deg:.0f}deg_{jaw_mm:.1f}mm".replace(".", "_")
+    try:
+        write_vtp(mesh, meshes / f"{stem}.vtp")
+        write_stl(mesh, exports / f"{stem}.stl")
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("NAVARRO export failed")
+        raise HTTPException(status_code=500, detail=f"No se pudo guardar el clip: {exc}")
+
+    stamp = int(time.time() * 1000)
+    shape = "Recto" if src.angle_deg == 0 else f"Angulado {src.angle_deg:.0f}°"
+    reason = (
+        f"Talla dibujada de {src.jaw_mm} mm, tal cual."
+        if exact else
+        f"Mordaza estirada desde la talla dibujada de {src.jaw_mm} mm. "
+        f"Vista previa para visualizar y comprobar colisiones; la pieza real sale "
+        f"del CAD paramétrico."
+    )
+    logger.info("NAVARRO clip built — session=%s %s jaw=%.1f exact=%s",
+                session_id, src.name, jaw_mm, exact)
+    return CustomJawOut(
+        series=src.series,
+        angle_deg=float(src.angle_deg),
+        jaw_mm=float(jaw_mm),
+        nearest_drawn_mm=float(src.jaw_mm),
+        label=f"NAVARRO™ {src.series} {shape}, mordaza {jaw_mm:.1f} mm",
+        reason=reason,
+        mesh_url=f"{mesh_url(session_id, stem + '.vtp')}?v={stamp}",
+        stl_url=f"{export_url(session_id, stem + '.stl')}?v={stamp}",
+    )

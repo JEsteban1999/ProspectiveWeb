@@ -3,16 +3,19 @@
    why. A ranked list of names and scores — which is what this replaced — is not
    something a surgeon can check. */
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const clipSelection = vi.fn();
 const clipManufacture = vi.fn();
 
+const buildNavarroClip = vi.fn();
+
 vi.mock("../../api/client", () => ({
   api: {
     clipSelection: (...a: unknown[]) => clipSelection(...a),
     clipManufacture: (...a: unknown[]) => clipManufacture(...a),
+    buildNavarroClip: (...a: unknown[]) => buildNavarroClip(...a),
   },
 }));
 
@@ -20,6 +23,7 @@ import { ClipSelectionPanel } from "./ClipSelection";
 import type {
   ClipCandidateOut,
   ClipSelectionResult,
+  CustomJawOut,
   ManufactureSpecOut,
 } from "../../api/types";
 
@@ -35,6 +39,11 @@ const candidate = (over: Partial<ClipCandidateOut> = {}): ClipCandidateOut => ({
   headline: "Cumple todos los criterios",
   coverage_ratio: 1.5,
   safety_margin_mm: 3,
+  availability: "stock",
+  bend_angle_deg: 0,
+  closing_force_min_g: 110,
+  closing_force_max_g: 110,
+  force_provisional: false,
   criteria: [
     { key: "coverage", label: "Cobertura", verdict: "ok", detail: "Cubre el cuello con 3.0 mm de margen (×1.50)" },
     { key: "force", label: "Fuerza de cierre", verdict: "ok", detail: "110 g dentro de la ventana 100–150 g" },
@@ -64,6 +73,7 @@ const result = (over: Partial<ClipSelectionResult> = {}): ClipSelectionResult =>
   recommended: [candidate()],
   rejected: [],
   manufacture: null,
+  custom_jaw: null,
   caveats: ["Las preferencias clínicas son heurísticas de la literatura."],
   ...over,
 });
@@ -186,5 +196,73 @@ describe("failures", () => {
     clipSelection.mockRejectedValue(new Error("backend caído"));
     render(<ClipSelectionPanel sessionId="s1" />);
     await waitFor(() => expect(screen.getByText(/backend caído/)).toBeInTheDocument());
+  });
+});
+
+
+describe("made-to-order designs", () => {
+  const navarro = candidate({
+    clip_id: "navarro-t1-16", clip_name: "NAVARRO™ T1 Recto 16.0 mm",
+    manufacturer: "NAVARRO™ (UNINAVARRA)", blade_length_mm: 16,
+    availability: "made_to_order",
+    closing_force_min_g: 120, closing_force_max_g: 200, force_provisional: true,
+  });
+
+  it("marks a clip that has to be manufactured for the case", async () => {
+    // Not worse than stock — but it is not on a shelf, and the plan needs to
+    // account for the lead time.
+    clipSelection.mockResolvedValue(result({ recommended: [navarro] }));
+    render(<ClipSelectionPanel sessionId="s1" />);
+    expect(await screen.findAllByText("bajo pedido")).not.toHaveLength(0);
+  });
+
+  it("shows the force as a band, never as a midpoint", async () => {
+    clipSelection.mockResolvedValue(result({ recommended: [navarro] }));
+    render(<ClipSelectionPanel sessionId="s1" />);
+    expect(await screen.findByText(/120–200 g/)).toBeInTheDocument();
+    expect(screen.queryByText(/160 g/)).not.toBeInTheDocument();
+    expect(screen.getByText(/sin caracterizar/)).toBeInTheDocument();
+  });
+});
+
+describe("sizing a made-to-order clip", () => {
+  const custom: CustomJawOut = {
+    series: "T1", angle_deg: 0, jaw_mm: 27, nearest_drawn_mm: 22,
+    label: "NAVARRO™ T1 Recto, mordaza 27.0 mm",
+    reason: "Un cuello de 20.0 mm pide 27.0 mm de mordaza, fuera de las tallas dibujadas (7–22 mm).",
+    mesh_url: null, stl_url: null,
+  };
+
+  it("offers the exact jaw the neck asks for", async () => {
+    clipSelection.mockResolvedValue(result({ custom_jaw: custom }));
+    render(<ClipSelectionPanel sessionId="s1" />);
+    expect(await screen.findByText("NAVARRO™ T1 Recto, mordaza 27.0 mm")).toBeInTheDocument();
+    expect(screen.getByText(/fuera de las tallas dibujadas/)).toBeInTheDocument();
+  });
+
+  it("lets the jaw be set by hand as well", async () => {
+    // The suggestion is a starting point, not a verdict.
+    clipSelection.mockResolvedValue(result({ custom_jaw: custom }));
+    render(<ClipSelectionPanel sessionId="s1" />);
+    const slider = await screen.findByRole("slider");
+    fireEvent.change(slider, { target: { value: "18.5" } });
+    expect(screen.getByText("18.5 mm")).toBeInTheDocument();
+  });
+
+  it("builds the clip at the chosen jaw", async () => {
+    buildNavarroClip.mockResolvedValue({ ...custom, jaw_mm: 27, stl_url: "/x.stl?v=1",
+      reason: "Mordaza estirada desde la talla dibujada de 22 mm." });
+    clipSelection.mockResolvedValue(result({ custom_jaw: custom }));
+    render(<ClipSelectionPanel sessionId="s1" />);
+    fireEvent.click(await screen.findByRole("button", { name: /Generar clip/ }));
+    await waitFor(() => expect(buildNavarroClip).toHaveBeenCalledWith("s1", 27, 0));
+    expect(await screen.findByText(/estirada desde la talla dibujada/)).toBeInTheDocument();
+  });
+
+  it("says nothing about a custom size when a drawn one fits", async () => {
+    clipSelection.mockResolvedValue(result({ custom_jaw: null }));
+    render(<ClipSelectionPanel sessionId="s1" />);
+    await screen.findByText("Yasargil Recto 9mm");
+    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
   });
 });

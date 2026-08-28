@@ -2607,6 +2607,81 @@
         }
       }
     },
+    "/api/clips/navarro/{session_id}": {
+      "post": {
+        "tags": [
+          "clips"
+        ],
+        "summary": "Build a NAVARRO™ clip at a given bend angle and jaw length",
+        "description": "The NAVARRO clips are manufactured per case, so the jaw is not restricted to the six drawn sizes. This builds the geometry for any jaw length: a drawn size is returned as designed, anything else is produced by stretching the jaw of the nearest design ALONG ITS OWN AXIS. Only the jaw moves. The body and spring are left exactly as drawn, because a uniform scale would resize the spring too and its closing force would no longer be the family's. The taper profile is the same shape across every drawn size (measured to ~0.05 mm), so stretching the jaw reproduces the family's own design language rather than inventing one. The result is a faithful preview for display and collision testing - NOT the manufacturing master, which comes from the parametric CAD.",
+        "operationId": "build_navarro_clip_api_clips_navarro__session_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "jaw_mm",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "maximum": 40.0,
+              "exclusiveMinimum": 0.5,
+              "description": "Useful grip length (mm)",
+              "title": "Jaw Mm"
+            },
+            "description": "Useful grip length (mm)"
+          },
+          {
+            "name": "angle_deg",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "maximum": 90.0,
+              "minimum": 0.0,
+              "description": "Bend angle (0 = straight)",
+              "default": 0.0,
+              "title": "Angle Deg"
+            },
+            "description": "Bend angle (0 = straight)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomJawOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/coils": {
       "get": {
         "tags": [
@@ -5710,6 +5785,40 @@
             "title": "Safety Margin Mm",
             "default": 0.0
           },
+          "availability": {
+            "type": "string",
+            "enum": [
+              "stock",
+              "made_to_order",
+              "template"
+            ],
+            "title": "Availability",
+            "description": "'made_to_order' is a real design manufactured for the case — it competes like stock, but is not on a shelf today.",
+            "default": "stock"
+          },
+          "bend_angle_deg": {
+            "type": "number",
+            "title": "Bend Angle Deg",
+            "description": "True bend angle. `shape` is a coarse class, so a family that bends in 15° steps would otherwise lose the angle that gets machined.",
+            "default": 0.0
+          },
+          "closing_force_min_g": {
+            "type": "number",
+            "title": "Closing Force Min G",
+            "default": 0.0
+          },
+          "closing_force_max_g": {
+            "type": "number",
+            "title": "Closing Force Max G",
+            "description": "Equal to the minimum when the force is a single value",
+            "default": 0.0
+          },
+          "force_provisional": {
+            "type": "boolean",
+            "title": "Force Provisional",
+            "description": "True when the force is a design band, not a characterised figure",
+            "default": false
+          },
           "criteria": {
             "items": {
               "$ref": "#/components/schemas/ClipCriterion"
@@ -6164,6 +6273,17 @@
               }
             ]
           },
+          "custom_jaw": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CustomJawOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Offered when the drawn jaw sizes only bracket what the case needs and the family is manufactured per case, so an exact jaw is a real option."
+          },
           "caveats": {
             "items": {
               "type": "string"
@@ -6445,6 +6565,71 @@
           "name"
         ],
         "title": "CustomClipInfo"
+      },
+      "CustomJawOut": {
+        "properties": {
+          "series": {
+            "type": "string",
+            "title": "Series"
+          },
+          "angle_deg": {
+            "type": "number",
+            "title": "Angle Deg"
+          },
+          "jaw_mm": {
+            "type": "number",
+            "title": "Jaw Mm",
+            "description": "The jaw this neck wants (mm of useful grip)"
+          },
+          "nearest_drawn_mm": {
+            "type": "number",
+            "title": "Nearest Drawn Mm",
+            "description": "Closest jaw length that exists as drawn CAD"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "mesh_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mesh Url",
+            "description": "Preview mesh (.vtp), once generated"
+          },
+          "stl_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stl Url",
+            "description": "STL to send out, once generated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "series",
+          "angle_deg",
+          "jaw_mm",
+          "nearest_drawn_mm",
+          "label",
+          "reason"
+        ],
+        "title": "CustomJawOut",
+        "description": "A made-to-order clip sized exactly to this case."
       },
       "DecisionFactor": {
         "properties": {
