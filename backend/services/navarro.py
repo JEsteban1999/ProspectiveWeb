@@ -54,6 +54,7 @@ import logging
 import math
 import os
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -142,11 +143,31 @@ def _parse(path: Path) -> NavarroVariant | None:
     )
 
 
+# Selecting one clip walks this catalogue several times, and the family only
+# grows as the curved and fenestrated series arrive. So the listing is cached —
+# but the disk is re-checked at most once every REVALIDATE_SEC, because a naive
+# "invalidate on newest mtime" cache measured SLOWER than no cache at all:
+# stat-ing every file to decide whether to reuse the list costs more than
+# rebuilding it. A short window keeps repeated calls free while still honouring
+# the promise that dropping a file into the folder is enough.
+REVALIDATE_SEC: float = 5.0
+_CACHE: dict[str, tuple[float, list["NavarroVariant"]]] = {}
+
+
+def clear_cache() -> None:
+    """Forget the cached listing. For tests, and after adding designs by hand."""
+    _CACHE.clear()
+
+
 def list_variants(root: Path | None = None) -> list[NavarroVariant]:
     """Every drawn design, from the STL exports only (see the module docstring)."""
     base = Path(root) if root is not None else library_root()
     if not base.is_dir():
         return []
+    key = str(base)
+    hit = _CACHE.get(key)
+    if hit is not None and (time.monotonic() - hit[0]) < REVALIDATE_SEC:
+        return hit[1]
     out: list[NavarroVariant] = []
     seen: set[tuple[str, float, int]] = set()
     for p in sorted(base.rglob("*.stl")):
@@ -154,12 +175,14 @@ def list_variants(root: Path | None = None) -> list[NavarroVariant]:
         if v is None:
             logger.warning("NAVARRO: unrecognised file name, skipped: %s", p.name)
             continue
-        key = (v.series, v.angle_deg, v.jaw_mm)
-        if key in seen:            # the same design is exported under two folders
+        sig = (v.series, v.angle_deg, v.jaw_mm)
+        if sig in seen:            # the same design is exported under two folders
             continue
-        seen.add(key)
+        seen.add(sig)
         out.append(v)
-    return sorted(out, key=lambda v: (v.series, v.angle_deg, v.jaw_mm))
+    out = sorted(out, key=lambda v: (v.series, v.angle_deg, v.jaw_mm))
+    _CACHE[key] = (time.monotonic(), out)
+    return out
 
 
 def available_angles(root: Path | None = None) -> list[float]:
@@ -294,6 +317,36 @@ def _shape_for(angle_deg: float):
     return ClipShape.ANGLED
 
 
+#: Prefix marking an id this module owns.
+ID_PREFIX = "navarro"
+
+
+def clip_id(series: str, angle_deg: float, jaw_mm: float) -> str:
+    """`navarro:t1:0:7.0` — everything needed to rebuild the geometry."""
+    return f"{ID_PREFIX}:{series.lower()}:{angle_deg:.0f}:{jaw_mm:.1f}"
+
+
+def parse_clip_id(cid: str) -> tuple[str, float, float] | None:
+    """Inverse of `clip_id`. None when the id is not one of ours."""
+    parts = (cid or "").split(":")
+    if len(parts) != 4 or parts[0] != ID_PREFIX:
+        return None
+    try:
+        return parts[1].upper(), float(parts[2]), float(parts[3])
+    except ValueError:
+        return None
+
+
+def mesh_for_id(cid: str):
+    """The real geometry behind a NAVARRO id, drawn or stretched to size."""
+    parsed = parse_clip_id(cid)
+    if parsed is None:
+        raise ValueError(f"'{cid}' no es un identificador NAVARRO™")
+    _series, angle, jaw = parsed
+    mesh, _src, _exact = build_jaw(angle, jaw)
+    return mesh
+
+
 def to_spec(variant: NavarroVariant, jaw_mm: float | None = None):
     """A `ClipSpec` the selector can score.
 
@@ -310,6 +363,9 @@ def to_spec(variant: NavarroVariant, jaw_mm: float | None = None):
              f"{'Recto' if variant.angle_deg == 0 else f'Angulado {variant.angle_deg:.0f}°'} "
              f"{jaw:.1f} mm" + (" (a medida)" if custom else ""))
     return ClipSpec(
+        # Structured, so the placement endpoint can rebuild the real geometry
+        # from the id alone instead of guessing from a slugged display name.
+        clip_id=clip_id(variant.series, variant.angle_deg, jaw),
         name=label,
         shape=shape,
         blade_length_mm=jaw,

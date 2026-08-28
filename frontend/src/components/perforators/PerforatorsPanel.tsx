@@ -11,6 +11,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import type { PerforatorsResult } from "../../api/types";
+import { Button } from "../Button";
 import { Icon } from "../Icon";
 import { SectionLabel, Card } from "../PanelHead";
 import { usePlanning } from "../../store/planning";
@@ -56,18 +57,14 @@ export function PerforatorsPanel() {
         {/* Encender doce marcadores de uno en uno para comparar, y apagarlos
             luego, es el gesto que más se repite en cuanto hay más de dos. */}
         {all.length > 1 && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setVisiblePerforators(allShown ? [] : all.map((c) => c.id))}
-            style={{
-              marginLeft: "auto", padding: "3px 8px", fontSize: 10, fontWeight: 700,
-              borderRadius: "var(--radius-sm)", border: "1px solid var(--border)",
-              background: "transparent", color: "var(--muted-foreground)",
-              cursor: "pointer", fontFamily: "var(--font-sans)", whiteSpace: "nowrap",
-            }}
+            style={{ marginLeft: "auto", whiteSpace: "nowrap" }}
           >
             {allShown ? "Ocultar todas" : "Mostrar todas"}
-          </button>
+          </Button>
         )}
       </div>
       {result && result.candidates.length > 0 && (

@@ -21,7 +21,8 @@ import type {
 } from "../../api/types";
 import { Badge } from "../Badge";
 import { Button } from "../Button";
-import { Collapsible, ErrorNote, SectionLabel } from "../PanelHead";
+import { Card, Collapsible, ErrorNote, SectionLabel } from "../PanelHead";
+import { Slider } from "../Slider";
 
 const VERDICT_MARK: Record<ClipVerdict, string> = { ok: "✓", warn: "!", fail: "✕" };
 const VERDICT_COLOR: Record<ClipVerdict, string> = {
@@ -68,15 +69,14 @@ function CandidateCard({
 }) {
   const fit = cand.fit;
   return (
-    <div
-      onClick={onSelect}
+    <Card
       style={{
-        border: `1px solid ${selected ? "var(--brand-deep)" : "var(--border)"}`,
-        borderRadius: "var(--radius-md)",
-        background: selected ? "var(--brand-subtle)" : "var(--card)",
-        padding: "10px 12px",
+        borderColor: selected ? "var(--brand-deep)" : undefined,
+        background: selected ? "var(--brand-subtle)" : undefined,
+        padding: "12px 14px",
         cursor: onSelect ? "pointer" : "default",
       }}
+      onClick={onSelect}
     >
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)", flex: 1, minWidth: 0 }}>
@@ -125,7 +125,7 @@ function CandidateCard({
           orientaciones sin tocar vasos vecinos · cubre {fit.neck_coverage_pct.toFixed(0)}% del cuello
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -181,12 +181,7 @@ function ManufactureSheet({
   };
 
   return (
-    <div
-      style={{
-        border: "1px solid var(--border)", borderRadius: "var(--radius-md)",
-        padding: "12px 14px", background: "var(--card)",
-      }}
-    >
+    <Card>
       <div style={{ fontSize: 13, fontWeight: 800, color: "var(--foreground)" }}>
         Clip a medida · {shown.label}
       </div>
@@ -236,7 +231,7 @@ function ManufactureSheet({
         )}
         <Button size="sm" variant="ghost" onClick={copy}>Copiar especificación</Button>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -270,10 +265,7 @@ function CustomJawSheet({
   }, [sessionId, jaw, suggestion.angle_deg]);
 
   return (
-    <div style={{
-      border: "1px solid var(--border)", borderRadius: "var(--radius-md)",
-      padding: "12px 14px", background: "var(--card)",
-    }}>
+    <Card>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: "var(--foreground)", flex: 1 }}>
           {suggestion.label}
@@ -284,20 +276,19 @@ function CustomJawSheet({
         {suggestion.reason}
       </div>
 
-      <label style={{ display: "block", marginTop: 10 }}>
-        <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginBottom: 4 }}>
-          Mordaza (longitud útil de agarre):{" "}
-          <b style={{ color: "var(--foreground)", fontFamily: "var(--font-mono)" }}>
-            {jaw.toFixed(1)} mm
-          </b>
-          {" · talla dibujada más cercana: "}{suggestion.nearest_drawn_mm.toFixed(0)} mm
-        </div>
-        <input
-          type="range" min={2} max={30} step={0.5} value={jaw}
-          onChange={(e) => { setJaw(Number(e.target.value)); setBuilt(null); }}
-          style={{ width: "100%" }}
+      {/* El Slider del sistema de diseño, no un <input range> suelto: la lectura
+          numérica en monoespaciada y el tratamiento del control son los mismos
+          que en umbralización y suavizado. */}
+      <div style={{ marginTop: 12 }}>
+        <Slider
+          label="Mordaza (longitud útil de agarre)"
+          min={2} max={30} step={0.5} value={jaw} unit=" mm"
+          onChange={(v) => { setJaw(v); setBuilt(null); }}
         />
-      </label>
+        <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 4 }}>
+          Talla dibujada más cercana: {suggestion.nearest_drawn_mm.toFixed(0)} mm
+        </div>
+      </div>
 
       <ErrorNote>{error}</ErrorNote>
 
@@ -317,7 +308,7 @@ function CustomJawSheet({
           </Button>
         )}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -366,12 +357,7 @@ export function ClipSelectionPanel({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Veredicto primero: lo que hay que saber antes de leer ninguna lista. */}
-      <div
-        style={{
-          border: "1px solid var(--border)", borderRadius: "var(--radius-md)",
-          padding: "10px 12px", background: "var(--muted)",
-        }}
-      >
+      <Card style={{ background: "var(--muted)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <Badge variant={style.variant}>{style.label}</Badge>
           <Button size="sm" variant="ghost" onClick={load} style={{ marginLeft: "auto" }}>
@@ -388,7 +374,7 @@ export function ClipSelectionPanel({
             {sel.case.region && ` · ${sel.case.region}`}
           </div>
         )}
-      </div>
+      </Card>
 
       {sel.recommended.length > 0 && (
         <div>

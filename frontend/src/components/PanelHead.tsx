@@ -126,10 +126,17 @@ export function ErrorNote({ children }: { children: ReactNode }) {
 }
 
 /* Card — standard elevated surface (radius 14, shadow sm, border 1px). */
-export function Card({ children, style, className }: { children: ReactNode; style?: React.CSSProperties; className?: string }) {
+export function Card({ children, style, className, onClick }: {
+  children: ReactNode;
+  style?: React.CSSProperties;
+  className?: string;
+  /** Makes the card selectable (a clip candidate, a row that opens something). */
+  onClick?: () => void;
+}) {
   return (
     <div
       className={className}
+      onClick={onClick}
       style={{
         background: "var(--card)",
         border: "1px solid var(--border)",

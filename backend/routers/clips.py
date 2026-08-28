@@ -18,7 +18,7 @@ from models.clips import (
     CustomJawOut,
     ManufactureSpecOut,
 )
-from services.clips   import catalogue_to_api, clip_slug, recommend_clips, recommendations_to_api
+from services.clips   import catalogue_to_api, recommend_clips, recommendations_to_api
 from services.clip_selection import (
     ClipCandidate,
     ClipCase,
@@ -34,9 +34,18 @@ from services.sessions import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["clips"])
 
-# clip_id → blade length (mm) / display name, built once from the catalogue
-_CLIP_LENGTH = {item["id"]: item["length_mm"] for item in catalogue_to_api()}
-_CLIP_NAME = {item["id"]: item["name"] for item in catalogue_to_api()}
+def _catalogue_index() -> dict[str, "object"]:
+    """id → ClipSpec across every source the selector can recommend from.
+
+    Built per call, not frozen at import: the library and the NAVARRO™ family are
+    read from disk and can grow while the server runs. Freezing this was a real
+    defect — a NAVARRO clip could be recommended and then, when placed, silently
+    fall back to a generic 9 mm box, so the plan and the report described a clip
+    nobody had chosen.
+    """
+    from services.clip_library import catalogue_with_library
+
+    return {spec.identifier: spec for spec in catalogue_with_library()}
 
 # Custom clip uploads: cap size and remember display names per session.
 _MAX_CLIP_BYTES = 8 * 1024 * 1024
@@ -242,15 +251,44 @@ async def plan_clips(req: ClipPlanRequest) -> ClipPlanResult:
     vessel_path = meshes_dir / "vessel_tree.vtp"
 
     # ── Build a real mesh for every placed clip at its pose ─────────────── #
+    index = _catalogue_index()
+
     def _clip_local(clip_id: str):
-        """Local clip geometry — a stored custom mesh or a synthetic catalogue clip."""
+        """The real geometry for this clip id, in the clip's own local frame.
+
+        Three sources, most specific first: a mesh imported into this session, a
+        NAVARRO™ design (built at its jaw length, drawn or stretched), and — for
+        the built-in catalogue, which has no meshes — a shape-aware synthetic
+        clip at the catalogue's dimensions.
+        """
         if clip_id.startswith("custom:"):
             idx = clip_id.split(":", 1)[1]
             path = meshes_dir / f"custom_clip_{idx}.vtp"
             if path.exists():
                 return read_vtp(path)
             logger.warning("Custom clip %s not found; falling back to synthetic", clip_id)
-        return devices.make_clip(_CLIP_LENGTH.get(clip_id, 9.0))
+
+        if clip_id.startswith("navarro:"):
+            try:
+                from services.navarro import mesh_for_id
+                return mesh_for_id(clip_id)
+            except Exception as exc:  # noqa: BLE001 — never fail a plan on geometry
+                logger.warning("NAVARRO geometry unavailable for %s: %s", clip_id, exc)
+
+        spec = index.get(clip_id)
+        if spec is None:
+            logger.warning("Unknown clip id %s; placing a default 9 mm clip", clip_id)
+            return devices.make_clip(9.0)
+        return devices.make_clip_shaped(
+            blade_length_mm=spec.blade_length_mm,
+            blade_width_mm=spec.blade_width_mm,
+            blade_height_mm=spec.blade_height_mm,
+            shape=spec.shape.name,
+            angle_deg=spec.bend_angle_deg or (
+                90.0 if spec.shape.name == "ANGLED" else 45.0 if spec.shape.name == "ANGLED_45" else 0.0
+            ),
+            fenestration_mm=spec.fenestration_mm,
+        )
 
     clip_polys = []
     for pl in req.placements:
@@ -310,7 +348,7 @@ async def plan_clips(req: ClipPlanRequest) -> ClipPlanResult:
             "index": i,
             "name": (_custom_clip_name(req.session_id, pl.clip_id)
                      if pl.clip_id.startswith("custom:")
-                     else _CLIP_NAME.get(pl.clip_id, pl.clip_id)),
+                     else (index[pl.clip_id].name if pl.clip_id in index else pl.clip_id)),
             "position": [pl.position.x, pl.position.y, pl.position.z],
             "orientation": [0.0, 0.0, float(pl.rotation_deg)],
             "is_custom": pl.clip_id.startswith("custom:"),
@@ -501,7 +539,7 @@ def _candidate_out(cand: ClipCandidate) -> ClipCandidateOut:
     v = cand.verified
     f_lo, f_hi = cand.clip.force_band
     return ClipCandidateOut(
-        clip_id          = clip_slug(cand.clip.name),
+        clip_id          = cand.clip.identifier,
         clip_name        = cand.clip.name,
         manufacturer     = cand.clip.manufacturer,
         shape            = cand.clip.shape.value,

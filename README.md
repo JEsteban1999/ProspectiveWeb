@@ -63,7 +63,7 @@ approval, and a tamper-evident audit chain.
 
 | | |
 |---|---|
-| Backend tests | **499 passing** (`pytest`, 37 files) |
+| Backend tests | **510 passing** (`pytest`, 37 files) |
 | Frontend tests | **74 passing** (`vitest`, 9 files) · `tsc -b` clean · production build clean |
 | REST endpoints | **96** operations across 79 paths (23 routers), all authenticated except login/signup/logout |
 | Feature parity with desktop | **Complete** |
@@ -302,6 +302,14 @@ mechanisms make work survive that sweep:
   snapshot must stay a point-in-time image. The mesh undo/redo stacks are pruned
   out of the snapshot — they are a working convenience, and carrying every
   intermediate state multiplied the size of each save.
+
+What survives a save → restore, verified end to end: the segmentation and every
+mesh edit, the detection, the morphometry *including the fitted neck plane and
+the points marked around the rim*, the centreline, the treatment decision, the
+placed devices (and so the report), and any made-to-order clip built for the
+case. The marks matter as much as the measurement: the plane can be rebuilt from
+its origin and normal, but a resumed session used to show that plane with
+nothing behind it, and refining it meant marking the rim again from scratch.
 
 Typical flow:
 
@@ -603,6 +611,7 @@ patient imaging.
 | `GET` | `/api/clips/selection/{sid}` | Criteria-based selection + manufacturing spec |
 | `POST` | `/api/clips/manufacture/{sid}` | STL of the clip this case would need |
 | `POST` | `/api/clips/navarro/{sid}` | Build a NAVARRO™ clip at any jaw length (drawn or stretched) |
+| `POST` | `/api/clips/plan` | Places the geometry that was recommended, by structured clip id |
 | `GET` `POST` | `/api/clip-library` | Institutional clip store · import (admin) |
 | `POST` | `/api/clip-library/measure` | Measure a mesh to pre-fill the import form (admin) |
 | `GET` `DELETE` | `/api/clip-library/{id}/mesh` · `/api/clip-library/{id}` | Geometry · remove (admin) |
@@ -628,11 +637,11 @@ patient imaging.
 
 ```bash
 cd backend
-.venv\Scripts\python -m pytest -q                        # all 499 tests
+.venv\Scripts\python -m pytest -q                        # all 510 tests
 .venv\Scripts\python -m pytest test_session_abc.py -v    # one suite
 ```
 
-Expected: **499 passed, 0 failed** (~3–4 min; VTK and SimpleITK do real work).
+Expected: **510 passed, 0 failed** (~3–4 min; VTK and SimpleITK do real work).
 
 Frontend checks:
 

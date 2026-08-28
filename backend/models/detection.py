@@ -215,6 +215,13 @@ class MorphometryResult(BaseModel):
     principal_axis: list[float] | None = Field(
         None, description="Principal PCA axis as [x, y, z] unit vector"
     )
+    rim_points: list[Position3D] = Field(
+        default_factory=list,
+        description=(
+            "The points the user marked around the neck rim, echoed back so a "
+            "resumed session can restore the marks. Empty on the automatic path."
+        ),
+    )
     plane_origin: Position3D | None = Field(
         None,
         description=(

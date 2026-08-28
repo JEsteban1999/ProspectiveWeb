@@ -395,7 +395,31 @@ def _read_saved_neck_plane(session_id: str) -> NeckPlaneRequest | None:
         origin=Position3D(x=ox, y=oy, z=oz),
         normal=[nx, ny, nz],
         dome_seed=seed,
+        rim_points=_read_rim_points(session_id),
     )
+
+
+def _read_rim_points(session_id: str) -> list[Position3D]:
+    """The points the user marked around the rim, as stored.
+
+    Persisted because they cost real effort to place well: the plane can be
+    rebuilt from its origin and normal alone, but without the points a resumed
+    session shows the measurement with no marks in the scene, and refining it
+    means starting the marking over.
+    """
+    raw = read_state(session_id, "morpho.rim_points", "")
+    if not raw:
+        return []
+    out: list[Position3D] = []
+    for triple in raw.split(";"):
+        parts = triple.split(",")
+        if len(parts) != 3:
+            continue
+        try:
+            out.append(Position3D(x=float(parts[0]), y=float(parts[1]), z=float(parts[2])))
+        except ValueError:
+            continue
+    return out
 
 
 @router.post(
@@ -590,6 +614,11 @@ def _run_morphometry_sync(
                 sac_hit_crop = reach >= bound_r * 0.97
         except Exception as exc:  # noqa: BLE001 — a diagnostic must never break the measurement
             logger.warning("Sac crop-bound check skipped: %s", exc)
+        # The marked points themselves, so a resumed session can put them back
+        # in the scene instead of showing a plane with nothing behind it.
+        if rim:
+            write_state(session_id, "morpho.rim_points",
+                        ";".join(f"{p.x},{p.y},{p.z}" for p in rim))
         write_state(session_id, "morpho.plane_seed_x",   str(seed[0]))
         write_state(session_id, "morpho.plane_seed_y",   str(seed[1]))
         write_state(session_id, "morpho.plane_seed_z",   str(seed[2]))
@@ -748,6 +777,7 @@ def _run_morphometry_sync(
         neck_origin       = Position3D(
             x=neck_origin[0], y=neck_origin[1], z=neck_origin[2]
         ),
+        rim_points        = _read_rim_points(session_id),
         plane_origin      = None if used_plane is None else Position3D(
             x=used_plane[0][0], y=used_plane[0][1], z=used_plane[0][2]
         ),

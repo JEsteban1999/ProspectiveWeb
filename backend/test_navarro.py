@@ -244,7 +244,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from main import app  # noqa: E402
 from services.database import Base, engine  # noqa: E402
-from services.sessions import create_session, session_subdir  # noqa: E402
+from services.sessions import create_session, session_subdir, write_state  # noqa: E402
 
 Base.metadata.create_all(bind=engine)
 client = TestClient(app, raise_server_exceptions=True)
@@ -281,3 +281,102 @@ class TestEndpoint:
         sid = create_session()
         assert client.post(f"/api/clips/navarro/{sid}?jaw_mm=0.1").status_code == 422
         assert client.post(f"/api/clips/navarro/{sid}?jaw_mm=999").status_code == 422
+
+
+# ── 7. Defects found while reviewing the integration ──────────────────────── #
+
+class TestPlacementUsesTheRealClip:
+    def test_every_navarro_clip_can_be_addressed_by_its_id(self):
+        # The catalogue index was frozen at import from the BUILT-IN catalogue
+        # only, so all 42 NAVARRO ids missed it and placing one silently fell
+        # back to a generic 9 mm box: the plan and the report then described a
+        # clip nobody had chosen.
+        from routers.clips import _catalogue_index
+
+        index = _catalogue_index()
+        for spec in navarro.family_specs():
+            assert spec.identifier in index, spec.name
+
+    def test_the_id_survives_a_round_trip(self):
+        # Slugging a display name carrying ™, a degree sign and a decimal point
+        # is fragile; the id is structured so the geometry can be rebuilt from it.
+        for spec in navarro.family_specs():
+            parsed = navarro.parse_clip_id(spec.identifier)
+            assert parsed is not None
+            assert parsed[2] == spec.blade_length_mm
+
+    def test_placing_one_uses_its_real_geometry(self):
+        mesh = navarro.mesh_for_id("navarro:t1:0:7.0")
+        b = _bounds(mesh)
+        # The drawn 7 mm clip is 21.30 mm long; a generic fallback would not be.
+        assert (b[5] - b[4]) == pytest.approx(21.3, abs=0.2)
+        assert mesh.GetNumberOfPoints() > 5000, "esto es la pieza real, no una caja"
+
+    def test_an_id_that_is_not_ours_is_rejected_rather_than_guessed(self):
+        assert navarro.parse_clip_id("yasargil-recto-9mm") is None
+        assert navarro.parse_clip_id("navarro:t1:0") is None
+        with pytest.raises(ValueError):
+            navarro.mesh_for_id("custom:3")
+
+
+class TestListingIsCached:
+    def test_a_repeated_listing_does_not_rewalk_the_tree(self):
+        navarro.clear_cache()
+        navarro.list_variants()
+        key = str(navarro.library_root())
+        assert key in navarro._CACHE, (
+            "la clave de caché la machacaba el bucle, así que nunca acertaba "
+            "y acumulaba entradas basura"
+        )
+        assert navarro.list_variants() is navarro._CACHE[key][1]
+
+    def test_the_cache_is_keyed_by_folder_not_by_variant(self):
+        navarro.clear_cache()
+        navarro.list_variants()
+        assert all(isinstance(k, str) for k in navarro._CACHE)
+
+
+class TestPlacingARecommendedClipEndToEnd:
+    """Recommend → place → report, with the geometry that was recommended.
+
+    The gap this closes: the panel could offer a NAVARRO clip, and placing it
+    produced a generic box under a raw id. What the surgeon chose, what the
+    viewer drew and what the report named were three different things.
+    """
+
+    def test_a_recommended_clip_can_be_placed_and_named(self):
+        from services.device_state import read_clips
+        from services.report_generator import build_report_data_from_session
+
+        sid = create_session()
+        write_state(sid, "morpho.neck_mm", "12.0")
+        write_state(sid, "morpho.ar", "1.3")
+        write_state(sid, "morpho.dome_height_mm", "15.6")
+        write_state(sid, "morpho.neck_source", "rim")
+
+        body = client.get(f"/api/clips/selection/{sid}").json()
+        nav = next((c for c in body["recommended"] if c["clip_id"].startswith("navarro:")), None)
+        assert nav is not None, "un cuello de 12 mm debería llegar a la familia NAVARRO"
+
+        r = client.post("/api/clips/plan", json={
+            "session_id": sid,
+            "placements": [{"clip_id": nav["clip_id"],
+                            "position": {"x": 0, "y": 0, "z": 0},
+                            "normal": [0, 0, 1], "rotation_deg": 0}],
+        })
+        assert r.status_code == 200, r.text
+
+        placed = read_clips(sid)
+        assert len(placed) == 1
+        # Named, not left as a raw id, and it is the clip that was recommended.
+        assert "NAVARRO" in placed[0]["name"]
+        assert placed[0]["name"] == nav["clip_name"]
+        assert build_report_data_from_session(sid).clips
+
+    def test_the_placed_geometry_is_the_designed_part(self):
+        # A generic fallback would be a 9 mm box; the real 16 mm design is not.
+        from services.navarro import mesh_for_id
+
+        mesh = mesh_for_id("navarro:t1:0:16.0")
+        b = _bounds(mesh)
+        assert (b[5] - b[4]) == pytest.approx(16 + navarro.BODY_LENGTH_MM, abs=0.2)

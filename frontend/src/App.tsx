@@ -161,8 +161,16 @@ function Router() {
         } catch { /* leave candidates empty */ }
       }
       if (r.current_step >= 3) {
-        try { planning.setMorphometry(await api.morphometry(r.session_id)); }
-        catch { /* leave morphometry empty */ }
+        try {
+          const m = await api.morphometry(r.session_id);
+          planning.setMorphometry(m);
+          // Put the hand-marked neck back in the scene. The measurement is
+          // rebuilt from the stored plane either way, but the marks are what
+          // the user actually placed, and re-marking a rim is real work.
+          if (m.rim_points?.length) {
+            planning.setNeckRim(m.rim_points.map((p) => [p.x, p.y, p.z] as [number, number, number]));
+          }
+        } catch { /* leave morphometry empty */ }
       }
       setResumeStep(Math.min(Math.max(r.current_step, 0), 6));
       // The store now mirrors what is on disk, so the session is NOT dirty: it

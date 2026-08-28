@@ -129,6 +129,12 @@ function ClipsTab() {
   const [recs, setRecs] = useState<ClipRecommendation[]>([]);
   const [customs, setCustoms] = useState<CustomClipInfo[]>([]);
   const [sel, setSel] = useState<string>("");
+  // A clip chosen from the criteria panel is not in the legacy dropdown's list:
+  // its options come from `/clips/recommendations`, which knows nothing about
+  // the library or the NAVARRO™ family. Without remembering the pick here the
+  // Select showed no selection and the placed clip was labelled with its raw
+  // id ("navarro:t1:0:7.0") instead of its name.
+  const [picked, setPicked] = useState<{ id: string; name: string } | null>(null);
   const [placed, setPlaced] = useState<PlacedClip[]>([]);
   const [plan, setPlan] = useState<ClipPlanResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -160,14 +166,20 @@ function ClipsTab() {
     }
   };
 
-  const options = useMemo(() => [
-    ...recs.map((r) => ({ value: r.clip_id, label: `${r.clip_name} · ${(r.score * 100).toFixed(0)}` })),
-    ...customs.map((c) => ({ value: c.clip_id, label: `★ ${c.name} (personalizado)` })),
-  ], [recs, customs]);
+  const options = useMemo(() => {
+    const base = [
+      ...recs.map((r) => ({ value: r.clip_id, label: `${r.clip_name} · ${(r.score * 100).toFixed(0)}` })),
+      ...customs.map((c) => ({ value: c.clip_id, label: `★ ${c.name} (personalizado)` })),
+    ];
+    return picked && !base.some((o) => o.value === picked.id)
+      ? [{ value: picked.id, label: `★ ${picked.name}` }, ...base]
+      : base;
+  }, [recs, customs, picked]);
 
   const nameFor = (clipId: string) =>
     recs.find((r) => r.clip_id === clipId)?.clip_name
     ?? customs.find((c) => c.clip_id === clipId)?.name
+    ?? (picked?.id === clipId ? picked.name : undefined)
     ?? clipId;
 
   const addClip = () => {
@@ -226,7 +238,7 @@ function ClipsTab() {
             sessionId={sessionId}
             caseId={caseId}
             selectedClipId={sel}
-            onPick={(clipId) => setSel(clipId)}
+            onPick={(clipId, clipName) => { setPicked({ id: clipId, name: clipName }); setSel(clipId); }}
           />
         </div>
       )}

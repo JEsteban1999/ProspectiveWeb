@@ -71,6 +71,15 @@ class ClipSpec:
     # family that bends in 15° steps would otherwise lose that detail, and it is
     # the real angle that gets machined.
     bend_angle_deg: float = 0.0
+    # Stable identifier. Empty means "derive it from the name", which is fine for
+    # the built-in catalogue but not for a family whose names carry ™, decimals
+    # and degree signs: a slug of those is fragile, and the id is what the
+    # placement endpoint looks the geometry up by.
+    clip_id: str = ""
+
+    @property
+    def identifier(self) -> str:
+        return self.clip_id or _slug(self.name)
 
     @property
     def force_band(self) -> tuple[float, float]:

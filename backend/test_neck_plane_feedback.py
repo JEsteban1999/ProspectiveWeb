@@ -155,3 +155,40 @@ class TestARunawaySacSaysSo:
         # The dome is Ø 5.2 mm; the artery it sits on is 50 mm long. Anything
         # approaching that length means the artery came along.
         assert body["max_diameter_mm"] < 20.0, "the sac must not span the artery"
+
+
+class TestTheMarkedPointsSurvive:
+    """The rim points cost real effort to place; losing them on resume is a cost.
+
+    The plane can be rebuilt from its origin and normal, so the MEASUREMENT was
+    always safe. What was not saved were the marks themselves, so a resumed
+    session showed a neck plane with nothing behind it and refining it meant
+    marking the rim again from scratch.
+    """
+
+    def test_the_points_come_back_with_the_measurement(self):
+        sid = _session_with_sac()
+        rim = [(2.0, 0.0, 1.4), (-2.0, 0.0, 1.4), (0.0, 2.0, 1.4), (0.0, -2.0, 1.4)]
+        _neck_plane(sid, rim=rim, apex=(0.0, 0.0, 5.0))
+
+        body = client.get(f"/api/morphometry/{sid}").json()
+        got = [(p["x"], p["y"], p["z"]) for p in body["rim_points"]]
+        assert got == rim
+
+    def test_they_survive_a_save_and_restore(self):
+        from services.sessions import rehydrate_session, snapshot_session
+
+        sid = _session_with_sac()
+        rim = [(1.8, 0.0, 1.5), (-1.8, 0.0, 1.5), (0.0, 1.8, 1.5)]
+        before = _neck_plane(sid, rim=rim, apex=(0.0, 0.0, 5.0)).json()
+        snapshot_session(sid)
+        after = client.get(f"/api/morphometry/{rehydrate_session(sid)}").json()
+
+        assert [(p["x"], p["y"], p["z"]) for p in after["rim_points"]] == rim
+        # And the measurement itself is unchanged, which was already true.
+        assert after["neck_mm"] == before["neck_mm"]
+        assert after["neck_source"] == "rim"
+
+    def test_the_automatic_path_reports_no_marks(self):
+        sid = _session_with_sac()
+        assert client.get(f"/api/morphometry/{sid}").json()["rim_points"] == []

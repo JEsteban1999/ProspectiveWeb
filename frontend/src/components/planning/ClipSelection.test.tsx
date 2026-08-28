@@ -246,7 +246,10 @@ describe("sizing a made-to-order clip", () => {
     render(<ClipSelectionPanel sessionId="s1" />);
     const slider = await screen.findByRole("slider");
     fireEvent.change(slider, { target: { value: "18.5" } });
-    expect(screen.getByText("18.5 mm")).toBeInTheDocument();
+    // The design-system Slider keeps the value and its unit in separate spans,
+    // so the readout is asserted the way that component renders it.
+    expect(screen.getByText("18.5")).toBeInTheDocument();
+    expect(slider).toHaveValue("18.5");
   });
 
   it("builds the clip at the chosen jaw", async () => {

@@ -7772,6 +7772,14 @@
             "title": "Principal Axis",
             "description": "Principal PCA axis as [x, y, z] unit vector"
           },
+          "rim_points": {
+            "items": {
+              "$ref": "#/components/schemas/Position3D"
+            },
+            "type": "array",
+            "title": "Rim Points",
+            "description": "The points the user marked around the neck rim, echoed back so a resumed session can restore the marks. Empty on the automatic path."
+          },
           "plane_origin": {
             "anyOf": [
               {
