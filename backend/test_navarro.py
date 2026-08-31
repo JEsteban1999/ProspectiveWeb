@@ -385,3 +385,58 @@ class TestPlacingARecommendedClipEndToEnd:
         b = _bounds(mesh)
         longest = max(b[1] - b[0], b[3] - b[2], b[5] - b[4])
         assert longest == pytest.approx(16 + navarro.BODY_LENGTH_MM, abs=0.2)
+
+
+class TestTheFamilyIsNeverHiddenByRanking:
+    """An entire kind of clip must not disappear behind a scoring penalty.
+
+    The force of a made-to-order design is still a band, so its force criterion
+    is capped at `warn` — correctly, nobody can call it met. A catalogue clip
+    with a characterised force scores `ok`. Per clip the gap is small; in
+    aggregate it was fatal: with a 6 mm neck, 28 of the 42 NAVARRO™ designs were
+    viable and the best ranked 12th of 60, so every one of the six visible slots
+    went to stock and the institution's own clips never appeared at all.
+
+    Reported by the user: "probé el case 3 y me recomendó solo los comerciales".
+    """
+
+    @pytest.mark.parametrize("neck", [2.5, 4.0, 6.0, 12.0])
+    def test_a_made_to_order_clip_is_always_offered_when_one_fits(self, neck):
+        sel = select_clips(ClipCase(neck_mm=neck, ar=1.4, dome_height_mm=neck * 1.4,
+                                    neck_source="rim"))
+        made = [c for c in sel.recommended
+                if getattr(c.clip, "availability", "stock") == "made_to_order"]
+        assert made, f"con cuello {neck} mm no se ofreció ningún clip bajo pedido"
+
+    def test_stock_is_still_offered_too(self):
+        # Symmetric: the guarantee must not turn into the opposite blind spot.
+        sel = select_clips(ClipCase(neck_mm=6.0, ar=1.4, dome_height_mm=8.4,
+                                    neck_source="rim"))
+        assert any(getattr(c.clip, "availability", "stock") == "stock"
+                   for c in sel.recommended)
+
+    def test_the_scores_are_left_alone(self):
+        # The uncertainty is real and stays visible; only visibility changes.
+        sel = select_clips(ClipCase(neck_mm=6.0, ar=1.4, dome_height_mm=8.4,
+                                    neck_source="rim"))
+        made = [c for c in sel.recommended
+                if getattr(c.clip, "availability", "stock") == "made_to_order"]
+        stock = [c for c in sel.recommended
+                 if getattr(c.clip, "availability", "stock") == "stock"]
+        assert made and stock
+        assert made[0].score < stock[0].score, "no se ha inflado la puntuación"
+        force = next(c for c in made[0].criteria if c.key == "force")
+        assert force.verdict == "warn"
+
+    def test_the_list_stays_sorted_by_score(self):
+        sel = select_clips(ClipCase(neck_mm=6.0, ar=1.4, dome_height_mm=8.4,
+                                    neck_source="rim"))
+        scores = [c.score for c in sel.recommended]
+        assert scores == sorted(scores, reverse=True)
+
+    def test_nothing_unusable_sneaks_in_through_the_guarantee(self):
+        # A neck too small for the smallest jaw must still offer no NAVARRO.
+        sel = select_clips(ClipCase(neck_mm=1.5, ar=1.4, dome_height_mm=2.1,
+                                    neck_source="rim"))
+        assert all(c.viable for c in sel.recommended)
+        assert not any("NAVARRO" in c.clip.name for c in sel.recommended)

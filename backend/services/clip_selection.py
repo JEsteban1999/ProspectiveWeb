@@ -855,6 +855,37 @@ def repartition_after_verification(selection: "ClipSelection") -> None:
         )
 
 
+def _with_every_kind_represented(viable: list[ClipCandidate], n: int) -> list[ClipCandidate]:
+    """Top `n` by score, but never a whole kind of clip left off the list.
+
+    Ranking alone hid an entire family. A clip whose closing force is still a
+    design band is capped at `warn` on that criterion — correctly, nobody can
+    call it met — while a catalogue clip with a characterised force scores `ok`.
+    The gap is small per clip and fatal in aggregate: with a 6 mm neck, 28 of the
+    42 NAVARRO™ designs were viable and the best of them ranked 12th of 60, so
+    the six visible slots were always stock and the institution's own clips never
+    appeared at all.
+
+    Stock and made-to-order answer different questions — what can be picked up
+    today, and what would be made for this case — so each gets at least its best
+    candidate. The scores are untouched: the uncertainty is real and stays
+    visible in the criteria; what changes is that it no longer decides
+    visibility.
+    """
+    out = list(viable[:n])
+    shown = {id(c) for c in out}
+    for kind in ("stock", "made_to_order"):
+        if any(getattr(c.clip, "availability", "stock") == kind for c in out):
+            continue
+        best = next((c for c in viable
+                     if getattr(c.clip, "availability", "stock") == kind
+                     and id(c) not in shown), None)
+        if best is not None:
+            out.append(best)
+            shown.add(id(best))
+    return sorted(out, key=lambda c: -c.score)
+
+
 def select_clips(
     case: ClipCase,
     catalogue: list[ClipSpec] | None = None,
@@ -888,7 +919,7 @@ def select_clips(
     failed = sorted([c for c in evaluated if not c.viable],
                     key=lambda c: abs(c.clip.blade_length_mm - case.neck_mm * COVERAGE_IDEAL))
 
-    recommended = viable[:n]
+    recommended = _with_every_kind_represented(viable, n)
     # The near-misses worth showing: the ones that came closest to the ideal blade.
     rejected = failed[:n]
 

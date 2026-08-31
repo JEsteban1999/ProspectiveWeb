@@ -63,7 +63,7 @@ approval, and a tamper-evident audit chain.
 
 | | |
 |---|---|
-| Backend tests | **540 passing** (`pytest`, 38 files) |
+| Backend tests | **548 passing** (`pytest`, 38 files) |
 | Frontend tests | **84 passing** (`vitest`, 10 files) · `tsc -b` clean · production build clean |
 | REST endpoints | **97** operations across 81 paths (23 routers), all authenticated except login/signup/logout |
 | Feature parity with desktop | **Complete** |
@@ -464,6 +464,14 @@ Three things about them are easy to get wrong, and each is enforced in code:
   `warn` for these clips however well the band sits — "meets the criterion" is a
   claim nobody can make yet.
 
+**Visibility.** Stock and made-to-order answer different questions — what can be
+picked up today, and what would be made for this case — so the recommendation
+always shows at least the best of each. Ranking alone hid the family: a design
+whose closing force is still a band is capped at `warn` on that criterion, and
+with a 6 mm neck 28 of the 42 designs were viable while the best ranked 12th of
+60, so every visible slot went to stock. The scores are untouched; only
+visibility changed.
+
 **Resizing.** These are manufactured per case, so the jaw is not restricted to
 the six drawn sizes: `POST /api/clips/navarro/{sid}` builds any jaw length, and
 the panel both suggests the one the neck asks for and lets it be set by hand.
@@ -652,11 +660,11 @@ patient imaging.
 
 ```bash
 cd backend
-.venv\Scripts\python -m pytest -q                        # all 540 tests
+.venv\Scripts\python -m pytest -q                        # all 548 tests
 .venv\Scripts\python -m pytest test_session_abc.py -v    # one suite
 ```
 
-Expected: **540 passed, 0 failed** (~3–4 min; VTK and SimpleITK do real work).
+Expected: **548 passed, 0 failed** (~3–4 min; VTK and SimpleITK do real work).
 
 Frontend checks:
 
