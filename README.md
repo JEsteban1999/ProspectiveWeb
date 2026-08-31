@@ -63,7 +63,7 @@ approval, and a tamper-evident audit chain.
 
 | | |
 |---|---|
-| Backend tests | **515 passing** (`pytest`, 37 files) |
+| Backend tests | **519 passing** (`pytest`, 37 files) |
 | Frontend tests | **74 passing** (`vitest`, 9 files) · `tsc -b` clean · production build clean |
 | REST endpoints | **96** operations across 79 paths (23 routers), all authenticated except login/signup/logout |
 | Feature parity with desktop | **Complete** |
@@ -424,8 +424,15 @@ has to be delivered as a specification rather than as silence.
 
 Blade length, width, height, spring, shape, angle, target closing force, and the
 window diameter taken from the measured parent artery. Width, height and spring
-are derived from the median proportions of the real catalogue rather than
-invented. `POST /api/clips/manufacture/{sid}` writes the STL.
+follow the median proportions of the real catalogue rather than being invented —
+but never below the smallest part that demonstrably exists. Scaling every
+dimension with the blade treats a clip as one shape at different zooms, and a
+2.5 mm neck then specified a 2.8 mm spring, 44 % under the shortest real one.
+The spread of spring/blade across the catalogue (0.45–1.14) already says the
+relation is not proportional, and the NAVARRO™ family settles it: 42 designs from
+7 to 22 mm of jaw, all on the same 14.3 mm body. A spring is sized by the force
+it holds, not by the blade in front of it. When a dimension is floored the spec
+says so. `POST /api/clips/manufacture/{sid}` writes the STL.
 
 The spec always lists what a machinist still has to confirm — a specification
 that hides its assumptions is worse than one that states them. In particular,
@@ -643,11 +650,11 @@ patient imaging.
 
 ```bash
 cd backend
-.venv\Scripts\python -m pytest -q                        # all 515 tests
+.venv\Scripts\python -m pytest -q                        # all 519 tests
 .venv\Scripts\python -m pytest test_session_abc.py -v    # one suite
 ```
 
-Expected: **515 passed, 0 failed** (~3–4 min; VTK and SimpleITK do real work).
+Expected: **519 passed, 0 failed** (~3–4 min; VTK and SimpleITK do real work).
 
 Frontend checks:
 

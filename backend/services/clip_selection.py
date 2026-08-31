@@ -500,6 +500,28 @@ def _catalogue_proportions() -> tuple[float, float, float]:
     return w, h, s
 
 
+def _catalogue_floors() -> tuple[float, float, float]:
+    """Smallest blade width, blade height and spring length that exist as real parts.
+
+    Scaling every dimension with blade length treats the clip as one shape
+    photographed at different zooms, and it is not. Seen on screen: a 2.5 mm neck
+    produced a spec with a 2.8 mm spring — 44 % below the shortest spring in the
+    catalogue (5.0 mm), and not a thing anyone can wind. The spread of
+    spring/blade across real clips is 0.45–1.14, which already says the relation
+    is not proportional, and the NAVARRO™ family settles it: 42 designs from 7 to
+    22 mm of jaw, all on the SAME 14.3 mm body. A spring is sized by the force it
+    has to hold, not by the blade in front of it.
+
+    So the proportions still set the shape, but nothing is specified below the
+    smallest part that demonstrably exists.
+    """
+    from services.clips import CLIP_CATALOGUE
+
+    return (min(c.blade_width_mm for c in CLIP_CATALOGUE),
+            min(c.blade_height_mm for c in CLIP_CATALOGUE),
+            min(c.spring_length_mm for c in CLIP_CATALOGUE))
+
+
 @dataclass
 class ManufactureSpec:
     """The clip that would fit, when no stock clip does.
@@ -610,11 +632,23 @@ def derive_manufacture_spec(case: ClipCase, rejected: list[ClipCandidate]) -> Ma
             "antes de encargar la fabricación."
         )
 
+    w_min, h_min, s_min = _catalogue_floors()
+    width = blade * w_r
+    height = blade * h_r
+    spring = blade * s_r
+    if width < w_min or height < h_min or spring < s_min:
+        notes.append(
+            f"Para una hoja de {blade:.1f} mm las proporciones del catálogo darían una "
+            f"pieza por debajo de lo que existe fabricado (muelle {spring:.1f} mm frente "
+            f"a un mínimo real de {s_min:.1f} mm). Anchura, altura y muelle se han "
+            f"llevado al mínimo real: el muelle lo dimensiona la fuerza que debe "
+            f"sostener, no la hoja que lleva delante."
+        )
     return ManufactureSpec(
         blade_length_mm=round(blade, 1),
-        blade_width_mm=round(blade * w_r, 2),
-        blade_height_mm=round(blade * h_r, 2),
-        spring_length_mm=round(blade * s_r, 1),
+        blade_width_mm=round(max(width, w_min), 2),
+        blade_height_mm=round(max(height, h_min), 2),
+        spring_length_mm=round(max(spring, s_min), 1),
         shape=shape,
         angle_deg=_SHAPE_ANGLE_OUT.get(shape, 0.0),
         closing_force_g=float(force),

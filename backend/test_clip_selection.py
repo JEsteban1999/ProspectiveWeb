@@ -388,3 +388,46 @@ class TestGeometryCanRemoveACandidate:
         assert sel.outcome == "manufacture"
         assert sel.manufacture is not None
         assert sel.recommended == []
+
+
+class TestTheSpecStaysManufacturable:
+    """Nothing may be specified smaller than a part that demonstrably exists.
+
+    Seen on screen during an end-to-end run: a 2.5 mm neck produced a spec with a
+    2.8 mm spring — 44 % below the shortest spring in the catalogue, and not a
+    thing anyone can wind. Scaling every dimension with blade length treats the
+    clip as one shape at different zooms. The spread of spring/blade across real
+    clips (0.45–1.14) already says otherwise, and the NAVARRO™ family settles it:
+    42 designs from 7 to 22 mm of jaw, all on the same 14.3 mm body.
+    """
+
+    def _floors(self):
+        from services.clips import CLIP_CATALOGUE
+        return (min(c.blade_width_mm for c in CLIP_CATALOGUE),
+                min(c.blade_height_mm for c in CLIP_CATALOGUE),
+                min(c.spring_length_mm for c in CLIP_CATALOGUE))
+
+    def test_a_small_neck_does_not_get_an_impossible_spring(self):
+        w_min, h_min, s_min = self._floors()
+        spec = derive_manufacture_spec(_case(neck_mm=2.5), [])
+        assert spec.spring_length_mm >= s_min
+        assert spec.blade_width_mm >= w_min
+        assert spec.blade_height_mm >= h_min
+
+    def test_the_clamp_is_declared_rather_than_hidden(self):
+        spec = derive_manufacture_spec(_case(neck_mm=2.5), [])
+        joined = " ".join(spec.confidence_notes)
+        assert "mínimo real" in joined, "un recorte silencioso es peor que ninguno"
+
+    def test_a_large_neck_is_left_to_the_proportions(self):
+        # The floors are a floor, not a redesign: nothing is clamped up here.
+        _w, _h, s_min = self._floors()
+        spec = derive_manufacture_spec(_case(neck_mm=12.0), [])
+        assert spec.spring_length_mm > s_min
+        assert not any("mínimo real" in n for n in spec.confidence_notes)
+
+    def test_the_blade_itself_still_follows_the_neck(self):
+        # Only the secondary dimensions are floored; the blade is the measurement.
+        small = derive_manufacture_spec(_case(neck_mm=2.5), [])
+        big = derive_manufacture_spec(_case(neck_mm=12.0), [])
+        assert small.blade_length_mm < big.blade_length_mm
