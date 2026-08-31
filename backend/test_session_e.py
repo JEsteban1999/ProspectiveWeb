@@ -513,3 +513,46 @@ class TestFullRegressionE:
         paths = spec["paths"]
         assert "/api/report"      in paths
         assert "/api/export/stl"  in paths
+
+
+class TestAResumedSessionStartsItsOwnClock:
+    """Resuming must not inherit the snapshot's age.
+
+    `_clone_tree` copies every file in the save, and `.created_at` is one of
+    them — so a session restored from a week-old snapshot came back already days
+    past the TTL. The next purge sweep (hourly, and on every server start)
+    deleted it while the user was working in it, with no message: the pipeline
+    simply started answering 404. Any session older than SESSION_TTL_HOURS was
+    effectively unresumable.
+    """
+
+    def test_the_restored_session_is_new_however_old_the_save_is(self):
+        import time as _time
+
+        from services.sessions import (SAVES_ROOT, create_session, rehydrate_session,
+                                       session_dir, snapshot_session, write_state)
+
+        sid = create_session()
+        write_state(sid, "seg.threshold_lower", "150")
+        snapshot_session(sid)
+        # Age the snapshot by a fortnight.
+        stale = _time.time() - 14 * 24 * 3600
+        (SAVES_ROOT / sid / ".created_at").write_text(str(stale))
+
+        new = rehydrate_session(sid)
+        age = _time.time() - float((session_dir(new) / ".created_at").read_text())
+        assert age < 60, f"la sesión reanudada nació con {age/3600:.0f} h de antigüedad"
+
+    def test_it_survives_the_purge_sweep(self):
+        import time as _time
+
+        from services.sessions import (SAVES_ROOT, create_session, purge_expired_sessions,
+                                       rehydrate_session, session_dir, snapshot_session)
+
+        sid = create_session()
+        snapshot_session(sid)
+        (SAVES_ROOT / sid / ".created_at").write_text(str(_time.time() - 14 * 24 * 3600))
+
+        new = rehydrate_session(sid)
+        purge_expired_sessions()
+        assert session_dir(new).is_dir(), "la purga borró una sesión recién reanudada"

@@ -63,7 +63,7 @@ approval, and a tamper-evident audit chain.
 
 | | |
 |---|---|
-| Backend tests | **510 passing** (`pytest`, 37 files) |
+| Backend tests | **515 passing** (`pytest`, 37 files) |
 | Frontend tests | **74 passing** (`vitest`, 9 files) · `tsc -b` clean · production build clean |
 | REST endpoints | **96** operations across 79 paths (23 routers), all authenticated except login/signup/logout |
 | Feature parity with desktop | **Complete** |
@@ -302,6 +302,12 @@ mechanisms make work survive that sweep:
   snapshot must stay a point-in-time image. The mesh undo/redo stacks are pruned
   out of the snapshot — they are a working convenience, and carrying every
   intermediate state multiplied the size of each save.
+
+A restored session starts its own clock. `_clone_tree` copies every file in the
+snapshot, `.created_at` included, so a session restored from a week-old save came
+back already past the TTL and the next purge sweep deleted it mid-session, with
+no message — any session older than `SESSION_TTL_HOURS` was effectively
+unresumable. The live session is stamped with the time it was actually created.
 
 What survives a save → restore, verified end to end: the segmentation and every
 mesh edit, the detection, the morphometry *including the fitted neck plane and
@@ -637,11 +643,11 @@ patient imaging.
 
 ```bash
 cd backend
-.venv\Scripts\python -m pytest -q                        # all 510 tests
+.venv\Scripts\python -m pytest -q                        # all 515 tests
 .venv\Scripts\python -m pytest test_session_abc.py -v    # one suite
 ```
 
-Expected: **510 passed, 0 failed** (~3–4 min; VTK and SimpleITK do real work).
+Expected: **515 passed, 0 failed** (~3–4 min; VTK and SimpleITK do real work).
 
 Frontend checks:
 

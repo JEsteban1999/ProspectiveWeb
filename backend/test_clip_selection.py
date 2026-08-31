@@ -327,3 +327,64 @@ class TestEndpoint:
         r = client.post(f"/api/clips/manufacture/{sid}")
         assert r.status_code == 409
         assert "cuello" in r.json()["detail"].lower()
+
+
+# ── 7. Verification must be able to demote out of the list ────────────────── #
+
+class TestGeometryCanRemoveACandidate:
+    """A clip the geometry rejects has to leave the recommended list.
+
+    Found end to end on a real study: the analytic pass splits the catalogue
+    BEFORE any clip is posed on the patient's mesh, and the geometry check runs
+    afterwards. A blade that fouled a neighbouring vessel at every approach
+    angle was correctly marked `fail` with a score of 0 — and then stayed in
+    `recommended`, so the panel listed "descartado" rows among the
+    recommendations and the summary counted them as usable.
+    """
+
+    def _selection_with_a_failed_candidate(self):
+        from services.clip_selection import ClipCandidate, ClipSelection, Criterion
+
+        case = _case(neck_mm=5.0)
+        good = evaluate_clip(_clip("Yasargil Recto 7mm"), case)
+        bad = evaluate_clip(_clip("Yasargil Curvo 7mm"), case)
+        # What the geometry check does to a clip that collides everywhere.
+        bad.criteria.append(Criterion("geometry", "Ajuste real", "fail",
+                                      "Toca estructuras vecinas en las 6 orientaciones", 0.0, weight=2.5))
+        bad.score = 0.0
+        assert not bad.viable and good.viable
+        return ClipSelection(outcome="stock", summary="", case=case,
+                             recommended=[good, bad], rejected=[],
+                             manufacture=None, caveats=[])
+
+    def test_a_demoted_candidate_moves_to_rejected(self):
+        from services.clip_selection import repartition_after_verification
+
+        sel = self._selection_with_a_failed_candidate()
+        repartition_after_verification(sel)
+
+        assert all(c.viable for c in sel.recommended), "un clip inutilizable seguía recomendado"
+        assert any(not c.viable for c in sel.rejected), "y tiene que aparecer entre los descartados"
+
+    def test_the_summary_stops_counting_it_as_usable(self):
+        from services.clip_selection import repartition_after_verification
+
+        sel = self._selection_with_a_failed_candidate()
+        repartition_after_verification(sel)
+        assert "2 clips" not in sel.summary
+
+    def test_losing_every_candidate_becomes_a_manufacturing_answer(self):
+        # If the geometry rejects them all, "stock" is no longer true.
+        from services.clip_selection import ClipSelection, Criterion, repartition_after_verification
+
+        case = _case(neck_mm=5.0)
+        bad = evaluate_clip(_clip("Yasargil Recto 7mm"), case)
+        bad.criteria.append(Criterion("geometry", "Ajuste real", "fail", "colisiona", 0.0, weight=2.5))
+        bad.score = 0.0
+        sel = ClipSelection(outcome="stock", summary="", case=case,
+                            recommended=[bad], rejected=[], manufacture=None, caveats=[])
+        repartition_after_verification(sel)
+
+        assert sel.outcome == "manufacture"
+        assert sel.manufacture is not None
+        assert sel.recommended == []

@@ -600,8 +600,10 @@ def _run_selection(session_id: str, case_id: int | None, verify: bool) -> ClipSe
         from services.segmentation import read_vtp
         vessel = read_vtp(mesh_path)
         verify_all(selection.recommended, case, vessel, plane[0], plane[1])
-        # Geometry can demote a candidate, so the order has to be re-established.
-        selection.recommended.sort(key=lambda c: -c.score)
+        # Geometry can demote a candidate below the bar entirely, so the split
+        # between recommended and rejected has to be redrawn — not just re-sorted.
+        from services.clip_selection import repartition_after_verification
+        repartition_after_verification(selection)
     except Exception as exc:  # noqa: BLE001 — verification is a bonus, not a gate
         logger.warning("Clip geometry verification failed — session=%s: %s", session_id, exc)
     return selection

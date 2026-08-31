@@ -144,6 +144,13 @@ def rehydrate_session(saved_session_id: str) -> str:
         raise FileNotFoundError(f"No saved session '{saved_session_id}' found")
     new_sid = create_session()  # creates the sub-dirs + .created_at
     _clone_tree(src, SESSIONS_ROOT / new_sid)
+    # Re-stamp the clock. `_clone_tree` copies every file in the snapshot, and
+    # that includes `.created_at`, so the restored session inherited the age of
+    # the save: resuming something saved last week produced a "live" session
+    # already days past the TTL, which the next purge sweep deleted out from
+    # under the user — mid-session, with no message. The live session was
+    # created NOW, whatever the snapshot says.
+    (SESSIONS_ROOT / new_sid / ".created_at").write_text(str(time.time()))
     return new_sid
 
 

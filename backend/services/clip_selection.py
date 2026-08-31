@@ -770,6 +770,57 @@ def _availability_caveats(cands: list[ClipCandidate]) -> list[str]:
     return out
 
 
+def repartition_after_verification(selection: "ClipSelection") -> None:
+    """Re-sort recommended vs rejected once the geometry check has had its say.
+
+    The analytic pass splits the catalogue before any clip is posed on the
+    patient's mesh. The geometry check runs afterwards and CAN demote a
+    candidate — a blade that fouls a neighbouring vessel at every approach angle
+    earns a `fail` — but the split had already happened, so the demoted clip
+    stayed in `recommended` carrying "descartado" and a score of 0.
+
+    That broke the module's own rule (an unusable clip must never outrank a
+    usable one) and made the summary lie: it counted six clips as usable while
+    two of them had just been found to collide. Caught end to end on a real
+    study; the unit tests missed it because none of them verified a candidate
+    that the geometry then rejected.
+    """
+    demoted = [c for c in selection.recommended if not c.viable]
+    if demoted:
+        selection.recommended = [c for c in selection.recommended if c.viable]
+        selection.rejected = demoted + selection.rejected
+    selection.recommended.sort(key=lambda c: -c.score)
+
+    case = selection.case
+    clean = [c for c in selection.recommended if c.verdict == "ok"]
+    if not selection.recommended:
+        spec = selection.manufacture or derive_manufacture_spec(case, selection.rejected)
+        selection.outcome = "manufacture"
+        selection.manufacture = spec
+        selection.summary = (
+            f"Ningún clip del inventario supera la comprobación sobre la malla de "
+            f"este paciente. Se necesita fabricar: {spec.label}."
+        )
+    elif clean:
+        plural = len(clean) != 1
+        selection.outcome = "stock"
+        selection.summary = (
+            f"{len(clean)} clip{'s' if plural else ''} del inventario "
+            f"cumple{'n' if plural else ''} todos los criterios para un cuello de "
+            f"{case.neck_mm:.1f} mm."
+        )
+    else:
+        spec = selection.manufacture or derive_manufacture_spec(case, selection.rejected)
+        selection.manufacture = spec
+        plural = len(selection.recommended) != 1
+        selection.outcome = "marginal"
+        selection.summary = (
+            f"{len(selection.recommended)} clip{'s' if plural else ''} del inventario "
+            f"{'son' if plural else 'es'} utilizable{'s' if plural else ''}, pero "
+            f"ninguno sin reservas. La alternativa a medida sería: {spec.label}."
+        )
+
+
 def select_clips(
     case: ClipCase,
     catalogue: list[ClipSpec] | None = None,
