@@ -308,8 +308,12 @@ class TestPlacementUsesTheRealClip:
     def test_placing_one_uses_its_real_geometry(self):
         mesh = navarro.mesh_for_id("navarro:t1:0:7.0")
         b = _bounds(mesh)
-        # The drawn 7 mm clip is 21.30 mm long; a generic fallback would not be.
-        assert (b[5] - b[4]) == pytest.approx(21.3, abs=0.2)
+        # Longest extent, not a named axis: `mesh_for_id` returns the clip in the
+        # app's device frame, so which axis carries the length is not the file's
+        # business. The drawn 7 mm clip is 21.30 mm long either way; a generic
+        # fallback would not be.
+        longest = max(b[1] - b[0], b[3] - b[2], b[5] - b[4])
+        assert longest == pytest.approx(21.3, abs=0.2)
         assert mesh.GetNumberOfPoints() > 5000, "esto es la pieza real, no una caja"
 
     def test_an_id_that_is_not_ours_is_rejected_rather_than_guessed(self):
@@ -379,4 +383,5 @@ class TestPlacingARecommendedClipEndToEnd:
 
         mesh = mesh_for_id("navarro:t1:0:16.0")
         b = _bounds(mesh)
-        assert (b[5] - b[4]) == pytest.approx(16 + navarro.BODY_LENGTH_MM, abs=0.2)
+        longest = max(b[1] - b[0], b[3] - b[2], b[5] - b[4])
+        assert longest == pytest.approx(16 + navarro.BODY_LENGTH_MM, abs=0.2)

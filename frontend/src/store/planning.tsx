@@ -3,11 +3,13 @@
 
 import { createContext, useCallback, useContext, useState } from "react";
 import type { ReactNode } from "react";
+import type { PartsHandle } from "../vtk/MeshView";
 import type {
   AneurysmCandidate,
   DeviceKind,
   MorphometryResult,
   PatientSummary,
+  ClipAnimationResult,
   PerforatorCandidate,
   SegmentResult,
   SeriesInfo,
@@ -74,6 +76,9 @@ interface PlanningState {
    *  default: twelve markers appearing unasked around the neck hide the very
    *  geometry they sit on, so each one is shown only when asked for. */
   visiblePerforators: string[];
+  /** Clip rehearsal in progress: the three meshes the viewer must draw instead
+   *  of the placed clip while the manoeuvre plays. Null when not rehearsing. */
+  clipRehearsal: ClipAnimationResult | null;
   /** Outer radius of each risk zone [high, medium, low] in mm, as reported by
    *  the backend, so the viewer legend states the bands really used. */
   perforatorZones: [number, number, number] | null;
@@ -128,6 +133,12 @@ interface PlanningState {
   setGrowSeeds: (s: Vec3[]) => void;
   setNeckRim: (s: Vec3[]) => void;
   setPerforators: (p: PerforatorCandidate[], zones?: [number, number, number] | null) => void;
+  setClipRehearsal: (a: ClipAnimationResult | null) => void;
+  /** Handle the viewer publishes for moving the rehearsal's parts, and the
+   *  panel consumes to drive the motion. Imperative on purpose: a matrix per
+   *  frame through React would re-render the workspace 60 times a second. */
+  clipParts: PartsHandle | null;
+  registerClipParts: (h: PartsHandle | null) => void;
   /** Show or hide one perforator's marker. */
   togglePerforator: (id: string) => void;
   /** Show every perforator, or none. */
@@ -195,6 +206,8 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
   const [measurePending, setMeasurePending] = useState<Vec3 | null>(null);
   const [growSeeds, setGrowSeeds] = useState<Vec3[]>([]);
   const [neckRim, setNeckRim] = useState<Vec3[]>([]);
+  const [clipRehearsal, setClipRehearsal] = useState<ClipAnimationResult | null>(null);
+  const [clipParts, registerClipParts] = useState<PartsHandle | null>(null);
   const [perforators, _setPerforators] = useState<PerforatorCandidate[]>([]);
   const [perforatorZones, setPerforatorZones] = useState<[number, number, number] | null>(null);
   const setPerforators = useCallback(
@@ -258,6 +271,7 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
     setNeckOrigin(null);
     setNeckDome(null);
     setNeckRim([]);
+    setClipRehearsal(null);
     _setPerforators([]);
     setPerforatorZones(null);
     setVisiblePerforators([]);
@@ -286,11 +300,11 @@ export function PlanningProvider({ children }: { children: ReactNode }) {
         patient, caseId, caseLabel, imagingStudyId, sessionId, series, previewBand, previewMeshUrl, segmentation, candidates,
         selectedCandidate, morphometry, treatment, deviceMeshes,
         centerlineMesh, centerlineArcMm, mprWl, mprVoxel, pickMode, clSource, clTarget, neckOrigin, neckDome,
-        measurements, measurePending, growSeeds, neckRim, perforators, visiblePerforators, perforatorZones, mprSeedMode, cropCenter, cropRadius, cropShape, cropInvert, trajEntry, trajTarget, morphoOverlay, captureViewport, dirty,
+        measurements, measurePending, growSeeds, neckRim, perforators, visiblePerforators, perforatorZones, clipRehearsal, clipParts, mprSeedMode, cropCenter, cropRadius, cropShape, cropInvert, trajEntry, trajTarget, morphoOverlay, captureViewport, dirty,
         setPatient, setCase, setImagingStudyId, setSession, setSeries, setPreviewBand, setPreviewMeshUrl, setSegmentation,
         setCandidates, setSelectedCandidate, setMorphometry, setTreatment,
         setDeviceMesh, clearDeviceMeshes, setCenterlineMesh, setCenterlineArcMm, setMprWl, setMprVoxel,
-        setPickMode, setClSource, setClTarget, setNeckRim, setPerforators, togglePerforator, setVisiblePerforators,
+        setPickMode, setClSource, setClTarget, setNeckRim, setPerforators, togglePerforator, setVisiblePerforators, setClipRehearsal, registerClipParts,
         setNeckOrigin, setNeckDome,
         setMeasurements, setMeasurePending, setGrowSeeds, setMprSeedMode, setCropCenter, setCropRadius, setCropShape, setCropInvert, setTrajEntry, setTrajTarget, setMorphoOverlay,
         setCaptureViewport, markSaved,

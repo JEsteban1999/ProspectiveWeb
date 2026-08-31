@@ -9,6 +9,7 @@ import type {
   CenterlineClearResult,
   CenterlineRequest,
   CenterlineResult,
+  ClipAnimationResult,
   ClipLibraryItem,
   ClipPlanRequest,
   ClipPlanResult,
@@ -375,6 +376,9 @@ export const api = {
   },
   deleteClipFromLibrary: (clipId: string) =>
     request<{ deleted: string }>(`/api/clip-library/${clipId}`, { method: "DELETE" }),
+  /** The body + two blades, the hinge and the approach run, for the rehearsal. */
+  clipAnimation: (sessionId: string, req: ClipPlanRequest) =>
+    post<ClipAnimationResult>(`/api/clips/animation/${sessionId}`, req),
   listCoils: () => get<CoilLibraryItem[]>("/api/coils"),
   planCoils: (sessionId: string, placements: CoilPlacement[]) =>
     post<CoilPlanResult>("/api/coils/plan", { session_id: sessionId, placements }),

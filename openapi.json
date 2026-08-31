@@ -2682,6 +2682,64 @@
         }
       }
     },
+    "/api/clips/animation/{session_id}": {
+      "post": {
+        "tags": [
+          "clips"
+        ],
+        "summary": "The pieces needed to show a clip being applied",
+        "description": "Splits the chosen clip into the body and its two blades, and returns the hinge, the swing and the approach run, so the viewer can play the manoeuvre: down the corridor with the jaw open, astride the neck, then closed.\n\nThe hinge and the opening axis are DERIVED from the mesh, so they hold for any clip. How far the jaw opens is ASSUMED from how commercial clips behave, because a closed STL records no mechanism; `mechanics_assumed` says so and the figures live in one place to be replaced.\n\nFor rehearsal, not simulation: no tissue yields, no applier is modelled, and nothing here says the corridor can be reached with human hands.",
+        "operationId": "clip_animation_api_clips_animation__session_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClipPlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClipAnimationResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/coils": {
       "get": {
         "tags": [
@@ -5719,6 +5777,95 @@
         ],
         "title": "ClStentResult",
         "description": "Deployed centreline-guided stent mesh + fit metrics."
+      },
+      "ClipAnimationResult": {
+        "properties": {
+          "body_url": {
+            "type": "string",
+            "title": "Body Url",
+            "description": "The part that does not move (spring and grip)"
+          },
+          "blade_a_url": {
+            "type": "string",
+            "title": "Blade A Url"
+          },
+          "blade_b_url": {
+            "type": "string",
+            "title": "Blade B Url"
+          },
+          "hinge": {
+            "$ref": "#/components/schemas/Position3D",
+            "description": "Pivot point, in the clip's own frame"
+          },
+          "hinge_axis": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Hinge Axis",
+            "description": "Unit axis the blades turn about, in the clip's own frame"
+          },
+          "swing_deg": {
+            "type": "number",
+            "title": "Swing Deg",
+            "description": "How far EACH blade turns to reach full open"
+          },
+          "mechanics_assumed": {
+            "type": "boolean",
+            "title": "Mechanics Assumed",
+            "description": "True while the opening is inferred from how commercial clips behave rather than supplied by the manufacturer. A closed STL records no mechanism, so the UI must not imply the motion is specified.",
+            "default": true
+          },
+          "approach_entry": {
+            "$ref": "#/components/schemas/Position3D",
+            "description": "Where the clip starts its run"
+          },
+          "approach_target": {
+            "$ref": "#/components/schemas/Position3D"
+          },
+          "approach_is_default": {
+            "type": "boolean",
+            "title": "Approach Is Default",
+            "description": "True when no corridor was marked and the clip descends along the neck normal from the side away from the dome — the one direction certain to be clear of the sac. Mark Entrada/Diana to use the real approach."
+          },
+          "position": {
+            "$ref": "#/components/schemas/Position3D",
+            "description": "Final pose: where the clip ends up"
+          },
+          "normal": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Normal"
+          },
+          "rotation_deg": {
+            "type": "number",
+            "title": "Rotation Deg"
+          },
+          "clip_name": {
+            "type": "string",
+            "title": "Clip Name",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "body_url",
+          "blade_a_url",
+          "blade_b_url",
+          "hinge",
+          "hinge_axis",
+          "swing_deg",
+          "approach_entry",
+          "approach_target",
+          "approach_is_default",
+          "position",
+          "normal",
+          "rotation_deg"
+        ],
+        "title": "ClipAnimationResult",
+        "description": "Everything a viewer needs to play the clip going on.\n\nThree meshes rather than one: the body never moves, and each blade turns\nabout the hinge. The viewer animates actor transforms, so the geometry is\nfetched once and the motion costs nothing per frame."
       },
       "ClipCandidateOut": {
         "properties": {

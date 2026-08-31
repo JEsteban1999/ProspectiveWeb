@@ -254,3 +254,48 @@ class ClipSelectionResult(BaseModel):
     caveats: list[str] = Field(
         default_factory=list, description="What limits how much weight this selection can bear"
     )
+
+
+class ClipAnimationResult(BaseModel):
+    """Everything a viewer needs to play the clip going on.
+
+    Three meshes rather than one: the body never moves, and each blade turns
+    about the hinge. The viewer animates actor transforms, so the geometry is
+    fetched once and the motion costs nothing per frame.
+    """
+
+    body_url: str = Field(..., description="The part that does not move (spring and grip)")
+    blade_a_url: str
+    blade_b_url: str
+
+    hinge: Position3D = Field(..., description="Pivot point, in the clip's own frame")
+    hinge_axis: list[float] = Field(
+        ..., description="Unit axis the blades turn about, in the clip's own frame"
+    )
+    swing_deg: float = Field(
+        ..., description="How far EACH blade turns to reach full open"
+    )
+    mechanics_assumed: bool = Field(
+        True,
+        description=(
+            "True while the opening is inferred from how commercial clips behave "
+            "rather than supplied by the manufacturer. A closed STL records no "
+            "mechanism, so the UI must not imply the motion is specified."
+        ),
+    )
+
+    approach_entry: Position3D = Field(..., description="Where the clip starts its run")
+    approach_target: Position3D
+    approach_is_default: bool = Field(
+        ...,
+        description=(
+            "True when no corridor was marked and the clip descends along the neck "
+            "normal from the side away from the dome — the one direction certain to "
+            "be clear of the sac. Mark Entrada/Diana to use the real approach."
+        ),
+    )
+
+    position: Position3D = Field(..., description="Final pose: where the clip ends up")
+    normal: list[float]
+    rotation_deg: float
+    clip_name: str = ""

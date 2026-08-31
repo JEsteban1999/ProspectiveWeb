@@ -24,6 +24,19 @@ export interface MeshLayer {
   /** RGB 0–1 */
   color: Vector3;
   opacity?: number;
+  /** Names this layer's actor so it can be moved after loading — how the clip
+   *  rehearsal animates the body and the two blades without refetching. */
+  id?: string;
+}
+
+/** Imperative handle for moving named layers, published while the scene lives.
+ *  Animation runs through this instead of React state: a matrix per frame
+ *  through the component tree would re-render the whole workspace 60 times a
+ *  second to move three actors. */
+export interface PartsHandle {
+  setMatrix(id: string, matrix: number[] | null): void;
+  render(): void;
+  has(id: string): boolean;
 }
 
 export interface MeshMarker {
@@ -83,6 +96,7 @@ export function MeshView({
   focusUrl,
   registerCapture,
   registerCamera,
+  registerParts,
   preserveCamera = false,
 }: {
   layers: MeshLayer[];
@@ -108,6 +122,8 @@ export function MeshView({
   /** Registers a camera controller so the viewer can offer standard views and a
    *  «fit to scene». Called with null on unmount. */
   registerCamera?: (fn: ((view: CameraView) => void) | null) => void;
+  /** Publishes a handle for moving named layers, for the clip rehearsal. */
+  registerParts?: (h: PartsHandle | null) => void;
   /** Keep the camera across scene rebuilds — used by the live threshold preview so
    *  the view doesn't jump back to the default framing on every mesh update. */
   preserveCamera?: boolean;
@@ -117,11 +133,15 @@ export function MeshView({
   // Set once the geometry is on screen; markers re-render at the new size.
   const [sceneDiagonal, setSceneDiagonal] = useState(0);
   const markerActors = useRef<vtkActor[]>([]);
+  // Actors that carry a layer id, so the rehearsal can move them by name.
+  const namedActors = useRef<Map<string, vtkActor>>(new Map());
   const cropActor = useRef<vtkActor | null>(null);
   const registerCaptureRef = useRef(registerCapture);
   registerCaptureRef.current = registerCapture;
   const registerCameraRef = useRef(registerCamera);
   registerCameraRef.current = registerCamera;
+  const registerPartsRef = useRef(registerParts);
+  registerPartsRef.current = registerParts;
   // Camera params kept across scene rebuilds (for the live preview).
   const savedCamera = useRef<{ position: number[]; focalPoint: number[]; viewUp: number[]; parallelScale: number } | null>(null);
   const preserveCameraRef = useRef(preserveCamera);
@@ -202,6 +222,7 @@ export function MeshView({
 
           const actor = vtkActor.newInstance();
           actor.setMapper(mapper);
+          if (layer.id) namedActors.current.set(layer.id, actor);
           const prop = actor.getProperty();
           prop.setColor(...layer.color);
           prop.setOpacity(layer.opacity ?? 1);
@@ -305,11 +326,24 @@ export function MeshView({
     };
     registerCameraRef.current?.(setView);
 
+    registerPartsRef.current?.({
+      has: (id) => namedActors.current.has(id),
+      setMatrix: (id, matrix) => {
+        const a = namedActors.current.get(id);
+        if (!a) return;
+        // null puts the part back where the file has it.
+        a.setUserMatrix(matrix as never);
+      },
+      render: () => handles.current?.renderWindow.render(),
+    });
+
     return () => {
       cancelled = true;
       pickSub.unsubscribe();
       registerCaptureRef.current?.(null);
       registerCameraRef.current?.(null);
+      registerPartsRef.current?.(null);
+      namedActors.current.clear();
       markerActors.current = [];
       const h = handles.current;
       if (h) {

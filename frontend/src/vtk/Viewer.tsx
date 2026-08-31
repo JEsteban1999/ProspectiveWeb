@@ -140,6 +140,7 @@ export function Viewer({ step }: { step: string }) {
     cropRadius, cropShape, cropInvert,
     trajEntry, trajTarget, setTrajEntry, setTrajTarget,
     morphometry, morphoOverlay, setCaptureViewport, perforators, visiblePerforators, perforatorZones,
+    clipRehearsal, registerClipParts,
     mprWl, mprVoxel, setMprWl, setMprVoxel, mprSeedMode,
   } = usePlanning();
 
@@ -265,14 +266,21 @@ export function Viewer({ step }: { step: string }) {
     if (candidate?.dome_mesh_url && step !== "segment" && step !== "upload") {
       out.push({ url: candidate.dome_mesh_url, color: DOME_COLOR, opacity: showDevice ? 0.5 : 1 });
     }
-    if (showDevice) {
+    // While rehearsing, the placed clip is replaced by its three moving parts:
+    // showing both would put two clips on screen, one of them frozen.
+    if (clipRehearsal) {
+      out.push({ url: clipRehearsal.body_url,    color: DEVICE_COLOR, opacity: 1, id: "clip-body" });
+      out.push({ url: clipRehearsal.blade_a_url, color: DEVICE_COLOR, opacity: 1, id: "clip-blade-a" });
+      out.push({ url: clipRehearsal.blade_b_url, color: DEVICE_COLOR, opacity: 1, id: "clip-blade-b" });
+      for (const d of devices) if (d.kind !== "clips") out.push({ url: d.url, color: d.color, opacity: 1 });
+    } else if (showDevice) {
       for (const d of devices) out.push({ url: d.url, color: d.color, opacity: 1 });
     }
     if (showCenterline && centerlineMesh) {
       out.push({ url: centerlineMesh, color: CENTERLINE_COLOR, opacity: 1 });
     }
     return out;
-  }, [displayMeshUrl, candidate?.dome_mesh_url, step, showDevice, devices, showCenterline, centerlineMesh, pickMode]);
+  }, [displayMeshUrl, candidate?.dome_mesh_url, step, showDevice, devices, showCenterline, centerlineMesh, pickMode, clipRehearsal]);
 
   const markers = useMemo<MeshMarker[]>(() => {
     const out: MeshMarker[] = [];
@@ -367,7 +375,7 @@ export function Viewer({ step }: { step: string }) {
         <ObliqueMprView sessionId={sessionId} wc={mprWl?.wc ?? meta.wc} ww={mprWl?.ww ?? meta.ww} />
       ) : meshVisible ? (
         <Suspense fallback={<ViewerLoading label="Cargando visor 3D…" />}>
-          <MeshView layers={layers} markers={markers} lines={lines} cropPreview={cropPreview} referenceDiameterMm={referenceDiameterMm} pickMode={pickMode !== null} onPick={onPick} onPickMiss={onPickMiss} focusUrl={focusUrl} registerCapture={setCaptureViewport} registerCamera={registerCamera} />
+          <MeshView layers={layers} markers={markers} lines={lines} cropPreview={cropPreview} referenceDiameterMm={referenceDiameterMm} pickMode={pickMode !== null} onPick={onPick} onPickMiss={onPickMiss} focusUrl={focusUrl} registerCapture={setCaptureViewport} registerCamera={registerCamera} registerParts={registerClipParts} />
         </Suspense>
       ) : sessionId && meta ? (
         <MprView

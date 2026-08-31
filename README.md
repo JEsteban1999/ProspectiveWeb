@@ -63,9 +63,9 @@ approval, and a tamper-evident audit chain.
 
 | | |
 |---|---|
-| Backend tests | **519 passing** (`pytest`, 37 files) |
-| Frontend tests | **74 passing** (`vitest`, 9 files) · `tsc -b` clean · production build clean |
-| REST endpoints | **96** operations across 79 paths (23 routers), all authenticated except login/signup/logout |
+| Backend tests | **540 passing** (`pytest`, 38 files) |
+| Frontend tests | **84 passing** (`vitest`, 10 files) · `tsc -b` clean · production build clean |
+| REST endpoints | **97** operations across 81 paths (23 routers), all authenticated except login/signup/logout |
 | Feature parity with desktop | **Complete** |
 
 ---
@@ -101,8 +101,8 @@ ProspectiveWeb/
 │   ├── requirements.txt
 │   ├── models/    (20)     # Pydantic request/response schemas
 │   ├── routers/   (23)     # Route handlers, one file per domain
-│   ├── services/  (37)     # Qt-free business logic, shared with the desktop app
-│   ├── test_*.py  (37)     # pytest suites
+│   ├── services/  (38)     # Qt-free business logic, shared with the desktop app
+│   ├── test_*.py  (38)     # pytest suites
 │   ├── data/               # PUBLIC static mount — sessions, meshes, reports
 │   ├── clip_library/       # PRIVATE: institutional clips + templates (gitignored)
 │   ├── study_files/        # PRIVATE archive: DICOM of archived studies (gitignored)
@@ -142,6 +142,7 @@ Key backend services (all ported from the desktop `prospective/processing`):
 | `clip_fit.py` | Poses candidates on the measured neck and checks them against the mesh |
 | `clip_library.py` | Global store of the institution's clips and manufacturing templates |
 | `navarro.py` | The NAVARRO™ made-to-order family: jaw sizing, jaw-only resizing |
+| `clip_animation.py` | Splits a clip into body + blades and derives its hinge, for rehearsal |
 | `stent_deployment.py` | Centerline-guided braided stent along real vessel curvature |
 | `phases.py` | PHASES 5-year rupture risk (Greving 2014) |
 | `mesh_prep.py` | 3D-print preparation + printer-bed presets |
@@ -624,6 +625,7 @@ patient imaging.
 | `GET` | `/api/clips/selection/{sid}` | Criteria-based selection + manufacturing spec |
 | `POST` | `/api/clips/manufacture/{sid}` | STL of the clip this case would need |
 | `POST` | `/api/clips/navarro/{sid}` | Build a NAVARRO™ clip at any jaw length (drawn or stretched) |
+| `POST` | `/api/clips/animation/{sid}` | Body + blades, hinge and approach run, to rehearse the placement |
 | `POST` | `/api/clips/plan` | Places the geometry that was recommended, by structured clip id |
 | `GET` `POST` | `/api/clip-library` | Institutional clip store · import (admin) |
 | `POST` | `/api/clip-library/measure` | Measure a mesh to pre-fill the import form (admin) |
@@ -650,17 +652,17 @@ patient imaging.
 
 ```bash
 cd backend
-.venv\Scripts\python -m pytest -q                        # all 519 tests
+.venv\Scripts\python -m pytest -q                        # all 540 tests
 .venv\Scripts\python -m pytest test_session_abc.py -v    # one suite
 ```
 
-Expected: **519 passed, 0 failed** (~3–4 min; VTK and SimpleITK do real work).
+Expected: **540 passed, 0 failed** (~3–4 min; VTK and SimpleITK do real work).
 
 Frontend checks:
 
 ```bash
 cd frontend
-npx vitest run          # 74 unit tests (vitest + Testing Library, jsdom)
+npx vitest run          # 84 unit tests (vitest + Testing Library, jsdom)
 npx tsc -b --noEmit     # type check
 npm run build           # production build
 ```

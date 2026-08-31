@@ -805,6 +805,26 @@ export interface CustomJawOut {
   stl_url: string | null;
 }
 
+/** The pieces a viewer needs to play a clip being applied. */
+export interface ClipAnimationResult {
+  body_url: string;
+  blade_a_url: string;
+  blade_b_url: string;
+  hinge: Position3D;
+  hinge_axis: number[];
+  swing_deg: number;
+  /** True while the opening is inferred from commercial clips rather than
+   *  specified by the manufacturer — a closed STL records no mechanism. */
+  mechanics_assumed: boolean;
+  approach_entry: Position3D;
+  approach_target: Position3D;
+  approach_is_default: boolean;
+  position: Position3D;
+  normal: number[];
+  rotation_deg: number;
+  clip_name: string;
+}
+
 export type ClipOutcome = "stock" | "marginal" | "manufacture" | "unmeasured";
 
 export interface ClipSelectionResult {

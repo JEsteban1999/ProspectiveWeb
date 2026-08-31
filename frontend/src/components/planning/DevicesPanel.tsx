@@ -19,6 +19,7 @@ import type {
   StentPlanResult,
 } from "../../api/types";
 import { Button } from "../Button";
+import { ClipRehearsal } from "./ClipRehearsal";
 import { ClipSelectionPanel } from "./ClipSelection";
 import { Icon } from "../Icon";
 import { Metric } from "../Metric";
@@ -83,7 +84,10 @@ function ClearDeviceButton({
     the centroid, inside the dome, whenever the dome height was not measured.
     The approximation survives only as a fallback for older sessions whose
     morphometry predates `neck_origin`. */
-function neckPlacement(m: MorphometryResult | null): { position: Position3D; normal: number[] } {
+/** Where a device sits on the neck. Exported so the rehearsal animates the
+ *  clip onto the SAME pose the placement uses — two answers would show a
+ *  manoeuvre ending somewhere the plan does not put the clip. */
+export function neckPlacement(m: MorphometryResult | null): { position: Position3D; normal: number[] } {
   const ax = m?.principal_axis;
   const normal = ax && ax.length === 3 ? ax : [0, 0, 1];
 
@@ -240,6 +244,13 @@ function ClipsTab() {
             selectedClipId={sel}
             onPick={(clipId, clipName) => { setPicked({ id: clipId, name: clipName }); setSel(clipId); }}
           />
+        </div>
+      )}
+
+      {/* Con un clip elegido, ensayar la maniobra antes de colocarlo. */}
+      {sessionId && sel && (
+        <div style={{ marginBottom: 14 }}>
+          <ClipRehearsal clipId={sel} clipName={nameFor(sel)} />
         </div>
       )}
 

@@ -280,6 +280,38 @@ def resize_jaw(poly, from_jaw_mm: float, to_jaw_mm: float, angle_deg: float):
     return out
 
 
+def to_device_frame(poly):
+    """Rotate a NAVARRO mesh from its own frame into the app's device frame.
+
+    The two frames disagree, and until this existed the disagreement placed every
+    NAVARRO clip wrong. `pose_transform` aligns a device's local +Z to the neck
+    normal, and `make_clip_shaped` is drawn for that: blade length along +X, jaw
+    opening along +Y, blade DEPTH along +Z. So the blade ends up lying in the
+    neck plane, spanning it — which is what clipping a neck means.
+
+    The NAVARRO exports use +Z for the clip's long axis instead. Posed as-is, the
+    jaw pointed straight up the neck normal — i.e. into the dome. Measured on a
+    neck at z=0 with the dome above: the 10 mm clip reached +12.5 mm along the
+    normal, driving the blades 12.5 mm into the aneurysm, while the synthetic
+    Yasargil of the same size stayed within ±0.5 mm and spanned 6 mm across the
+    plane, as it should.
+
+    A -90° turn about Y reconciles them: the file's X (the thin blade depth,
+    ±1.80 mm) becomes +Z, its Z (the jaw axis) lies in the plane, and its Y (the
+    jaw opening) stays in the plane. Applied last, after any resizing, because
+    `resize_jaw` and `jaw_root_offset` both reason in the file's own frame.
+    """
+    import vtk
+
+    t = vtk.vtkTransform()
+    t.RotateY(-90.0)
+    f = vtk.vtkTransformPolyDataFilter()
+    f.SetInputData(poly)
+    f.SetTransform(t)
+    f.Update()
+    return f.GetOutput()
+
+
 def build_jaw(angle_deg: float, jaw_mm: float, root: Path | None = None):
     """Geometry for any jaw length, drawn or stretched.
 
@@ -294,9 +326,9 @@ def build_jaw(angle_deg: float, jaw_mm: float, root: Path | None = None):
         )
     mesh = load_mesh(src)
     exact = abs(src.jaw_mm - jaw_mm) < 1e-6 and abs(src.angle_deg - angle_deg) < 1e-6
-    if exact:
-        return mesh, src, True
-    return resize_jaw(mesh, src.jaw_mm, jaw_mm, src.angle_deg), src, False
+    if not exact:
+        mesh = resize_jaw(mesh, src.jaw_mm, jaw_mm, src.angle_deg)
+    return to_device_frame(mesh), src, exact
 
 
 # ── Feeding the selector ───────────────────────────────────────────────────── #
