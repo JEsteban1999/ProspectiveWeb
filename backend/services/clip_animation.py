@@ -19,10 +19,11 @@ constant written here:
 Measured this way the NAVARRO™ hinge lands at the same place in all six sizes,
 which is what a real family does.
 
-**Assumed**, because a closed STL records no mechanism: how far the jaw opens.
-The figures below are taken from how commercial clips behave and are gathered in
-one place precisely so they can be replaced with the real ones when the
-manufacturer gives them — nothing else needs to change.
+**Specified** by the NAVARRO™ designer: the tips never part by more than 10 mm,
+because the applier limits the travel. Above that the opening is not a guess at
+all. Below it — a short clip that never reaches the ceiling — how far it opens
+is still inferred from how commercial clips behave, and `opening_is_specified`
+says which case a given clip falls into.
 
 What this is not
 ----------------
@@ -38,18 +39,26 @@ import math
 
 logger = logging.getLogger(__name__)
 
-# ── Opening mechanics: ASSUMED, pending the real figures ──────────────────── #
-# Commercial aneurysm clips open their tips to roughly one blade length — a 7 mm
-# clip admits about 7 mm between the tips — and the applier limits the travel
-# rather than the spring. Both are expressed relative to the blade so they scale
-# with the size, and both are capped so a long blade does not open absurdly.
-#: Tip separation at full open, as a multiple of blade length.
+# ── Opening mechanics ─────────────────────────────────────────────────────── #
+#: Widest the tips ever part, in mm. SPECIFIED by the NAVARRO™ designer — the
+#: applier limits the travel, so this is a property of the mechanism and not of
+#: the blade in front of it. A 22 mm jaw opens no further than a 10 mm one.
+MAX_TIP_OPENING_MM: float = 10.0
+
+#: Below that ceiling, how far a clip opens for a given blade is still inferred:
+#: commercial clips part their tips by roughly one blade length. Only the
+#: ceiling above is a stated figure, so a short clip's opening remains a guess
+#: while a long one's is governed by the specified limit.
 OPEN_TIP_RATIO: float = 1.0
-#: Hard ceiling on how far each blade swings, whatever the ratio asks for.
-MAX_BLADE_SWING_DEG: float = 30.0
-#: True while these are inferred rather than supplied by the manufacturer, so
-#: the UI can say so instead of implying the motion is specified.
-MECHANICS_ARE_ASSUMED: bool = True
+
+#: A blade that swings past this looks like scissors rather than a clip. Kept as
+#: a sanity rail; with a 10 mm ceiling it rarely binds.
+MAX_BLADE_SWING_DEG: float = 45.0
+
+
+def opening_is_specified(blade_mm: float) -> bool:
+    """True when the ceiling decides the opening, so nothing is being guessed."""
+    return blade_mm * OPEN_TIP_RATIO >= MAX_TIP_OPENING_MM
 
 # ── Approach ──────────────────────────────────────────────────────────────── #
 #: How far back the clip starts, as a multiple of its own length.
@@ -148,14 +157,23 @@ def jaw_geometry(poly) -> dict:
     }
 
 
-def blade_swing_deg(geom: dict, blade_mm: float) -> float:
-    """How far each blade turns to reach the assumed opening, in degrees.
+def tip_opening_mm(blade_mm: float) -> float:
+    """How far the tips part at full open, in mm.
 
-    Half the tip separation over the lever arm from the hinge. Capped, so a long
-    blade opens like a clip rather than like a pair of scissors.
+    Whatever the blade would suggest, never past the mechanism's own ceiling.
+    """
+    return min(MAX_TIP_OPENING_MM, max(0.0, blade_mm * OPEN_TIP_RATIO))
+
+
+def blade_swing_deg(geom: dict, blade_mm: float) -> float:
+    """How far each blade turns to reach full opening, in degrees.
+
+    Half the tip separation over the lever arm from the hinge — the geometry is
+    exact once the opening is known, so the only uncertainty left is the opening
+    itself, and above the ceiling there is none.
     """
     lever = max(0.5, geom["lever_mm"])
-    half_gap = max(0.0, blade_mm * OPEN_TIP_RATIO) / 2.0
+    half_gap = tip_opening_mm(blade_mm) / 2.0
     return min(MAX_BLADE_SWING_DEG, math.degrees(math.atan2(half_gap, lever)))
 
 

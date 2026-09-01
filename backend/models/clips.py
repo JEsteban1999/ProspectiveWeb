@@ -185,7 +185,34 @@ class ManufactureSpecOut(BaseModel):
         default_factory=list, description="Assumptions a machinist still has to confirm"
     )
     stl_url: str | None = Field(
-        None, description="Downloadable STL of the specified clip, once generated"
+        None,
+        description=(
+            "Watertight STL built from the NAVARRO™ design, ready for a workshop. "
+            "Null when the family cannot build this shape — a catalogue clip is "
+            "bought, not made."
+        ),
+    )
+    part_no: str = Field("", description="Traceability number shared by both dossiers")
+    source: Literal["navarro", "commercial", "unavailable"] = Field(
+        "navarro",
+        description=(
+            "'navarro' = made from the family; 'commercial' = the family has no "
+            "such shape yet, use this catalogue clip; 'unavailable' = neither "
+            "serves this neck."
+        ),
+    )
+    piece_label: str = Field("", description="What to order, in one line")
+    commercial_name: str = Field("", description="Catalogue clip to use, when source='commercial'")
+    fallback_reason: str = Field("", description="Why the family could not build it")
+    dossier_internal_url: str | None = Field(
+        None, description="PDF for the institution: full traceability and the case it came from"
+    )
+    dossier_workshop_url: str | None = Field(
+        None,
+        description=(
+            "PDF for a third-party workshop. Carries NO patient data by "
+            "construction — dimensions, tolerances, material and the checks to run."
+        ),
     )
 
 

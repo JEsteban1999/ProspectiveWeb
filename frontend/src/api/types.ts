@@ -776,7 +776,19 @@ export interface ManufactureSpecOut {
   label: string;
   reasons: string[];
   confidence_notes: string[];
+  /** Watertight STL from the NAVARRO™ design. Null when the family has no such
+   *  shape yet — a catalogue clip is bought, not made. */
   stl_url: string | null;
+  part_no: string;
+  /** 'navarro' = made from the family; 'commercial' = buy this catalogue clip
+   *  instead; 'unavailable' = neither route serves this neck. */
+  source: "navarro" | "commercial" | "unavailable";
+  piece_label: string;
+  commercial_name: string;
+  fallback_reason: string;
+  dossier_internal_url: string | null;
+  /** For a third-party workshop. Carries no patient data by construction. */
+  dossier_workshop_url: string | null;
 }
 
 export interface ClipCaseOut {

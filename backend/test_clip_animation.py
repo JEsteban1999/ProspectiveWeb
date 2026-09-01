@@ -132,12 +132,27 @@ class TestJawGeometryIsDerived:
         long_ = jaw_geometry(navarro.mesh_for_id("navarro:t1:0:22.0"))["lever_mm"]
         assert long_ > short + 10.0
 
-    def test_the_swing_is_capped_for_a_long_blade(self):
-        from services.clip_animation import MAX_BLADE_SWING_DEG
+    def test_the_opening_never_passes_the_stated_ceiling(self):
+        # The designer states the tips part by at most 10 mm — a property of the
+        # mechanism, not of the blade in front of it. A 22 mm jaw opens no
+        # further than a 10 mm one.
+        from services.clip_animation import MAX_TIP_OPENING_MM, tip_opening_mm
 
+        assert tip_opening_mm(7.0) == pytest.approx(7.0)
+        assert tip_opening_mm(22.0) == pytest.approx(MAX_TIP_OPENING_MM)
+        assert tip_opening_mm(200.0) == pytest.approx(MAX_TIP_OPENING_MM)
+
+    def test_a_longer_blade_needs_less_swing_for_the_same_opening(self):
+        # Same 10 mm at the tips over a longer lever is a smaller angle. Getting
+        # this backwards would open a long clip like a pair of scissors.
         g = jaw_geometry(_synthetic(10.0))
-        assert blade_swing_deg(g, 200.0) == pytest.approx(MAX_BLADE_SWING_DEG)
-        assert 0.0 < blade_swing_deg(g, 10.0) < MAX_BLADE_SWING_DEG
+        assert blade_swing_deg(g, 22.0) < blade_swing_deg(g, 10.0) * 1.05
+
+    def test_the_opening_is_only_a_guess_below_the_ceiling(self):
+        from services.clip_animation import opening_is_specified
+
+        assert opening_is_specified(22.0), "por encima del tope no se supone nada"
+        assert not opening_is_specified(7.0), "por debajo sigue siendo inferido"
 
 
 # ── Splitting ─────────────────────────────────────────────────────────────── #

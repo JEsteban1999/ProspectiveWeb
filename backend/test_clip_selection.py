@@ -311,16 +311,24 @@ class TestEndpoint:
         assert body["manufacture"]["blade_length_mm"] > 20.0
         assert body["manufacture"]["label"]
 
-    def test_the_manufacture_endpoint_writes_a_downloadable_stl(self):
+    def test_the_manufacture_endpoint_always_produces_the_paperwork(self):
+        # A 20 mm neck with no region asks for a CURVED clip, and the NAVARRO
+        # family has no curved series yet — so there is no STL to hand over. The
+        # dossiers still exist: they document what was ordered either way.
         sid = _session(neck_mm=20.0, with_plane=False)
         r = client.post(f"/api/clips/manufacture/{sid}")
         assert r.status_code == 200, r.text
         body = r.json()
-        assert "clip_a_medida.stl" in (body["stl_url"] or "")
-        # Cache-busted, or the browser serves the previous spec's geometry.
-        assert "?v=" in body["stl_url"]
-        stl = session_subdir(sid, "exports") / "clip_a_medida.stl"
-        assert stl.exists() and stl.stat().st_size > 0
+        assert body["part_no"]
+        assert body["dossier_internal_url"] and body["dossier_workshop_url"]
+        if body["source"] == "navarro":
+            assert "clip_a_medida.stl" in (body["stl_url"] or "")
+            # Cache-busted, or the browser serves the previous spec's geometry.
+            assert "?v=" in body["stl_url"]
+            assert (session_subdir(sid, "exports") / "clip_a_medida.stl").stat().st_size > 0
+        else:
+            assert body["stl_url"] is None, "sin diseño en la familia no hay pieza que fabricar"
+            assert body["fallback_reason"]
 
     def test_the_manufacture_endpoint_refuses_without_a_neck(self):
         sid = create_session()

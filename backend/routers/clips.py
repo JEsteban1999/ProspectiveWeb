@@ -21,6 +21,7 @@ from models.clips import (
     ManufactureSpecOut,
 )
 from services.clips   import catalogue_to_api, recommend_clips, recommendations_to_api
+from services.clip_manufacture import resolve_perfect_clip
 from services.clip_selection import (
     ClipCandidate,
     ClipCase,
@@ -30,7 +31,8 @@ from services.clip_selection import (
     select_clips,
 )
 from services.sessions import (
-    export_url, mesh_url, read_state, session_exists, session_subdir, write_state,
+    export_url, mesh_url, read_state, report_url, session_exists, session_subdir,
+    write_state,
 )
 
 logger = logging.getLogger(__name__)
@@ -467,6 +469,36 @@ async def delete_custom_clip(session_id: str, clip_index: int) -> list[CustomCli
 # what do I have to have made?
 
 
+def _case_identity(session_id: str, case_id: int | None) -> tuple[str, str]:
+    """Patient name and case label, for the INTERNAL dossier only.
+
+    Never reaches the workshop copy: that document is built from a separate dict
+    that has no field to put this in.
+    """
+    from services.database import SessionLocal
+    from services.db_models import Patient, PlanningSession, Study
+
+    db = SessionLocal()
+    try:
+        study = db.get(Study, int(case_id)) if case_id else None
+        if study is None:
+            ps = (db.query(PlanningSession)
+                    .filter(PlanningSession.session_id == session_id)
+                    .order_by(PlanningSession.id.desc()).first())
+            if ps is not None and ps.study_id:
+                study = db.get(Study, ps.study_id)
+        if study is None:
+            return "", ""
+        pat = db.get(Patient, study.patient_id) if study.patient_id else None
+        name = f"{pat.surname}, {pat.given_name}".strip(" ,") if pat else ""
+        return name, (study.dx_principal or study.region_anatomica or f"Caso {study.id}")
+    except Exception as exc:  # noqa: BLE001 — paperwork must not fail on a DB hiccup
+        logger.warning("Case identity lookup failed for %s: %s", session_id, exc)
+        return "", ""
+    finally:
+        db.close()
+
+
 def _case_record(session_id: str, case_id: int | None) -> tuple[str, str, str]:
     """Region, laterality and aneurysm type for this session's clinical case.
 
@@ -699,29 +731,57 @@ async def clip_manufacture_spec(
         )
     selection = select_clips(case)
     spec = selection.manufacture or derive_manufacture_spec(case, [])
+    perfect = resolve_perfect_clip(case, spec)
 
+    # Traceable and stable: the same case re-ordered keeps its number, and the
+    # workshop's copy can be reconciled with ours by nothing else.
+    part_no = f"PR-{session_id[:8].upper()}-{int(spec.blade_length_mm * 10):04d}"
+
+    stl_url = None
+    if perfect.can_manufacture:
+        try:
+            from services.clip_manufacture import build_manufacture_mesh
+            from services.devices import write_stl
+
+            mesh, _src, _exact = build_manufacture_mesh(perfect)
+            exports = session_subdir(session_id, "exports")
+            write_stl(mesh, exports / "clip_a_medida.stl")
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Custom clip STL generation failed")
+            raise HTTPException(status_code=500, detail=f"No se pudo generar el STL del clip: {exc}")
+
+    patient, case_label = _case_identity(session_id, case_id)
+    reports = session_subdir(session_id, "reports")
     try:
-        from services.devices import make_clip_shaped, write_stl
-        poly = make_clip_shaped(
-            blade_length_mm = spec.blade_length_mm,
-            blade_width_mm  = spec.blade_width_mm,
-            blade_height_mm = spec.blade_height_mm,
-            shape           = spec.shape.name,
-            angle_deg       = spec.angle_deg,
-            fenestration_mm = spec.fenestration_mm,
-        )
-        exports = session_subdir(session_id, "exports")
-        name = "clip_a_medida.stl"
-        write_stl(poly, exports / name)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("Custom clip STL generation failed")
-        raise HTTPException(status_code=500, detail=f"No se pudo generar el STL del clip: {exc}")
+        from services.clip_dossier import render_dossier
+        from services.clip_manufacture import external_dossier, internal_dossier
 
-    # Cache-busted: the filename is fixed per session, so a second spec would
+        render_dossier(internal_dossier(perfect, case, part_no=part_no, patient=patient,
+                                        case_label=case_label, session_id=session_id),
+                       reports / "dossier_interno.pdf")
+        render_dossier(external_dossier(perfect, part_no=part_no),
+                       reports / "dossier_taller.pdf")
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Clip dossier generation failed")
+        raise HTTPException(status_code=500, detail=f"No se pudieron generar los dossiers: {exc}")
+
+    # Cache-busted: the filenames are fixed per session, so a second spec would
     # otherwise be served from the browser's copy of the first.
     stamp = int(time.time() * 1000)
-    logger.info("Custom clip spec generated — session=%s %s", session_id, spec.label)
-    return _spec_out(spec, stl_url=f"{export_url(session_id, name)}?v={stamp}")
+    if perfect.can_manufacture:
+        stl_url = f"{export_url(session_id, 'clip_a_medida.stl')}?v={stamp}"
+    logger.info("Clip manufacture package — session=%s part=%s source=%s",
+                session_id, part_no, perfect.source)
+    out = _spec_out(spec, stl_url=stl_url)
+    out.part_no = part_no
+    out.source = perfect.source
+    out.piece_label = perfect.label
+    out.fallback_reason = perfect.fallback_reason
+    out.commercial_name = perfect.commercial_name
+    out.dossier_internal_url = f"{report_url(session_id, 'dossier_interno.pdf')}?v={stamp}"
+    out.dossier_workshop_url = f"{report_url(session_id, 'dossier_taller.pdf')}?v={stamp}"
+    out.confidence_notes = list(out.confidence_notes) + perfect.notes
+    return out
 
 
 # ── NAVARRO™: build a clip at any jaw length ──────────────────────────────── #
@@ -831,7 +891,7 @@ async def clip_animation(
 
     try:
         from services.clip_animation import (
-            MECHANICS_ARE_ASSUMED, blade_swing_deg, default_approach, jaw_geometry,
+            blade_swing_deg, default_approach, jaw_geometry, opening_is_specified,
             split_blades,
         )
         from services.segmentation import write_vtp
@@ -880,7 +940,9 @@ async def clip_animation(
         hinge=Position3D(x=hinge[0], y=hinge[1], z=hinge[2]),
         hinge_axis=axis,
         swing_deg=round(swing, 2),
-        mechanics_assumed=MECHANICS_ARE_ASSUMED,
+        # The 10 mm ceiling is a stated figure, so a clip that reaches it is not
+        # guessing. Only a short clip, which never gets there, still is.
+        mechanics_assumed=not opening_is_specified(blade_mm),
         approach_entry=Position3D(x=entry[0], y=entry[1], z=entry[2]),
         approach_target=Position3D(x=target[0], y=target[1], z=target[2]),
         approach_is_default=not marked,

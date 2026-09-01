@@ -60,6 +60,13 @@ const spec: ManufactureSpecOut = {
   reasons: ["Ninguna hoja del catálogo cubre este cuello con margen suficiente"],
   confidence_notes: ["La fuerza de cierre (155 g) es el centro de la ventana heurística"],
   stl_url: null,
+  part_no: "PR-TEST-0001",
+  source: "navarro",
+  piece_label: "NAVARRO™ T3 Angulado 90°, mordaza 27.0 mm",
+  commercial_name: "",
+  fallback_reason: "",
+  dossier_internal_url: null,
+  dossier_workshop_url: null,
 };
 
 const result = (over: Partial<ClipSelectionResult> = {}): ClipSelectionResult => ({
@@ -127,7 +134,8 @@ describe("when nothing in the inventory fits", () => {
     render(<ClipSelectionPanel sessionId="s1" />);
 
     expect(await screen.findByText("Requiere fabricación")).toBeInTheDocument();
-    expect(screen.getByText(/Clip a medida/)).toBeInTheDocument();
+    // The heading names the actual piece to order, not a generic label.
+    expect(screen.getByText(/NAVARRO™ T3 Angulado 90°/)).toBeInTheDocument();
     expect(screen.getByText("27.0 mm")).toBeInTheDocument();
     expect(screen.getByText("155 g")).toBeInTheDocument();
   });
@@ -267,5 +275,54 @@ describe("sizing a made-to-order clip", () => {
     render(<ClipSelectionPanel sessionId="s1" />);
     await screen.findByText("Yasargil Recto 9mm");
     expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+  });
+});
+
+
+describe("the manufacturing package", () => {
+  const spec2 = { ...spec, part_no: "PR-ABC-0270",
+    dossier_internal_url: "/data/interno.pdf?v=1",
+    dossier_workshop_url: "/data/taller.pdf?v=1" };
+
+  it("offers both dossiers and says how they differ", async () => {
+    // The workshop copy carries no patient data; that has to be visible, not a
+    // property the user is expected to trust silently.
+    clipSelection.mockResolvedValue(result({
+      outcome: "manufacture", recommended: [], manufacture: spec2,
+    }));
+    render(<ClipSelectionPanel sessionId="s1" />);
+    expect(await screen.findByRole("button", { name: /Copia interna/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Para el taller/ })).toBeInTheDocument();
+    expect(screen.getByText(/no lleva ningún dato de paciente/)).toBeInTheDocument();
+  });
+
+  it("shows the traceability number", async () => {
+    clipSelection.mockResolvedValue(result({
+      outcome: "manufacture", recommended: [], manufacture: spec2,
+    }));
+    render(<ClipSelectionPanel sessionId="s1" />);
+    expect(await screen.findByText("PR-ABC-0270")).toBeInTheDocument();
+  });
+
+  it("explains when the family cannot build the shape", async () => {
+    // A catalogue clip is bought, not made: no STL, and the reason on screen.
+    clipSelection.mockResolvedValue(result({
+      outcome: "manufacture", recommended: [],
+      manufacture: { ...spec2, source: "commercial", stl_url: null,
+        commercial_name: "Yasargil Fenestrado 9mm",
+        fallback_reason: "La familia NAVARRO™ no tiene todavía un diseño fenestrado." },
+    }));
+    render(<ClipSelectionPanel sessionId="s1" />);
+    expect(await screen.findByText(/no tiene todavía un diseño fenestrado/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Descargar STL/ })).not.toBeInTheDocument();
+  });
+
+  it("offers the STL when the family does build it", async () => {
+    clipSelection.mockResolvedValue(result({
+      outcome: "manufacture", recommended: [],
+      manufacture: { ...spec2, source: "navarro", stl_url: "/data/clip.stl?v=1" },
+    }));
+    render(<ClipSelectionPanel sessionId="s1" />);
+    expect(await screen.findByRole("button", { name: /Descargar STL/ })).toBeInTheDocument();
   });
 });

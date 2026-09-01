@@ -7505,7 +7505,66 @@
               }
             ],
             "title": "Stl Url",
-            "description": "Downloadable STL of the specified clip, once generated"
+            "description": "Watertight STL built from the NAVARRO™ design, ready for a workshop. Null when the family cannot build this shape — a catalogue clip is bought, not made."
+          },
+          "part_no": {
+            "type": "string",
+            "title": "Part No",
+            "description": "Traceability number shared by both dossiers",
+            "default": ""
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "navarro",
+              "commercial",
+              "unavailable"
+            ],
+            "title": "Source",
+            "description": "'navarro' = made from the family; 'commercial' = the family has no such shape yet, use this catalogue clip; 'unavailable' = neither serves this neck.",
+            "default": "navarro"
+          },
+          "piece_label": {
+            "type": "string",
+            "title": "Piece Label",
+            "description": "What to order, in one line",
+            "default": ""
+          },
+          "commercial_name": {
+            "type": "string",
+            "title": "Commercial Name",
+            "description": "Catalogue clip to use, when source='commercial'",
+            "default": ""
+          },
+          "fallback_reason": {
+            "type": "string",
+            "title": "Fallback Reason",
+            "description": "Why the family could not build it",
+            "default": ""
+          },
+          "dossier_internal_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dossier Internal Url",
+            "description": "PDF for the institution: full traceability and the case it came from"
+          },
+          "dossier_workshop_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dossier Workshop Url",
+            "description": "PDF for a third-party workshop. Carries NO patient data by construction — dimensions, tolerances, material and the checks to run."
           }
         },
         "type": "object",

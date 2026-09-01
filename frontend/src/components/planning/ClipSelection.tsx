@@ -182,9 +182,29 @@ function ManufactureSheet({
 
   return (
     <Card>
-      <div style={{ fontSize: 13, fontWeight: 800, color: "var(--foreground)" }}>
-        Clip a medida · {shown.label}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--foreground)", flex: 1, minWidth: 0 }}>
+          {shown.piece_label || `Clip a medida · ${shown.label}`}
+        </div>
+        {shown.part_no && (
+          <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--muted-foreground)" }}>
+            {shown.part_no}
+          </span>
+        )}
       </div>
+
+      {/* De dónde sale la pieza. Un clip de catálogo se compra y no lleva STL:
+          ofrecer uno sería decir que se fabrica algo que no se fabrica. */}
+      {shown.source && shown.source !== "navarro" && (
+        <div style={{
+          fontSize: 11, lineHeight: 1.5, marginTop: 6, padding: "8px 10px",
+          borderRadius: "var(--radius-sm)",
+          background: "color-mix(in srgb, var(--warning) 12%, transparent)",
+          color: "var(--warning)",
+        }}>
+          {shown.fallback_reason}
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "2px 12px", marginTop: 10 }}>
         {rows.map(([k, v]) => (
@@ -222,7 +242,7 @@ function ManufactureSheet({
 
       <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
         <Button size="sm" onClick={() => void generate()} disabled={busy}>
-          {busy ? "Generando…" : shown.stl_url ? "Regenerar STL" : "Generar STL"}
+          {busy ? "Generando…" : shown.part_no ? "Regenerar" : "Preparar fabricación"}
         </Button>
         {shown.stl_url && (
           <Button size="sm" variant="ghost" onClick={() => window.open(shown.stl_url!, "_blank")}>
@@ -231,6 +251,33 @@ function ManufactureSheet({
         )}
         <Button size="sm" variant="ghost" onClick={copy}>Copiar especificación</Button>
       </div>
+
+      {/* Dos documentos, y la diferencia importa: el del taller no lleva ningún
+          dato de paciente, por construcción. */}
+      {(shown.dossier_internal_url || shown.dossier_workshop_url) && (
+        <div style={{ marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+          <SectionLabel>Dossier de fabricación</SectionLabel>
+          <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+            {shown.dossier_internal_url && (
+              <Button size="sm" variant="ghost"
+                      onClick={() => window.open(shown.dossier_internal_url!, "_blank")}>
+                Copia interna (PDF)
+              </Button>
+            )}
+            {shown.dossier_workshop_url && (
+              <Button size="sm" variant="ghost"
+                      onClick={() => window.open(shown.dossier_workshop_url!, "_blank")}>
+                Para el taller (PDF)
+              </Button>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 6, lineHeight: 1.5 }}>
+            La copia interna lleva el paciente, el caso y las medidas de las que
+            sale el pedido. La del taller no lleva ningún dato de paciente: solo
+            cotas, tolerancias, material y las verificaciones a realizar.
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

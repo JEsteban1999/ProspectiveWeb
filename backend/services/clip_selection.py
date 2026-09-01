@@ -45,6 +45,7 @@ References
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -136,12 +137,26 @@ _REGION_PREFERENCE: list[tuple[tuple[str, ...], dict[ClipShape, float], str]] = 
 # Regions where the neck commonly incorporates a branch, so a fenestrated clip is
 # worth considering. A prompt, never a rejection: the branch itself is not
 # visible in the isolated sac mesh (see the module docstring).
-_BIFURCATION_HINTS: tuple[str, ...] = (
-    "acom", "acoa", "comunicante", "acm", "cerebral media", "bifurcac",
-    "trifurcac", "basilar", "carotida", "ica",
+#
+# Split by how they must be matched. A short acronym as a bare substring finds
+# itself inside ordinary words: "ica" sits in "per-ica-llosa", so every
+# pericallosal aneurysm was read as a bifurcation and sent to a fenestrated clip
+# the family cannot even build. Acronyms are matched on word boundaries; the
+# long descriptive terms stay substrings so "cerebral media derecha" still hits.
+_ACCENTS = str.maketrans("áéíóúàèìòùäëïöüâêîôûñ", "aeiouaeiouaeiouaeioun")
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+_BIFURCATION_ACRONYMS: tuple[str, ...] = ("acom", "acoa", "acm", "ica")
+_BIFURCATION_TERMS: tuple[str, ...] = (
+    "comunicante", "cerebral media", "bifurcac", "trifurcac", "basilar", "carotida",
 )
 
-_ACCENTS = str.maketrans("áéíóúàèìòùäëïöüâêîôûñ", "aeiouaeiouaeiouaeioun")
+def _mentions_bifurcation(text: str) -> bool:
+    """Whether this free-text location suggests a branch at the neck."""
+    hay = _norm(text)
+    if any(t in hay for t in _BIFURCATION_TERMS):
+        return True
+    return bool(set(_WORD_RE.findall(hay)) & set(_BIFURCATION_ACRONYMS))
 
 
 def _norm(text: str) -> str:
@@ -149,10 +164,26 @@ def _norm(text: str) -> str:
     return (text or "").strip().lower().translate(_ACCENTS)
 
 
+def _matches_key(key: str, hay: str, words: set[str]) -> bool:
+    """One preference key against a location, with the right kind of match.
+
+    Short single tokens are acronyms and must match whole words. As bare
+    substrings they find themselves inside ordinary anatomy: "ica" sits in
+    "per-ica-llosa", so a pericallosal aneurysm was picking up the CAROTID
+    preferences — which argue for a bayonet in a deep field, exactly the wrong
+    advice for a small superficial vessel. Longer descriptive keys stay
+    substrings so "cerebral media derecha" still matches.
+    """
+    if " " not in key and len(key) <= 4:
+        return key in words
+    return key in hay
+
+
 def _region_preference(region: str, aneurysm_type: str) -> tuple[dict[ClipShape, float] | None, str]:
     hay = f"{_norm(region)} {_norm(aneurysm_type)}"
+    words = set(_WORD_RE.findall(hay))
     for keys, table, note in _REGION_PREFERENCE:
-        if any(k in hay for k in keys):
+        if any(_matches_key(k, hay, words) for k in keys):
             return table, note
     return None, ""
 
@@ -191,8 +222,7 @@ class ClipCase:
 
     @property
     def suggests_fenestration(self) -> bool:
-        hay = f"{_norm(self.region)} {_norm(self.aneurysm_type)}"
-        return any(k in hay for k in _BIFURCATION_HINTS)
+        return _mentions_bifurcation(f"{self.region} {self.aneurysm_type}")
 
 
 # ── Criteria ──────────────────────────────────────────────────────────────── #

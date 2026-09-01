@@ -63,8 +63,8 @@ approval, and a tamper-evident audit chain.
 
 | | |
 |---|---|
-| Backend tests | **548 passing** (`pytest`, 38 files) |
-| Frontend tests | **84 passing** (`vitest`, 10 files) · `tsc -b` clean · production build clean |
+| Backend tests | **571 passing** (`pytest`, 39 files) |
+| Frontend tests | **88 passing** (`vitest`, 10 files) · `tsc -b` clean · production build clean |
 | REST endpoints | **97** operations across 81 paths (23 routers), all authenticated except login/signup/logout |
 | Feature parity with desktop | **Complete** |
 
@@ -101,8 +101,8 @@ ProspectiveWeb/
 │   ├── requirements.txt
 │   ├── models/    (20)     # Pydantic request/response schemas
 │   ├── routers/   (23)     # Route handlers, one file per domain
-│   ├── services/  (38)     # Qt-free business logic, shared with the desktop app
-│   ├── test_*.py  (38)     # pytest suites
+│   ├── services/  (40)     # Qt-free business logic, shared with the desktop app
+│   ├── test_*.py  (39)     # pytest suites
 │   ├── data/               # PUBLIC static mount — sessions, meshes, reports
 │   ├── clip_library/       # PRIVATE: institutional clips + templates (gitignored)
 │   ├── study_files/        # PRIVATE archive: DICOM of archived studies (gitignored)
@@ -143,6 +143,8 @@ Key backend services (all ported from the desktop `prospective/processing`):
 | `clip_library.py` | Global store of the institution's clips and manufacturing templates |
 | `navarro.py` | The NAVARRO™ made-to-order family: jaw sizing, jaw-only resizing |
 | `clip_animation.py` | Splits a clip into body + blades and derives its hinge, for rehearsal |
+| `clip_manufacture.py` | The clip to have made: family, commercial fallback, or neither |
+| `clip_dossier.py` | The two order PDFs — internal record and workshop copy |
 | `stent_deployment.py` | Centerline-guided braided stent along real vessel curvature |
 | `phases.py` | PHASES 5-year rupture risk (Greving 2014) |
 | `mesh_prep.py` | 3D-print preparation + printer-bed presets |
@@ -435,6 +437,28 @@ relation is not proportional, and the NAVARRO™ family settles it: 42 designs f
 it holds, not by the blade in front of it. When a dimension is floored the spec
 says so. `POST /api/clips/manufacture/{sid}` writes the STL.
 
+**The STL comes from the drawn designs.** It used to come from the box builder —
+348 triangles with 696 boundary edges for a 10 mm clip, an open surface that no
+workshop or printer can take. Anything meant to be MADE is now built from the
+NAVARRO™ family, which is watertight.
+
+**A shape the family cannot build is never substituted in silence.** Available
+shapes are read off the disk, so the curved and fenestrated series become
+selectable by dropping their files in. Until then a fenestrated case is offered a
+commercial clip of that shape — and if no commercial clip of that shape can close
+the neck either, the answer is `unavailable` rather than a near-miss presented as
+an alternative.
+
+**Two dossiers.** The internal PDF records which patient, which case and which
+measurements produced the dimensions, so the order can be re-derived a year
+later. The workshop PDF carries no patient data by construction — dimensions,
+tolerances, material and the checks to run on the finished part. They share a
+part number, which is the only thread between them.
+
+**The closing force is a target, never a result.** It comes from the spring, the
+alloy and the heat treatment; an STL has no material. Both dossiers demand it be
+measured on the finished part before anyone calls the order done.
+
 The spec always lists what a machinist still has to confirm — a specification
 that hides its assumptions is worse than one that states them. In particular,
 **no parent-artery measurement means no window diameter**: the spec says so
@@ -660,17 +684,17 @@ patient imaging.
 
 ```bash
 cd backend
-.venv\Scripts\python -m pytest -q                        # all 548 tests
+.venv\Scripts\python -m pytest -q                        # all 571 tests
 .venv\Scripts\python -m pytest test_session_abc.py -v    # one suite
 ```
 
-Expected: **548 passed, 0 failed** (~3–4 min; VTK and SimpleITK do real work).
+Expected: **571 passed, 0 failed** (~3–4 min; VTK and SimpleITK do real work).
 
 Frontend checks:
 
 ```bash
 cd frontend
-npx vitest run          # 84 unit tests (vitest + Testing Library, jsdom)
+npx vitest run          # 88 unit tests (vitest + Testing Library, jsdom)
 npx tsc -b --noEmit     # type check
 npm run build           # production build
 ```
