@@ -976,7 +976,14 @@ def select_clips(
                 f"cumple{'n' if plural else ''} todos los criterios para un "
                 f"cuello de {case.neck_mm:.1f} mm."
             ),
-            case=case, recommended=recommended, rejected=rejected, manufacture=None,
+            case=case, recommended=recommended, rejected=rejected,
+            # The ideal clip is offered even when the shelf already serves. It
+            # used to be withheld here, on the reasoning that manufacturing is
+            # for when stock fails — but that answers a different question from
+            # "what would fit this neck best", and the answer to that one exists
+            # whatever is in the cupboard. The outcome still says a stock clip
+            # meets every criterion, so this reads as the option it is.
+            manufacture=derive_manufacture_spec(case, failed),
             caveats=_caveats(case) + _availability_caveats(recommended),
             custom_jaw=suggest_custom_jaw(case, recommended[0] if recommended else None),
         )

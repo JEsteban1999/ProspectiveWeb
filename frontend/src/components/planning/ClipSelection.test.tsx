@@ -326,3 +326,36 @@ describe("the manufacturing package", () => {
     expect(await screen.findByRole("button", { name: /Descargar STL/ })).toBeInTheDocument();
   });
 });
+
+
+describe("the ideal clip is reachable whatever the outcome", () => {
+  // Reported while testing: with a stock clip already fitting, the whole
+  // manufacturing section was absent, so the STL and the dossiers could not be
+  // reached at all. "What is on the shelf" and "what would fit best" are
+  // different questions; the second has an answer either way.
+  // As the selection endpoint returns it: the part number and the documents
+  // only exist once the manufacturing package has actually been generated.
+  const withSpec = { ...spec, part_no: "",
+    piece_label: "NAVARRO™ T1 Recto, mordaza 8.5 mm" };
+
+  it("offers it even when the inventory already serves", async () => {
+    clipSelection.mockResolvedValue(result({ outcome: "stock", manufacture: withSpec }));
+    render(<ClipSelectionPanel sessionId="s1" />);
+    expect(await screen.findByText(/Clip ideal a medida/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Generar STL y dossiers/ })).toBeInTheDocument();
+  });
+
+  it("says it is an option, not a recommendation to manufacture", async () => {
+    clipSelection.mockResolvedValue(result({ outcome: "stock", manufacture: withSpec }));
+    render(<ClipSelectionPanel sessionId="s1" />);
+    expect(await screen.findByText(/Ya hay clips del inventario que cumplen/)).toBeInTheDocument();
+  });
+
+  it("reads as the only route when nothing fits", async () => {
+    clipSelection.mockResolvedValue(result({
+      outcome: "manufacture", recommended: [], manufacture: withSpec,
+    }));
+    render(<ClipSelectionPanel sessionId="s1" />);
+    expect(await screen.findByText("Especificación de fabricación")).toBeInTheDocument();
+  });
+});

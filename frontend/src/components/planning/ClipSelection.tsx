@@ -242,7 +242,9 @@ function ManufactureSheet({
 
       <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
         <Button size="sm" onClick={() => void generate()} disabled={busy}>
-          {busy ? "Generando…" : shown.part_no ? "Regenerar" : "Preparar fabricación"}
+          {busy ? "Generando…"
+            : shown.part_no ? "Regenerar STL y dossiers"
+            : "Generar STL y dossiers"}
         </Button>
         {shown.stl_url && (
           <Button size="sm" variant="ghost" onClick={() => window.open(shown.stl_url!, "_blank")}>
@@ -450,11 +452,23 @@ export function ClipSelectionPanel({
         </div>
       )}
 
+      {/* El clip ideal para este cuello se ofrece siempre, no solo cuando el
+          inventario falla: son preguntas distintas y la segunda tiene respuesta
+          haya o no algo en el armario. El rótulo dice cuál de las dos es. */}
       {sel.manufacture && (
         <div>
           <SectionLabel>
-            {sel.outcome === "manufacture" ? "Especificación de fabricación" : "Alternativa a medida"}
+            {sel.outcome === "manufacture" ? "Especificación de fabricación"
+              : sel.outcome === "stock" ? "Clip ideal a medida (opcional)"
+              : "Alternativa a medida"}
           </SectionLabel>
+          {sel.outcome === "stock" && (
+            <div style={{ fontSize: 11, color: "var(--muted-foreground)", margin: "4px 0 0", lineHeight: 1.5 }}>
+              Ya hay clips del inventario que cumplen todos los criterios. Esta es
+              la pieza que se ajustaría exactamente al cuello, por si se prefiere
+              mandarla a fabricar.
+            </div>
+          )}
           <div style={{ marginTop: 6 }}>
             <ManufactureSheet spec={sel.manufacture} sessionId={sessionId} caseId={caseId} />
           </div>
